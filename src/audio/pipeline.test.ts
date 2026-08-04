@@ -1,0 +1,242 @@
+/**
+ * 종단 테스트: **프로젝트 데이터 → 스케줄러 → 보이스 → PCM**.
+ *
+ * 이게 이 프로젝트에서 가장 중요한 테스트다. 모델과 엔진이 각각 정확해도
+ * 이어붙이는 지점에서 음정이 틀어지면 "음정이 정밀하다"는 주장은 무너진다.
+ * 데이터에 찍은 센트가 실제 파형에서 그대로 나오는지 본다 (`sound.md` 11-1).
+ *
+ * 측정 방식이 두 가지다:
+ *  - **격리 측정** — 음 하나만 울리는 렌더. 악기·음역을 훑을 때 쓴다 (빠르고 단순)
+ *  - **문맥 측정** — 음을 늘어놓은 채로, 같이 울리는 주파수를 모델에 넣고 함께 푼다
+ *    (`analysis.ts` 의 `measureFreqInContext`). 실제 곡에 가까운 조건이다
+ *
+ * 처음에는 격리 측정밖에 없었고, 음을 늘어놓으면 앞 음이 몇 초씩 남아
+ * -14센트 지정에서 -8.6센트로 실패했다. 지금은 문맥 측정으로 그 조건에서도 잡는다.
+ * 되는 이유: 무슨 음이 울리는지 **프로젝트 데이터에서 정확히 알기** 때문이다.
+ * 모르는 상태의 음정 검출은 오디오 도메인 문제이고 `plan.md` 가 Phase 4 로 미뤄 뒀다.
+ */
+
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+
+import { createClip, createEmptyProject, createNote, createTrack } from '../model/factory.ts';
+import { detune, pitchToHz } from '../model/pitch.ts';
+import { PPQ, ticksToSeconds } from '../model/time.ts';
+import { createRegistry, playableInstrumentIds } from '../instruments/definitions.ts';
+import { measureCentsError, measureCentsErrorInContext, seededRng } from './analysis.ts';
+import { renderProjectOffline, slice } from './offlineRender.ts';
+import type { Project } from '../model/project.ts';
+import type { ParamValue } from '../instruments/types.ts';
+
+const SAMPLE_RATE = 48000;
+const TOLERANCE_CENTS = 1;
+const registry = createRegistry();
+
+/** Float32Array 는 스프레드하면 스택이 터진다 (수십만 인자) */
+function peakAbs(pcm: Float32Array): number {
+  let peak = 0;
+  for (const v of pcm) peak = Math.max(peak, Math.abs(v));
+  return peak;
+}
+
+function projectWithNotes(
+  instrumentId: string,
+  notes: { midi: number; cents?: number; startBeat?: number }[],
+  opts: { bpm?: number; toneParams?: Record<string, ParamValue> } = {},
+): Project {
+  const project = createEmptyProject('종단 테스트');
+  project.tempo.bpm = opts.bpm ?? 60; // 4분음표 = 1초
+  project.lengthBars = Math.max(1, Math.ceil(notes.length / 4));
+
+  const track = createTrack({ name: '테스트', instrumentId });
+  if (opts.toneParams) track.toneParams = opts.toneParams;
+  const clip = createClip({ startTick: 0, lengthTick: Math.max(1, notes.length) * PPQ });
+  notes.forEach((n, i) => {
+    const note = createNote({
+      startTick: (n.startBeat ?? i) * PPQ,
+      lengthTick: PPQ,
+      midi: n.midi,
+    });
+    if (n.cents) note.pitch = detune(note.pitch, n.cents);
+    clip.notes.push(note);
+  });
+  track.clips.push(clip);
+  project.tracks.push(track);
+  return project;
+}
+
+/** 음 하나만 울리는 렌더에서 센트 오차를 잰다 */
+function centsErrorOf(instrumentId: string, midi: number, cents = 0): number {
+  const project = projectWithNotes(instrumentId, [{ midi, cents }]);
+  const { pcm } = renderProjectOffline(project, registry, {
+    sampleRate: SAMPLE_RATE,
+    rng: seededRng(),
+    tailSec: 1,
+  });
+  const note = project.tracks[0]!.clips[0]!.notes[0]!;
+  const targetHz = pitchToHz(note.pitch, project.tuning);
+  // 노트 길이 + 여운까지 본다. 측정기가 살아 있는 구간을 스스로 찾는다
+  const segment = slice(pcm, 0, ticksToSeconds(note.lengthTick, project.tempo) + 1, SAMPLE_RATE);
+  return measureCentsError(segment, targetHz, SAMPLE_RATE);
+}
+
+test('데이터에 찍은 음정이 파형에 그대로 나온다', () => {
+  for (const midi of [40, 47, 52, 57, 62, 67, 76, 88]) {
+    const err = centsErrorOf('acoustic-guitar', midi);
+    assert.ok(Math.abs(err) <= TOLERANCE_CENTS, `midi=${midi} 오차 ${err.toFixed(3)} 센트`);
+  }
+});
+
+test('센트 미세조정이 파형에 정확히 반영된다', () => {
+  // 차별점 ①(음 단위 정밀 수정)이 소리까지 도달하는지.
+  // 데이터에 -14센트를 넣었으면 파형도 -14센트여야 한다
+  for (const cents of [-49, -37, -14, -1, 0, 1, 14, 37, 49]) {
+    const err = centsErrorOf('acoustic-guitar', 57, cents);
+    assert.ok(Math.abs(err) <= TOLERANCE_CENTS, `${cents}센트 지정 → 오차 ${err.toFixed(3)} 센트`);
+  }
+});
+
+test('모든 내장 악기가 자기 음역에서 음정이 맞는다', () => {
+  // sound.md 9-7: 정의를 추가하면 검증이 자동으로 적용돼야 한다.
+  // 악기 목록을 순회하므로 새 악기를 넣어도 테스트를 새로 쓸 필요가 없다
+  const failures: string[] = [];
+
+  for (const id of playableInstrumentIds()) {
+    const { low, high } = registry.get(id)!.range ?? { low: 40, high: 88 };
+    for (const midi of [low, Math.round((low + high) / 2), high]) {
+      const err = centsErrorOf(id, midi);
+      if (Math.abs(err) > TOLERANCE_CENTS) failures.push(`${id} midi=${midi}: ${err.toFixed(3)} 센트`);
+    }
+  }
+
+  assert.deepEqual(failures, [], `음정 오차 초과:\n${failures.join('\n')}`);
+});
+
+test('음을 늘어놓은 상태에서도 각 음의 센트가 정확하다', () => {
+  // 처음 이 테스트를 격리 없이 짰다가 -8.6센트로 실패했던 바로 그 조건.
+  // 앞뒤가 같은 음 ±센트라 간섭이 최악이다 (목표에서 1~2Hz 거리)
+  const offsets = [0, -14, 12, -37, 25];
+  const project = projectWithNotes('acoustic-guitar', offsets.map((c) => ({ midi: 57, cents: c })));
+  const { pcm } = renderProjectOffline(project, registry, {
+    sampleRate: SAMPLE_RATE,
+    rng: seededRng(),
+    tailSec: 2,
+  });
+
+  const notes = project.tracks[0]!.clips[0]!.notes;
+  const allHz = notes.map((n) => pitchToHz(n.pitch, project.tuning));
+
+  notes.forEach((note, i) => {
+    const onsetSec = ticksToSeconds(note.startTick, project.tempo);
+    // 이 음이 시작될 때 아직 울리고 있는 음들이 간섭원이다
+    const interferersHz = allHz.filter((_, j) => j < i);
+    const err = measureCentsErrorInContext(pcm, allHz[i]!, SAMPLE_RATE, {
+      interferersHz,
+      start: Math.round(onsetSec * SAMPLE_RATE) + Math.round(0.02 * SAMPLE_RATE),
+      available: Math.round(0.95 * SAMPLE_RATE),
+    });
+    assert.ok(
+      Math.abs(err) <= TOLERANCE_CENTS,
+      `${i}번째 음(${offsets[i]}센트, 간섭 ${interferersHz.length}개) 오차 ${err.toFixed(3)} 센트`,
+    );
+  });
+});
+
+test('화음 안에서도 각 음의 음정이 정확하다', () => {
+  // 동시 발음. 서로의 하모닉이 겹치는 최악 조건 중 하나
+  const midis = [52, 56, 59, 64];
+  const project = projectWithNotes(
+    'acoustic-guitar',
+    midis.map((midi) => ({ midi, startBeat: 0 })),
+  );
+  const { pcm } = renderProjectOffline(project, registry, {
+    sampleRate: SAMPLE_RATE,
+    rng: seededRng(),
+    tailSec: 2,
+  });
+
+  const notes = project.tracks[0]!.clips[0]!.notes;
+  const allHz = notes.map((n) => pitchToHz(n.pitch, project.tuning));
+
+  allHz.forEach((hz, i) => {
+    const err = measureCentsErrorInContext(pcm, hz, SAMPLE_RATE, {
+      interferersHz: allHz.filter((_, j) => j !== i),
+      start: Math.round(0.03 * SAMPLE_RATE),
+      available: Math.round(1.2 * SAMPLE_RATE),
+    });
+    assert.ok(Math.abs(err) <= TOLERANCE_CENTS, `midi=${midis[i]} 오차 ${err.toFixed(3)} 센트`);
+  });
+});
+
+test('화음이 단음보다 크다 (보이스가 독립적으로 합산된다)', () => {
+  // 위 테스트가 음정을 보므로 여기서는 합산 자체만 본다 —
+  // 보이스가 서로를 덮어쓰지 않고 더해지는지
+  const chord = projectWithNotes('acoustic-guitar', [
+    { midi: 52, startBeat: 0 }, { midi: 56, startBeat: 0 }, { midi: 59, startBeat: 0 },
+  ]);
+  const single = projectWithNotes('acoustic-guitar', [{ midi: 52 }]);
+
+  const c = renderProjectOffline(chord, registry, { sampleRate: SAMPLE_RATE, rng: seededRng() });
+  const s = renderProjectOffline(single, registry, { sampleRate: SAMPLE_RATE, rng: seededRng() });
+
+  assert.ok(peakAbs(c.pcm) > peakAbs(s.pcm), '음 3개가 1개보다 커야 한다');
+  assert.ok(c.pcm.every(Number.isFinite));
+});
+
+test('음소거된 트랙은 파형에 없다', () => {
+  const project = projectWithNotes('acoustic-guitar', [{ midi: 57 }]);
+  const loud = renderProjectOffline(project, registry, { sampleRate: SAMPLE_RATE, rng: seededRng() });
+  assert.ok(peakAbs(loud.pcm) > 0.01, '소리가 나야 한다');
+
+  project.tracks[0]!.mute = true;
+  const muted = renderProjectOffline(project, registry, { sampleRate: SAMPLE_RATE, rng: seededRng() });
+  assert.equal(peakAbs(muted.pcm), 0, '음소거하면 완전 무음이어야 한다');
+});
+
+test('DC 오프셋이 남지 않는다', () => {
+  // M0 에서 전체 RMS 의 60%가 DC 였던 버그. 음으로는 안 들려서 숨는다
+  const project = projectWithNotes('electric-bass', [{ midi: 28 }, { midi: 40 }, { midi: 55 }]);
+  const { pcm } = renderProjectOffline(project, registry, { sampleRate: SAMPLE_RATE, rng: seededRng() });
+
+  let sum = 0;
+  let sq = 0;
+  for (const v of pcm) { sum += v; sq += v * v; }
+  const dc = Math.abs(sum / pcm.length);
+  const rms = Math.sqrt(sq / pcm.length);
+  assert.ok(dc < rms * 0.02, `DC ${dc.toExponential(2)} 가 RMS ${rms.toExponential(2)} 의 2% 를 넘는다`);
+});
+
+test('극단 파라미터에서 NaN·발산이 없다', () => {
+  // sound.md 6-5: NaN 하나가 그 시점부터 전체를 무음으로 만든다
+  const project = projectWithNotes(
+    'mandolin',
+    [{ midi: 55 }, { midi: 91 }],
+    { toneParams: { stiffness: 0.05, damping: 0.25, sustainSec: 10, pluckHardness: 1 } },
+  );
+  const { pcm } = renderProjectOffline(project, registry, { sampleRate: SAMPLE_RATE, rng: seededRng() });
+  assert.ok(pcm.every(Number.isFinite), '유한값이 아닌 샘플이 있다');
+  assert.ok(peakAbs(pcm) < 4, '값이 비정상적으로 크다 (발산 의심)');
+});
+
+test('미구현 보이스 타입은 조용히 무음이 아니라 에러다', () => {
+  const project = projectWithNotes('acoustic-guitar', [{ midi: 57 }]);
+  const broken = createRegistry([
+    { id: 'drum-kit', schemaVersion: 1, name: '드럼', voice: 'sampler' },
+  ]);
+  project.tracks[0]!.instrumentId = 'drum-kit';
+  assert.throws(
+    () => renderProjectOffline(project, broken, { sampleRate: SAMPLE_RATE, rng: seededRng() }),
+    /미구현/,
+  );
+});
+
+test('같은 프로젝트는 같은 파형을 낸다 (결정론)', () => {
+  // 내보내기와 미리듣기가 100% 일치해야 한다는 요구(plan.md 5-2)의 최소 조건
+  const project = projectWithNotes('harp', [{ midi: 60 }, { midi: 64 }, { midi: 67 }]);
+  const a = renderProjectOffline(project, registry, { sampleRate: SAMPLE_RATE, rng: seededRng(7) });
+  const b = renderProjectOffline(project, registry, { sampleRate: SAMPLE_RATE, rng: seededRng(7) });
+  assert.equal(a.pcm.length, b.pcm.length);
+  for (let i = 0; i < a.pcm.length; i++) {
+    if (a.pcm[i] !== b.pcm[i]) assert.fail(`샘플 ${i} 가 다르다: ${a.pcm[i]} ≠ ${b.pcm[i]}`);
+  }
+});

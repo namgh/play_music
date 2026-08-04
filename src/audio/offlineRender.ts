@@ -1,0 +1,169 @@
+/**
+ * 오프라인 렌더 — 프로젝트 데이터를 PCM 으로 만든다.
+ *
+ * 두 가지 목적:
+ *  1. **종단 검증.** 브라우저 없이 노드에서 "프로젝트 → 소리"를 돌려 음정을 측정할 수 있다.
+ *     이게 없으면 데이터·스케줄러·DSP 를 이어붙인 뒤 귀 말고는 확인할 방법이 없다.
+ *  2. 참조 구현. 실제 내보내기는 `OfflineAudioContext` 를 쓰지만(`plan.md` 5-2),
+ *     보이스 DSP 는 같은 코드이므로 어긋날 여지가 그래프 배선으로 한정된다.
+ *
+ * 샘플 단위로 정확하다 — 이벤트 시각 사이를 잘라 렌더하므로 발음이 블록 경계로
+ * 반올림되지 않는다. 128샘플 블록으로 뭉개면 최대 2.7ms 씩 밀린다.
+ */
+
+import type { Project } from '../model/project.ts';
+import { ticksToSeconds } from '../model/time.ts';
+import { pitchToHz } from '../model/pitch.ts';
+import { collectNoteEvents } from './scheduler.ts';
+import type { InstrumentDefinition } from '../instruments/types.ts';
+import { instrumentParams, resolveInstrument } from '../instruments/resolve.ts';
+import { WaveguideStringVoice } from './voice/waveguideString.ts';
+import type { Rng, Voice } from './voice/types.ts';
+import { projectLengthTicks } from '../model/factory.ts';
+
+const BLOCK = 128; // AudioWorklet 블록 크기와 같게 — 블록 경계 효과까지 같이 본다
+const MAX_VOICES = 32;
+
+export interface OfflineRenderOptions {
+  sampleRate?: number;
+  /** 곡이 끝난 뒤 여운을 위해 더 렌더할 시간 */
+  tailSec?: number;
+  /** 결정론적 결과가 필요할 때 (테스트) */
+  rng?: Rng;
+}
+
+function createVoice(voiceType: string, sampleRate: number, rng: Rng): Voice {
+  switch (voiceType) {
+    case 'waveguide-string':
+      return new WaveguideStringVoice(sampleRate, rng);
+    default:
+      // 모달·버추얼아날로그·샘플러는 M4~M6 (`sound.md` 10절).
+      // 조용히 무음을 내면 "왜 소리가 안 나지"로 시간을 버리게 된다
+      throw new Error(`보이스 타입 "${voiceType}" 미구현`);
+  }
+}
+
+export function renderProjectOffline(
+  project: Project,
+  instrumentDefs: ReadonlyMap<string, InstrumentDefinition>,
+  options: OfflineRenderOptions = {},
+): { pcm: Float32Array; sampleRate: number } {
+  const sampleRate = options.sampleRate ?? 48000;
+  const rng = options.rng ?? Math.random;
+  const tailSec = options.tailSec ?? 2;
+
+  const lengthTicks = projectLengthTicks(project);
+  const totalSamples =
+    Math.ceil(ticksToSeconds(lengthTicks, project.tempo) * sampleRate) +
+    Math.ceil(tailSec * sampleRate);
+  const pcm = new Float32Array(totalSamples);
+
+  // 트랙별로 악기를 한 번만 해석한다 — 음마다 상속을 펼치면 낭비다
+  const trackSetup = new Map<string, { params: Record<string, number | string>; voiceType: string; gain: number }>();
+  for (const track of project.tracks) {
+    const instrument = resolveInstrument(track.instrumentId, instrumentDefs);
+    trackSetup.set(track.id, {
+      params: instrumentParams(instrument, track.toneId, track.toneParams),
+      voiceType: instrument.voice,
+      gain: track.gain,
+    });
+  }
+
+  const events = collectNoteEvents(project, 0, lengthTicks);
+
+  // 보이스 풀. 트랙마다 파라미터가 달라 발음 시점에 setParams 하므로 공용으로 쓴다
+  const pool: { voice: Voice; gain: number }[] = [];
+  let rr = 0;
+
+  const renderTo = (fromSample: number, toSample: number): void => {
+    for (let at = fromSample; at < toSample; at += BLOCK) {
+      const frames = Math.min(BLOCK, toSample - at);
+      const scratch = new Float32Array(frames);
+      for (const slot of pool) {
+        if (!slot.voice.active) continue;
+        scratch.fill(0);
+        slot.voice.process(scratch, frames);
+        for (let i = 0; i < frames; i++) pcm[at + i] = pcm[at + i]! + scratch[i]! * slot.gain;
+      }
+    }
+  };
+
+  let cursor = 0;
+  for (const event of events) {
+    const startSample = Math.round(ticksToSeconds(event.startTick, project.tempo) * sampleRate);
+    if (startSample >= totalSamples) break;
+    if (startSample > cursor) {
+      renderTo(cursor, startSample);
+      cursor = startSample;
+    }
+
+    const setup = trackSetup.get(event.trackId);
+    if (!setup) continue;
+
+    let slot = pool.find((s) => !s.voice.active);
+    if (!slot) {
+      if (pool.length < MAX_VOICES) {
+        slot = { voice: createVoice(setup.voiceType, sampleRate, rng), gain: setup.gain };
+        pool.push(slot);
+      } else {
+        slot = pool[rr % pool.length]!; // 보이스 스틸링
+        rr++;
+      }
+    }
+    slot.gain = setup.gain;
+    slot.voice.noteOn(pitchToHz(event.note.pitch, project.tuning), event.note.velocity, setup.params);
+  }
+
+  renderTo(cursor, totalSamples);
+
+  // 마스터 게인. 리미터를 넣지 않는다 — 비선형은 오버샘플링이 전제다 (`sound.md` 6-1)
+  if (project.master.gain !== 1) {
+    for (let i = 0; i < pcm.length; i++) pcm[i] = pcm[i]! * project.master.gain;
+  }
+
+  return { pcm, sampleRate };
+}
+
+export interface RenderNoteOptions {
+  voiceType: string;
+  params: Readonly<Record<string, number | string>>;
+  freqHz: number;
+  velocity: number;
+  sampleRate: number;
+  /** 이 길이를 넘기면 자른다. 보이스가 먼저 조용해지면 거기서 끝난다 */
+  maxSec: number;
+  rng?: Rng;
+}
+
+/**
+ * 음 하나를 PCM 으로. 뜯는 줄은 노트온 시점에 결과가 결정되는 원샷이므로
+ * 미리 렌더해 두고 정확한 시각에 재생할 수 있다 (`bufferRenderer.ts` 가 이걸 쓴다).
+ */
+export function renderNoteToPcm(options: RenderNoteOptions): Float32Array {
+  const { voiceType, params, freqHz, velocity, sampleRate, maxSec } = options;
+  const voice = createVoice(voiceType, sampleRate, options.rng ?? Math.random);
+  voice.noteOn(freqHz, velocity, params);
+
+  const maxSamples = Math.ceil(maxSec * sampleRate);
+  const out = new Float32Array(maxSamples);
+  const scratch = new Float32Array(BLOCK);
+
+  let written = 0;
+  while (written < maxSamples && voice.active) {
+    const frames = Math.min(BLOCK, maxSamples - written);
+    scratch.fill(0);
+    voice.process(scratch, frames);
+    out.set(scratch.subarray(0, frames), written);
+    written += frames;
+  }
+
+  // 보이스가 먼저 조용해졌으면 그만큼 잘라 메모리를 아낀다
+  return written === maxSamples ? out : out.slice(0, written);
+}
+
+/** 구간 잘라내기 — 음 하나만 측정할 때 쓴다 */
+export function slice(pcm: Float32Array, fromSec: number, toSec: number, sampleRate: number): Float32Array {
+  const a = Math.max(0, Math.round(fromSec * sampleRate));
+  const b = Math.min(pcm.length, Math.round(toSec * sampleRate));
+  return pcm.subarray(a, b);
+}
