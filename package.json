@@ -8,13 +8,15 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "build": "npm run build:dsp && tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "m0": "node spike/m0-karplus/serve.mjs",
     "test:pitch": "node spike/m0-karplus/test-pitch.mjs",
     "test:model": "node --test 'src/**/*.test.ts'",
-    "test": "npm run test:model && npm run test:pitch"
+    "test": "npm run build:dsp && npm run test:model && npm run test:pitch",
+    "build:dsp": "$HOME/.cargo/bin/cargo build --release --manifest-path dsp/Cargo.toml --target wasm32-unknown-unknown && cp dsp/target/wasm32-unknown-unknown/release/dsp.wasm src/generated/dsp.wasm",
+    "test:dsp": "$HOME/.cargo/bin/cargo test --manifest-path dsp/Cargo.toml"
   },
   "dependencies": {
     "react": "^19.2.8",

@@ -4,6 +4,8 @@ import type { Project, TrackId } from '../model/project.ts';
 import { createNote, projectLengthTicks } from '../model/factory.ts';
 import type { InstrumentDefinition } from '../instruments/types.ts';
 import { BufferRenderer } from './bufferRenderer.ts';
+import { WasmVoiceEngine } from './voice/wasmEngine.ts';
+import wasmUrl from '../generated/dsp.wasm?url';
 import { encodeWav } from './wav.ts';
 
 /**
@@ -25,11 +27,27 @@ export function useAudioEngine(
   const [playheadTick, setPlayheadTick] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+  /** 어느 DSP 코어가 붙었는지 — 화면에 표시해 두면 wasm 로드 실패를 조용히 넘기지 않는다 */
+  const [engineKind, setEngineKind] = useState<'rust' | 'typescript' | null>(null);
 
   const ensure = useCallback(async (): Promise<BufferRenderer> => {
     if (!ctxRef.current) ctxRef.current = new AudioContext({ latencyHint: 'interactive' });
-    if (!rendererRef.current) rendererRef.current = new BufferRenderer(ctxRef.current, registry);
-    await ctxRef.current.resume();
+    const ctx = ctxRef.current;
+
+    if (!rendererRef.current) {
+      // Rust DSP 코어를 먼저 붙여 본다. 실패하면 TS 구현으로 떨어진다 —
+      // wasm 로드 실패가 "소리가 안 난다"로 이어지면 원인을 찾기 어렵다
+      let wasm: WasmVoiceEngine | null = null;
+      try {
+        const response = await fetch(wasmUrl);
+        wasm = await WasmVoiceEngine.create(await response.arrayBuffer(), ctx.sampleRate);
+      } catch (err) {
+        console.warn('Rust DSP 코어 로드 실패 — TS 구현으로 진행한다', err);
+      }
+      setEngineKind(wasm ? 'rust' : 'typescript');
+      rendererRef.current = new BufferRenderer(ctx, registry, wasm);
+    }
+    await ctx.resume();
     return rendererRef.current;
   }, [registry]);
 
@@ -125,5 +143,5 @@ export function useAudioEngine(
     }
   }, [ensure]);
 
-  return { state, playheadTick, error, exporting, play, stop, audition, exportWav };
+  return { state, playheadTick, error, exporting, engineKind, play, stop, audition, exportWav };
 }

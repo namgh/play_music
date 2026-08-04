@@ -15,3 +15,6 @@ pkg/
 
 # macOS
 .DS_Store
+
+# Rust 빌드 산출물을 복사한 것 — npm run build:dsp 로 다시 만든다
+src/generated/

@@ -29,6 +29,7 @@ import type { InstrumentDefinition, ParamValue } from '../instruments/types.ts';
 import { instrumentParams, resolveInstrument } from '../instruments/resolve.ts';
 import type { ResolvedInstrument } from '../instruments/types.ts';
 import { renderNoteToPcm, renderProjectOffline } from './offlineRender.ts';
+import type { WasmVoiceEngine } from './voice/wasmEngine.ts';
 
 /** 타이머 주기. 룩어헤드보다 충분히 짧아야 한다 */
 const PUMP_INTERVAL_MS = 25;
@@ -36,6 +37,8 @@ const PUMP_INTERVAL_MS = 25;
 const MAX_NOTE_SEC = 12;
 /** 렌더 캐시 상한 (음 개수) */
 const CACHE_LIMIT = 512;
+/** Rust 코어의 블록 상한과 맞춘다 */
+const WASM_BLOCK = 2048;
 
 interface TrackRuntime {
   gainNode: GainNode;
@@ -57,9 +60,20 @@ export class BufferRenderer implements AudioRenderer {
   private pumpTimer: ReturnType<typeof setInterval> | null = null;
   private masterGain: GainNode;
 
-  constructor(ctx: AudioContext, registry: ReadonlyMap<string, InstrumentDefinition>) {
+  /**
+   * Rust DSP 코어. 있으면 이걸 쓴다 (`sound.md` M1).
+   * 없으면 TS 구현으로 떨어진다 — wasm 로드 실패가 무음이 되지 않게.
+   */
+  private readonly wasm: WasmVoiceEngine | null;
+
+  constructor(
+    ctx: AudioContext,
+    registry: ReadonlyMap<string, InstrumentDefinition>,
+    wasm: WasmVoiceEngine | null = null,
+  ) {
     this.ctx = ctx;
     this.registry = registry;
+    this.wasm = wasm;
     this.masterGain = ctx.createGain();
     this.masterGain.connect(ctx.destination);
 
@@ -212,6 +226,38 @@ export class BufferRenderer implements AudioRenderer {
     // 잘라내면 스타카토가 아니라 "뚝 끊김"이 된다 — 어떻게 끊을지는 별도 결정 사항
   }
 
+  /** Rust 코어가 있으면 그걸로, 없으면 TS 구현으로 음 하나를 렌더한다 */
+  private renderNote(runtime: TrackRuntime, freqHz: number, velocity: number): Float32Array {
+    const params = runtime.params as Record<string, number | string>;
+
+    if (this.wasm && runtime.instrument.voice === 'waveguide-string') {
+      this.wasm.allOff();
+      this.wasm.noteOn(freqHz, velocity, params);
+      const total = Math.ceil(MAX_NOTE_SEC * this.ctx.sampleRate);
+      const out = new Float32Array(total);
+      const scratch = new Float32Array(WASM_BLOCK);
+      let written = 0;
+      while (written < total) {
+        const frames = Math.min(WASM_BLOCK, total - written);
+        scratch.fill(0);
+        const active = this.wasm.process(scratch, frames);
+        out.set(scratch.subarray(0, frames), written);
+        written += frames;
+        if (active === 0) break; // 보이스가 조용해졌으면 거기서 끝
+      }
+      return written === total ? out : out.slice(0, written);
+    }
+
+    return renderNoteToPcm({
+      voiceType: runtime.instrument.voice,
+      params,
+      freqHz,
+      velocity,
+      sampleRate: this.ctx.sampleRate,
+      maxSec: MAX_NOTE_SEC,
+    });
+  }
+
   private buffered(runtime: TrackRuntime, freqHz: number, velocity: number): AudioBuffer {
     // 세기는 8단계로 뭉쳐 캐시 적중률을 올린다. 귀로 구분되지 않는 차이다
     const vq = Math.round(velocity * 8) / 8;
@@ -219,14 +265,7 @@ export class BufferRenderer implements AudioRenderer {
     const hit = this.cache.get(key);
     if (hit) return hit;
 
-    const pcm = renderNoteToPcm({
-      voiceType: runtime.instrument.voice,
-      params: runtime.params as Record<string, number | string>,
-      freqHz,
-      velocity: vq,
-      sampleRate: this.ctx.sampleRate,
-      maxSec: MAX_NOTE_SEC,
-    });
+    const pcm = this.renderNote(runtime, freqHz, vq);
 
     const buffer = this.ctx.createBuffer(1, Math.max(1, pcm.length), this.ctx.sampleRate);
     // copyToChannel 대신 set — 버퍼 타입 제약을 피하고 복사도 한 번 줄인다

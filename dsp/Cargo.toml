@@ -1,0 +1,17 @@
+[package]
+name = "dsp"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+# wasm-bindgen 을 쓰지 않는다. 숫자와 선형 메모리만 오가는 C 스타일 ABI 로 두면
+# 브라우저·Node·나중의 서버가 **같은 .wasm 을 글루 없이** 쓴다.
+# 같은 코드를 서버에서도 돌릴 수 있어야 한다는 요구(plan.md 5-2)가 여기 걸려 있다.
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[profile.release]
+opt-level = 3
+lto = true
+panic = "abort"
+codegen-units = 1

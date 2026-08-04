@@ -134,6 +134,11 @@ export function App() {
           <span className="text-xs text-neutral-500">
             Phase 1 편집기 · 시안은 mockup/studio-v2.html
           </span>
+          {engine.engineKind && (
+            <span className="font-mono text-xs text-neutral-500">
+              DSP: {engine.engineKind === 'rust' ? 'Rust/WASM' : 'TypeScript (대체)'}
+            </span>
+          )}
         </header>
 
         {/* 트랜스포트 */}

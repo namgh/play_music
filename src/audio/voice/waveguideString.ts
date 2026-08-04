@@ -170,7 +170,7 @@ export class WaveguideStringVoice implements Voice {
       pluckHardness: num(params, 'pluckHardness'),
     };
 
-    const { w, lpCoef, dispCoef, lineDelay } = computeLoop(freqHz, p, this.sampleRate);
+    const { w, lpCoef, dispCoef, lineDelay, targetDelay } = computeLoop(freqHz, p, this.sampleRate);
     this.lpCoef = lpCoef;
     this.dispCoef = dispCoef;
 
@@ -188,9 +188,11 @@ export class WaveguideStringVoice implements Voice {
     this.apCoef = coef ?? 0;
     this.actualLoopDelay = lineDelay;
 
-    const ratio = REF_SCALE_MM / p.scaleLengthMm;
-    const t60 = Math.max(0.05, p.sustainSec * Math.pow(1 / ratio, 1.5));
-    this.loopGain = Math.pow(10, (-3 * lineDelay) / (t60 * this.sampleRate));
+    // T60 은 전체 주기로 계산한다 — 루프 한 바퀴는 `fs/f0` 이지 딜레이 라인 길이가 아니다.
+    // 줄 길이 보정은 걸지 않는다 (악기 정의가 이미 악기별 값을 갖고 있어 이중 계산이 된다).
+    // Rust 코어와 같은 규칙이다.
+    const t60 = Math.max(0.05, p.sustainSec);
+    this.loopGain = Math.pow(10, (-3 * targetDelay) / (t60 * this.sampleRate));
 
     this.fillExcitation(p, velocity);
     this.isActive = true;

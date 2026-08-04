@@ -316,6 +316,55 @@ export function measureCentsErrorInContext(
   return centsBetween(targetHz, measureFreqInContext(x, targetHz, sampleRate, options));
 }
 
+/**
+ * **기본음 성분**의 감쇠 시간(T60, 초). 끝까지 살아 있으면 Infinity.
+ *
+ * 전체 RMS 로 재면 안 된다 — 어택의 피크는 고역 성분이 지배하고, 고역은 루프 필터
+ * 때문에 먼저 죽는다. 그러면 전체 RMS 가 기본음보다 훨씬 빨리 떨어져 "서스테인이
+ * 지정값의 절반밖에 안 된다"는 잘못된 결론이 나온다.
+ *
+ * 우리 `sustainSec` 파라미터는 루프 이득으로 **기본음의 감쇠**를 정하므로,
+ * 검증도 기본음으로 해야 앞뒤가 맞는다.
+ */
+export function measureFundamentalT60(
+  x: Float32Array,
+  targetHz: number,
+  sampleRate: number,
+): number {
+  const win = Math.max(64, Math.round((4 * sampleRate) / targetHz));
+  const hop = Math.max(1, Math.floor(win / 2));
+  if (x.length < win) return 0;
+
+  const w = (2 * Math.PI * targetHz) / sampleRate;
+  const magnitudes: number[] = [];
+  for (let start = 0; start + win <= x.length; start += hop) {
+    let re = 0;
+    let im = 0;
+    let norm = 0;
+    for (let m = 0; m < win; m++) {
+      const window = 0.5 - 0.5 * Math.cos((2 * Math.PI * m) / (win - 1));
+      const s = x[start + m]! * window;
+      re += s * Math.cos(w * m);
+      im -= s * Math.sin(w * m);
+      norm += window;
+    }
+    magnitudes.push((2 * Math.hypot(re, im)) / Math.max(1, norm));
+  }
+
+  let peak = 0;
+  let peakIndex = 0;
+  for (const [i, m] of magnitudes.entries()) {
+    if (m > peak) { peak = m; peakIndex = i; }
+  }
+  if (peak <= 0) return 0;
+
+  const floor = peak * 0.001; // -60 dB
+  for (let i = peakIndex; i < magnitudes.length; i++) {
+    if (magnitudes[i]! < floor) return ((i - peakIndex) * hop) / sampleRate;
+  }
+  return Number.POSITIVE_INFINITY;
+}
+
 /** 결정론적 테스트용 LCG. `Math.random` 을 대체해 주입한다 */
 export function seededRng(seed = 0x2f6e2b1): () => number {
   let state = seed >>> 0;
