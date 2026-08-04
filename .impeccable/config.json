@@ -1,0 +1,9 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [
+      "spike/m0-karplus/index.html"
+    ],
+    "ignoreValues": []
+  }
+}

@@ -1,0 +1,17 @@
+# node
+node_modules/
+dist/
+*.log
+
+# rust / wasm (M1 이후)
+target/
+pkg/
+
+# 로컬 도구 상태
+.impeccable/hook.cache.json
+.impeccable/config.local.json
+.impeccable/questions/
+.claude/settings.local.json
+
+# macOS
+.DS_Store
