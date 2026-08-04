@@ -228,6 +228,54 @@ test('보이스 스틸링이 동작하고 동시 발음이 합산된다', async 
   assert.ok(out.every(Number.isFinite));
 });
 
+test('발음 중 파라미터를 바꿔도 음정이 유지된다 (M1.5 실시간 반영)', async () => {
+  // 튜닝 도구는 소리를 내는 중에 파라미터를 돌린다. 그때 루프 계수만 갈아 끼우면
+  // 딜레이 길이가 어긋나 음정이 틀어진다 — 현재 주파수로 루프를 다시 계산해야 한다
+  const wasm = await engine();
+  const base = instrumentParams(resolveInstrument('electric-guitar', registry), 'default', null);
+  const hz = midiToHz(57);
+
+  wasm.allOff();
+  wasm.noteOn(hz, 1, base);
+
+  const total = Math.round(2 * FS);
+  const out = new Float32Array(total);
+  const scratch = new Float32Array(BLOCK);
+  for (let at = 0; at < total; at += BLOCK) {
+    const frames = Math.min(BLOCK, total - at);
+    scratch.fill(0);
+    wasm.process(scratch, frames);
+    out.set(scratch.subarray(0, frames), at);
+    // 렌더 중간에 강성·감쇠를 계속 움직인다
+    if (at % (BLOCK * 40) === 0) {
+      const t = at / total;
+      wasm.setParamsLive({
+        ...base,
+        stiffness: 0.004 + t * 0.03,
+        damping: 0.02 + t * 0.12,
+        scaleLengthMm: 500 + t * 350,
+      });
+    }
+  }
+
+  assert.ok(out.every(Number.isFinite), '파라미터를 흔들자 NaN 이 났다');
+  // 파라미터가 흔들리는 동안에도 음정은 그대로여야 한다
+  const err = measureCentsError(out.subarray(0, Math.round(0.5 * FS)), hz, FS);
+  assert.ok(Math.abs(err) <= TOLERANCE_CENTS, `음정 오차 ${err.toFixed(3)} 센트`);
+});
+
+test('발음 중이 아닐 때 파라미터 변경은 아무 일도 하지 않는다', async () => {
+  const wasm = await engine();
+  const base = instrumentParams(resolveInstrument('harp', registry), 'default', null);
+  wasm.allOff();
+  wasm.setParamsLive(base); // 울리는 보이스가 없다
+
+  const out = new Float32Array(BLOCK);
+  const active = wasm.process(out, BLOCK);
+  assert.equal(active, 0);
+  assert.ok(out.every((v) => v === 0), '무음이어야 한다');
+});
+
 test('블록 상한을 넘기면 조용히 자르지 않고 에러다', async () => {
   const wasm = await engine();
   assert.throws(() => wasm.process(new Float32Array(4096), 4096), /블록이 너무 크다/);

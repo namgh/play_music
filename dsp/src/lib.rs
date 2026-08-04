@@ -111,6 +111,25 @@ pub extern "C" fn note_on(freq_hz: f32, velocity: f32, gain: f32) -> u32 {
     index as u32
 }
 
+/// 발음 중인 보이스들의 파라미터를 바꾼다 (`sound.md` 9-6 튜닝 도구).
+/// `param_buffer()` 를 채운 뒤 부른다. `voice` 가 u32::MAX 면 전체에 적용.
+#[no_mangle]
+pub extern "C" fn set_params_live(voice: u32) {
+    let params = read_params();
+    let e = engine();
+    if voice == u32::MAX {
+        for i in 0..MAX_VOICES {
+            e.params[i] = params;
+            e.voices[i].set_params_live(&params);
+        }
+        return;
+    }
+    if let Some(v) = e.voices.get_mut(voice as usize) {
+        e.params[voice as usize] = params;
+        v.set_params_live(&params);
+    }
+}
+
 #[no_mangle]
 pub extern "C" fn note_off(voice: u32) {
     let e = engine();

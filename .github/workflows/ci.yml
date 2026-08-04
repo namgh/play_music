@@ -1,0 +1,81 @@
+# CI — `CLAUDE.md` 의 "절대 타협 불가" 항목을 지키는 장치.
+#
+# 핵심은 **음정 오차 ±1센트 자동 회귀 테스트**다 (`sound.md` 11-1).
+# 웨이브가이드의 딜레이를 정수로 반올림하면 고음에서 반음의 3분의 2가 틀어지고,
+# 그러면 "음정이 정밀하다"는 제품 주장 전체가 무너진다. 사람이 기억해서 돌리는
+# 것으로는 안 되므로 매 푸시마다 자동으로 돈다.
+
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  # 같은 브랜치에 연달아 푸시하면 이전 실행을 취소한다
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Node 설치
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Rust 설치 (wasm 타겟 포함)
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update
+          rustup target add wasm32-unknown-unknown
+          rustup component add rustfmt clippy
+
+      - name: Rust 빌드 캐시
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            dsp/target
+          key: cargo-${{ runner.os }}-${{ hashFiles('dsp/Cargo.toml', 'dsp/src/**') }}
+          restore-keys: cargo-${{ runner.os }}-
+
+      - run: npm ci
+
+      # --- Rust 코어 ---------------------------------------------------------
+
+      - name: Rust 포맷 검사
+        run: cargo fmt --manifest-path dsp/Cargo.toml --check
+
+      - name: Rust 린트
+        run: cargo clippy --manifest-path dsp/Cargo.toml --all-targets -- -D warnings
+
+      - name: Rust 단위 테스트 (필터 수식)
+        run: cargo test --manifest-path dsp/Cargo.toml
+
+      - name: Rust → wasm 빌드
+        run: npm run build:dsp
+
+      # --- TypeScript --------------------------------------------------------
+
+      - name: 타입 검사
+        run: npm run typecheck
+
+      # 여기가 이 워크플로의 존재 이유다.
+      # 모델·스케줄러·악기·종단·wasm 테스트가 전부 여기서 돈다
+      - name: 테스트 (음정 ±1센트 회귀 포함)
+        run: npm run test:model
+
+      - name: M0 스파이크 음정 테스트
+        run: npm run test:pitch
+
+      - name: 프로덕션 빌드
+        run: npm run build

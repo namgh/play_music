@@ -105,3 +105,115 @@ pub fn solve_allpass_coef(frac: f64, w: f64) -> Option<f64> {
     }
     Some(0.5 * (lo + hi))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 위상 지연 공식이 맞는지 **수치 미분으로 교차 검증**한다.
+    /// 위상 지연 = -θ(ω)/ω 인데, 공식을 잘못 유도하면 부호나 역수가 뒤집혀도
+    /// "그럴듯한 숫자"가 나온다. 독립적인 방법으로 확인해야 잡힌다.
+    fn numeric_phase_delay<F>(response: F, w: f64) -> f64
+    where
+        F: Fn(f64) -> (f64, f64),
+    {
+        let (re, im) = response(w);
+        let theta = im.atan2(re);
+        -theta / w
+    }
+
+    #[test]
+    fn one_zero_phase_delay_matches_response() {
+        for s in [0.0f64, 0.05, 0.2, 0.4] {
+            for w in [0.001f64, 0.05, 0.3, 1.0, 2.5] {
+                let expected = numeric_phase_delay(|w| ((1.0 - s) + s * w.cos(), -s * w.sin()), w);
+                let got = OneZero::phase_delay(s, w);
+                assert!(
+                    (got - expected).abs() < 1e-12,
+                    "s={s} w={w}: {got} != {expected}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn allpass_magnitude_is_unity() {
+        // 올패스가 진폭을 바꾸면 루프 이득 계산이 전부 틀어진다
+        for a in [-0.9f64, -0.4, 0.0, 0.4, 0.9] {
+            for w in [0.01f64, 0.3, 1.0, 3.0] {
+                let num = (a + w.cos(), -w.sin());
+                let den = (1.0 + a * w.cos(), -a * w.sin());
+                let mag =
+                    (num.0 * num.0 + num.1 * num.1).sqrt() / (den.0 * den.0 + den.1 * den.1).sqrt();
+                assert!((mag - 1.0).abs() < 1e-12, "a={a} w={w}: |H|={mag}");
+            }
+        }
+    }
+
+    #[test]
+    fn allpass_phase_delay_dc_limit() {
+        for a in [-0.8f64, -0.3, 0.0, 0.3, 0.8] {
+            let expected = (1.0 - a) / (1.0 + a);
+            let got = Allpass::phase_delay(a, 1e-7);
+            assert!((got - expected).abs() < 1e-4, "a={a}: {got} != {expected}");
+        }
+    }
+
+    #[test]
+    fn negative_allpass_delay_decreases_with_frequency() {
+        // 강성(인하모니시티)의 방향. a < 0 이어야 상위 하모닉이 위로 밀린다.
+        // 부호를 뒤집으면 물리적으로 반대인 소리가 난다
+        let a = -0.3f64;
+        let mut previous = Allpass::phase_delay(a, 0.01);
+        for w in [0.1f64, 0.3, 0.6, 1.0, 1.5] {
+            let current = Allpass::phase_delay(a, w);
+            assert!(current < previous, "w={w}: {current} >= {previous}");
+            previous = current;
+        }
+    }
+
+    #[test]
+    fn dc_block_kills_dc_and_passes_audio() {
+        let r = 1.0f64 - 1e-4;
+        assert!(DcBlock::magnitude(r, 0.0) < 1e-9, "DC 가 통과한다");
+        assert!(DcBlock::magnitude(r, 0.005) > 0.9, "저음이 과하게 깎인다");
+        assert!((DcBlock::magnitude(r, 1.0) - 1.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn solve_allpass_coef_inverts_phase_delay() {
+        // 교과서 공식 c=(1-d)/(1+d) 를 쓰면 고음에서 틀어진다. 여기서 푸는 값은
+        // **해당 주파수에서** 정확히 목표 지연을 내야 한다
+        for w in [0.01f64, 0.1, 0.3, 0.55] {
+            for frac in [0.5f64, 0.8, 1.0, 1.3] {
+                let Some(c) = solve_allpass_coef(frac, w) else {
+                    continue;
+                };
+                let got = Allpass::phase_delay(c, w);
+                assert!((got - frac).abs() < 1e-9, "w={w} frac={frac}: {got}");
+            }
+        }
+    }
+
+    #[test]
+    fn textbook_coefficient_is_wrong_at_high_frequency() {
+        // 왜 이분법이 필요한지 숫자로 남긴다. C8 부근(w≈0.55)에서 교과서 공식은
+        // 목표 지연을 못 낸다
+        let w = 0.548f64;
+        let frac = 1.0_f64;
+        let textbook = (1.0 - frac) / (1.0 + frac);
+        let solved = solve_allpass_coef(frac, w).unwrap();
+        let textbook_delay = Allpass::phase_delay(textbook, w);
+        assert!(
+            (textbook_delay - frac).abs() > 1e-6 || (textbook - solved).abs() < 1e-9,
+            "교과서 공식이 이 지점에서 우연히 맞다면 테스트 전제를 다시 봐야 한다"
+        );
+    }
+
+    #[test]
+    fn out_of_range_fraction_returns_none() {
+        // 조용히 엉뚱한 계수를 돌려주면 음정이 틀어진 채로 소리가 난다
+        assert!(solve_allpass_coef(50.0, 0.5).is_none());
+        assert!(solve_allpass_coef(0.0001, 0.5).is_none());
+    }
+}

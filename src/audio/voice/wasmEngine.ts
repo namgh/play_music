@@ -29,6 +29,7 @@ interface WasmExports {
   param_buffer(): number;
   output_buffer(): number;
   note_on(freqHz: number, velocity: number, gain: number): number;
+  set_params_live(voice: number): void;
   note_off(voice: number): void;
   all_off(): void;
   process(frames: number): number;
@@ -97,6 +98,21 @@ export class WasmVoiceEngine {
     const voice = this.exports.note_on(freqHz, velocity, gain);
     this.refreshViews(); // note_on 안에서 자랐을 수 있다
     return voice;
+  }
+
+  /**
+   * **발음 중인 보이스에** 파라미터를 반영한다 (`sound.md` 9-6 튜닝 도구).
+   * 현재 주파수로 루프를 다시 계산하므로 음정은 유지된다. 단 큰 폭으로 움직이면
+   * 클릭이 난다 — 파라미터 스무딩(`sound.md` 6-4)은 아직 없다.
+   */
+  setParamsLive(params: Readonly<Record<string, ParamValue>>, voice = 0xffffffff): void {
+    this.refreshViews();
+    WASM_PARAM_ORDER.forEach((key, i) => {
+      const value = params[key];
+      this.paramView[i] = typeof value === 'number' && Number.isFinite(value) ? value : 0;
+    });
+    this.exports.set_params_live(voice);
+    this.refreshViews();
   }
 
   noteOff(voice: number): void {

@@ -125,9 +125,8 @@ pub fn compute_loop(freq_hz: f64, params: &StringParams, sample_rate: f64) -> Lo
     let mut k = 1.0;
     while k * freq_hz < nyquist {
         let wk = 2.0 * core::f64::consts::PI * k * freq_hz / sample_rate;
-        let mag = loop_gain
-            * OneZero::magnitude(lp_coef, wk)
-            * DcBlock::magnitude(DC_BLOCK_POLE, wk);
+        let mag =
+            loop_gain * OneZero::magnitude(lp_coef, wk) * DcBlock::magnitude(DC_BLOCK_POLE, wk);
         if mag > worst {
             worst = mag;
         }
@@ -177,6 +176,8 @@ pub struct StringVoice {
 
     rng: Lcg,
     active: bool,
+    /// 지금 울리고 있는 주파수. 발음 중 파라미터를 바꿀 때 루프를 다시 계산하려면 필요하다
+    freq_hz: f64,
 }
 
 impl StringVoice {
@@ -196,6 +197,7 @@ impl StringVoice {
             dc_y1: 0.0,
             rng: Lcg(seed | 1),
             active: false,
+            freq_hz: 0.0,
         }
     }
 
@@ -208,10 +210,28 @@ impl StringVoice {
     }
 
     pub fn note_on(&mut self, freq_hz: f64, velocity: f64, params: &StringParams) {
+        self.freq_hz = freq_hz;
         self.setup = compute_loop(freq_hz, params, self.sample_rate);
         self.reset_states();
         self.fill_excitation(params, velocity);
         self.active = true;
+    }
+
+    /// **발음 중** 파라미터 변경 (`sound.md` 9-6 — 튜닝 도구의 "실시간 반영").
+    ///
+    /// 루프를 지금 울리고 있는 주파수로 다시 계산한다. 딜레이 길이가 같이 바뀌므로
+    /// 음정은 유지되지만, 큰 폭으로 움직이면 **클릭이 난다**. 파라미터 스무딩
+    /// (`sound.md` 6-4)은 아직 없다 — 튜닝 도구에서 귀로 비교하는 용도라 감수한다.
+    /// 스무딩이 붙기 전까지 재생 경로에서는 쓰지 않는다.
+    pub fn set_params_live(&mut self, params: &StringParams) {
+        if !self.active || self.freq_hz <= 0.0 {
+            return;
+        }
+        let next = compute_loop(self.freq_hz, params, self.sample_rate);
+
+        // 딜레이 라인 길이가 바뀌면 순환 중인 파형의 위치가 어긋난다. 상태를 지우지
+        // 않고 계수만 갈아 끼우면 한 주기 동안 과도 구간이 생기고, 그게 클릭이다.
+        self.setup = next;
     }
 
     pub fn note_off(&mut self) {
@@ -255,7 +275,11 @@ impl StringVoice {
             self.burst_src[..n].copy_from_slice(&self.burst[..n]);
             for i in 0..n {
                 let a = if i >= d0 { self.burst_src[i - d0] } else { 0.0 };
-                let b = if i > d0 { self.burst_src[i - d0 - 1] } else { 0.0 };
+                let b = if i > d0 {
+                    self.burst_src[i - d0 - 1]
+                } else {
+                    0.0
+                };
                 self.burst[i] = self.burst_src[i] - ((1.0 - frac) * a + frac * b);
             }
         }
@@ -267,7 +291,11 @@ impl StringVoice {
             *v -= mean;
             peak = peak.max(v.abs());
         }
-        let scale = if peak > 1e-12 { 0.5 * velocity / peak } else { 0.0 };
+        let scale = if peak > 1e-12 {
+            0.5 * velocity / peak
+        } else {
+            0.0
+        };
         for i in 0..n {
             self.buffer[i] = (self.burst[i] * scale) as f32;
         }
