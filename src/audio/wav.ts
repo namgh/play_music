@@ -1,0 +1,128 @@
+/**
+ * WAV 인코딩 (`plan.md` 5-1 Phase 1 완료 조건 — "내보낼 수 있다").
+ *
+ * 24bit 정수 PCM 으로 쓴다 (`sound.md` 6-6: 출력 48kHz, 내보내기 24bit).
+ * 32bit float 도 규격에는 있지만 받는 쪽 호환성이 떨어진다.
+ *
+ * 순수 함수다 — 브라우저 API 없이 테스트된다. 다운로드는 호출자 몫.
+ */
+
+export type BitDepth = 16 | 24;
+
+export interface WavOptions {
+  sampleRate: number;
+  bitDepth?: BitDepth;
+}
+
+/** float 샘플을 정수로. 클리핑은 여기서 한 번만 한다 */
+function quantizeSample(value: number, maxAmplitude: number): number {
+  const clamped = Math.max(-1, Math.min(1, value));
+  // 음수 쪽이 한 칸 더 넓은 2의 보수 범위를 그대로 쓰지 않고 대칭으로 자른다.
+  // 비대칭으로 스케일하면 0 이 0 으로 가지 않아 DC 가 생긴다
+  return Math.round(clamped * maxAmplitude);
+}
+
+/**
+ * 채널별 Float32 를 WAV 바이트로. 채널 길이가 다르면 가장 긴 것에 맞춰 0으로 채운다.
+ */
+export function encodeWav(channels: readonly Float32Array[], options: WavOptions): Uint8Array {
+  if (channels.length === 0) throw new Error('채널이 없다');
+  const bitDepth = options.bitDepth ?? 24;
+  const bytesPerSample = bitDepth / 8;
+  const numChannels = channels.length;
+  const frames = channels.reduce((max, ch) => Math.max(max, ch.length), 0);
+
+  const dataBytes = frames * numChannels * bytesPerSample;
+  const buffer = new ArrayBuffer(44 + dataBytes);
+  const view = new DataView(buffer);
+  const bytes = new Uint8Array(buffer);
+
+  const ascii = (offset: number, text: string) => {
+    for (let i = 0; i < text.length; i++) bytes[offset + i] = text.charCodeAt(i);
+  };
+
+  ascii(0, 'RIFF');
+  view.setUint32(4, 36 + dataBytes, true);
+  ascii(8, 'WAVE');
+
+  ascii(12, 'fmt ');
+  view.setUint32(16, 16, true);          // fmt 청크 크기
+  view.setUint16(20, 1, true);           // PCM
+  view.setUint16(22, numChannels, true);
+  view.setUint32(24, options.sampleRate, true);
+  view.setUint32(28, options.sampleRate * numChannels * bytesPerSample, true); // byte rate
+  view.setUint16(32, numChannels * bytesPerSample, true);                      // block align
+  view.setUint16(34, bitDepth, true);
+
+  ascii(36, 'data');
+  view.setUint32(40, dataBytes, true);
+
+  const maxAmplitude = Math.pow(2, bitDepth - 1) - 1;
+  let offset = 44;
+  for (let frame = 0; frame < frames; frame++) {
+    for (let ch = 0; ch < numChannels; ch++) {
+      const source = channels[ch]!;
+      const sample = quantizeSample(frame < source.length ? source[frame]! : 0, maxAmplitude);
+      if (bitDepth === 16) {
+        view.setInt16(offset, sample, true);
+        offset += 2;
+      } else {
+        // 24bit 은 DataView 에 없으므로 리틀엔디언으로 직접 쓴다
+        const u = sample < 0 ? sample + 0x1000000 : sample;
+        bytes[offset] = u & 0xff;
+        bytes[offset + 1] = (u >> 8) & 0xff;
+        bytes[offset + 2] = (u >> 16) & 0xff;
+        offset += 3;
+      }
+    }
+  }
+
+  return bytes;
+}
+
+/** 헤더만 읽어 되돌린다 — 테스트와 디버깅용 */
+export function readWavHeader(bytes: Uint8Array): {
+  sampleRate: number;
+  channels: number;
+  bitDepth: number;
+  frames: number;
+} {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const tag = (offset: number) => String.fromCharCode(...bytes.subarray(offset, offset + 4));
+  if (tag(0) !== 'RIFF' || tag(8) !== 'WAVE') throw new Error('WAV 가 아니다');
+
+  const channels = view.getUint16(22, true);
+  const bitDepth = view.getUint16(34, true);
+  const dataBytes = view.getUint32(40, true);
+  return {
+    sampleRate: view.getUint32(24, true),
+    channels,
+    bitDepth,
+    frames: dataBytes / (channels * (bitDepth / 8)),
+  };
+}
+
+/** 데이터 청크를 float 로 되돌린다 — 왕복 검증용 */
+export function decodeWav(bytes: Uint8Array): { channels: Float32Array[]; sampleRate: number } {
+  const header = readWavHeader(bytes);
+  const bytesPerSample = header.bitDepth / 8;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const maxAmplitude = Math.pow(2, header.bitDepth - 1) - 1;
+
+  const channels = Array.from({ length: header.channels }, () => new Float32Array(header.frames));
+  let offset = 44;
+  for (let frame = 0; frame < header.frames; frame++) {
+    for (let ch = 0; ch < header.channels; ch++) {
+      let sample: number;
+      if (header.bitDepth === 16) {
+        sample = view.getInt16(offset, true);
+      } else {
+        const u = bytes[offset]! | (bytes[offset + 1]! << 8) | (bytes[offset + 2]! << 16);
+        sample = u >= 0x800000 ? u - 0x1000000 : u;
+      }
+      channels[ch]![frame] = sample / maxAmplitude;
+      offset += bytesPerSample;
+    }
+  }
+  return { channels, sampleRate: header.sampleRate };
+}
