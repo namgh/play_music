@@ -38,14 +38,19 @@ export function useAudioEngine(
       // Rust DSP 코어를 먼저 붙여 본다. 실패하면 TS 구현으로 떨어진다 —
       // wasm 로드 실패가 "소리가 안 난다"로 이어지면 원인을 찾기 어렵다
       let wasm: WasmVoiceEngine | null = null;
+      let factory: ((sampleRate: number) => Promise<WasmVoiceEngine>) | null = null;
       try {
         const response = await fetch(wasmUrl);
-        wasm = await WasmVoiceEngine.create(await response.arrayBuffer(), ctx.sampleRate);
+        // 바이트를 보관한다. 내보내기가 다른 샘플레이트를 요구하면 그 레이트로
+        // 코어를 하나 더 만들어야 한다 (같은 인스턴스로는 음정이 틀어진다)
+        const bytes = await response.arrayBuffer();
+        wasm = await WasmVoiceEngine.create(bytes, ctx.sampleRate);
+        factory = (rate: number) => WasmVoiceEngine.create(bytes, rate);
       } catch (err) {
         console.warn('Rust DSP 코어 로드 실패 — TS 구현으로 진행한다', err);
       }
       setEngineKind(wasm ? 'rust' : 'typescript');
-      rendererRef.current = new BufferRenderer(ctx, registry, wasm);
+      rendererRef.current = new BufferRenderer(ctx, registry, wasm, factory);
     }
     await ctx.resume();
     return rendererRef.current;

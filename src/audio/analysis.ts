@@ -365,6 +365,68 @@ export function measureFundamentalT60(
   return Number.POSITIVE_INFINITY;
 }
 
+/**
+ * **시간에 따른 음정 변화**를 센트로 추적한다.
+ *
+ * 음정 곡선(글라이드·비브라토)이 실제로 파형에 나타나는지 확인하는 도구이고,
+ * 튜닝 도구에서 곡선을 그려 보여줄 때도 같은 것을 쓴다.
+ *
+ * 방식: 목표 주파수로 복조한 뒤 창 사이의 위상 증가율을 본다. 짧은 창을 써야
+ * 비브라토를 따라갈 수 있고, 너무 짧으면 잡음에 흔들린다 — 4주기가 타협점이다.
+ */
+export function trackPitchCents(
+  x: Float32Array,
+  targetHz: number,
+  sampleRate: number,
+  options: { periodsPerWindow?: number; hopPeriods?: number } = {},
+): { timeSec: number; cents: number }[] {
+  const period = sampleRate / targetHz;
+  const win = Math.max(32, Math.round(period * (options.periodsPerWindow ?? 4)));
+  const hop = Math.max(8, Math.round(period * (options.hopPeriods ?? 1)));
+  const w = (2 * Math.PI * targetHz) / sampleRate;
+
+  const phases: { at: number; phase: number; magnitude: number }[] = [];
+  for (let start = 0; start + win <= x.length; start += hop) {
+    let re = 0;
+    let im = 0;
+    for (let m = 0; m < win; m++) {
+      const window = 0.5 - 0.5 * Math.cos((2 * Math.PI * m) / (win - 1));
+      const s = x[start + m]! * window;
+      re += s * Math.cos(w * m);
+      im -= s * Math.sin(w * m);
+    }
+    // `- w * start` 를 빼먹으면 안 된다. 이게 없으면 창 사이의 위상차에 목표
+    // 주파수 자체의 회전이 섞여서, 홉이 정수 주기가 아닐 때 값이 통째로 거짓이 된다
+    // (반주기 홉에서 π 가 섞여 1200센트가 나왔다). 정수 주기 홉에서는 그 항이
+    // 우연히 사라져 버그가 숨는다.
+    phases.push({
+      at: start,
+      phase: Math.atan2(im, re) - w * start,
+      magnitude: Math.hypot(re, im),
+    });
+  }
+
+  // 진폭이 너무 작은 구간은 위상이 잡음이라 버린다
+  let peak = 0;
+  for (const p of phases) peak = Math.max(peak, p.magnitude);
+  const floor = peak * 0.02;
+
+  const out: { timeSec: number; cents: number }[] = [];
+  for (let i = 1; i < phases.length; i++) {
+    const a = phases[i - 1]!;
+    const b = phases[i]!;
+    if (a.magnitude < floor || b.magnitude < floor) continue;
+    const dPhase = wrapPi(b.phase - a.phase);
+    const errHz = dPhase / (2 * Math.PI * ((b.at - a.at) / sampleRate));
+    // 두 창의 중간 시각으로 기록한다
+    out.push({
+      timeSec: (a.at + win / 2 + (b.at + win / 2)) / 2 / sampleRate,
+      cents: centsBetween(targetHz, targetHz + errHz),
+    });
+  }
+  return out;
+}
+
 /** 결정론적 테스트용 LCG. `Math.random` 을 대체해 주입한다 */
 export function seededRng(seed = 0x2f6e2b1): () => number {
   let state = seed >>> 0;

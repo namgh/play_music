@@ -20,7 +20,7 @@
 import type {
   AudioRenderer, ExportOptions, ExportResult, InstrumentCapabilities, TransportPosition,
 } from './renderer.ts';
-import type { Note, Project, Track, TrackId } from '../model/project.ts';
+import type { Note, PitchCurve, Project, Track, TrackId } from '../model/project.ts';
 import type { Ticks } from '../model/time.ts';
 import { pitchToHz } from '../model/pitch.ts';
 import { LookaheadScheduler } from './scheduler.ts';
@@ -30,6 +30,7 @@ import { instrumentParams, resolveInstrument } from '../instruments/resolve.ts';
 import type { ResolvedInstrument } from '../instruments/types.ts';
 import { renderNoteToPcm, renderProjectOffline } from './offlineRender.ts';
 import type { WasmVoiceEngine } from './voice/wasmEngine.ts';
+import { curveToParams } from './voice/wasmEngine.ts';
 
 /** 타이머 주기. 룩어헤드보다 충분히 짧아야 한다 */
 const PUMP_INTERVAL_MS = 25;
@@ -66,14 +67,26 @@ export class BufferRenderer implements AudioRenderer {
    */
   private readonly wasm: WasmVoiceEngine | null;
 
+  /**
+   * 다른 샘플레이트로 코어를 새로 만드는 함수.
+   *
+   * 왜 필요한가: wasm 엔진은 `init(sampleRate)` 로 고정된다. 재생용 엔진은
+   * `ctx.sampleRate`(장치에 따라 44.1k 일 수 있다)로 만들어졌는데, 내보내기는
+   * 48kHz 를 요구한다 (`sound.md` 6-6). 같은 인스턴스로 렌더하면 **음정이 비율만큼
+   * 틀린 파일이 조용히 나온다.** 그래서 내보낼 때 그 레이트로 하나 더 만든다.
+   */
+  private readonly wasmFactory: ((sampleRate: number) => Promise<WasmVoiceEngine>) | null;
+
   constructor(
     ctx: AudioContext,
     registry: ReadonlyMap<string, InstrumentDefinition>,
     wasm: WasmVoiceEngine | null = null,
+    wasmFactory: ((sampleRate: number) => Promise<WasmVoiceEngine>) | null = null,
   ) {
     this.ctx = ctx;
     this.registry = registry;
     this.wasm = wasm;
+    this.wasmFactory = wasmFactory;
     this.masterGain = ctx.createGain();
     this.masterGain.connect(ctx.destination);
 
@@ -151,7 +164,7 @@ export class BufferRenderer implements AudioRenderer {
     const runtime = this.tracks.get(trackId);
     if (!runtime || !this.project) return;
     const freqHz = pitchToHz(note.pitch, this.project.tuning);
-    this.startBuffer(runtime, freqHz, note.velocity, this.ctx.currentTime, MAX_NOTE_SEC);
+    this.startBuffer(runtime, freqHz, note.velocity, this.ctx.currentTime, MAX_NOTE_SEC, note.pitchCurve);
   }
 
   capabilitiesOf(instrumentId: string): InstrumentCapabilities {
@@ -169,8 +182,13 @@ export class BufferRenderer implements AudioRenderer {
     if (!this.project) throw new Error('setProject 가 먼저 호출돼야 한다');
     // 미리듣기와 같은 보이스 코드를 쓰므로 결과가 일치한다.
     // WASM 워크렛이 들어오면 이 자리는 OfflineAudioContext + 같은 워크렛으로 바뀐다
+    // 미리듣기와 같은 코어를 쓴다. wasm 을 안 넘기면 내보낸 파일에서 음정 곡선이 사라진다
+    const wasm = await this.wasmForRate(options.sampleRate);
     const render = (project: Project) =>
-      renderProjectOffline(project, this.registry, { sampleRate: options.sampleRate });
+      renderProjectOffline(project, this.registry, {
+        sampleRate: options.sampleRate,
+        wasm,
+      });
 
     if (!options.stems) {
       const { pcm } = render(this.project);
@@ -196,13 +214,29 @@ export class BufferRenderer implements AudioRenderer {
 
   // -------------------------------------------------------------------------
 
+  /**
+   * 요청한 샘플레이트로 동작하는 코어를 돌려준다.
+   * 레이트가 다르고 새로 만들 방법도 없으면 **조용히 틀린 소리를 내는 대신 실패한다.**
+   */
+  private async wasmForRate(sampleRate: number): Promise<WasmVoiceEngine | null> {
+    if (!this.wasm) return null;
+    if (Math.abs(this.wasm.sampleRate - sampleRate) < 0.5) return this.wasm;
+    if (!this.wasmFactory) {
+      throw new Error(
+        `내보내기 샘플레이트(${sampleRate}Hz)가 코어(${this.wasm.sampleRate}Hz)와 다르고 ` +
+          '새 코어를 만들 방법이 없다 — 음정이 틀린 파일이 나오므로 중단한다',
+      );
+    }
+    return this.wasmFactory(sampleRate);
+  }
+
   private emit(event: ScheduledNote, atTime: number, durationSec: number): void {
     const runtime = this.tracks.get(event.trackId);
     if (!runtime || !this.project) return;
     const freqHz = pitchToHz(event.note.pitch, this.project.tuning);
     // 늦게 도착한 예약은 드롭하지 않고 즉시 발음한다 — 드롭하면 음이 사라진다
     const when = Math.max(atTime, this.ctx.currentTime);
-    this.startBuffer(runtime, freqHz, event.note.velocity, when, durationSec);
+    this.startBuffer(runtime, freqHz, event.note.velocity, when, durationSec, event.pitchCurve);
   }
 
   private startBuffer(
@@ -211,8 +245,9 @@ export class BufferRenderer implements AudioRenderer {
     velocity: number,
     when: number,
     _durationSec: number,
+    curve: PitchCurve | null = null,
   ): void {
-    const buffer = this.buffered(runtime, freqHz, velocity);
+    const buffer = this.buffered(runtime, freqHz, velocity, curve);
     const source = this.ctx.createBufferSource() as AudioBufferSourceNode;
     source.buffer = buffer;
     source.connect(runtime.gainNode);
@@ -227,12 +262,17 @@ export class BufferRenderer implements AudioRenderer {
   }
 
   /** Rust 코어가 있으면 그걸로, 없으면 TS 구현으로 음 하나를 렌더한다 */
-  private renderNote(runtime: TrackRuntime, freqHz: number, velocity: number): Float32Array {
+  private renderNote(
+    runtime: TrackRuntime,
+    freqHz: number,
+    velocity: number,
+    curve: PitchCurve | null,
+  ): Float32Array {
     const params = runtime.params as Record<string, number | string>;
 
     if (this.wasm && runtime.instrument.voice === 'waveguide-string') {
       this.wasm.allOff();
-      this.wasm.noteOn(freqHz, velocity, params);
+      this.wasm.noteOn(freqHz, velocity, { ...params, ...curveToParams(curve) });
       const total = Math.ceil(MAX_NOTE_SEC * this.ctx.sampleRate);
       const out = new Float32Array(total);
       const scratch = new Float32Array(WASM_BLOCK);
@@ -258,14 +298,21 @@ export class BufferRenderer implements AudioRenderer {
     });
   }
 
-  private buffered(runtime: TrackRuntime, freqHz: number, velocity: number): AudioBuffer {
+  private buffered(
+    runtime: TrackRuntime,
+    freqHz: number,
+    velocity: number,
+    curve: PitchCurve | null,
+  ): AudioBuffer {
     // 세기는 8단계로 뭉쳐 캐시 적중률을 올린다. 귀로 구분되지 않는 차이다
     const vq = Math.round(velocity * 8) / 8;
-    const key = `${runtime.paramsKey}|${freqHz.toFixed(4)}|${vq}`;
+    // **곡선이 키에 들어가야 한다.** 없으면 글라이드가 다른 음이 같은 버퍼를 공유한다
+    const curveKey = curve ? JSON.stringify(curveToParams(curve)) : '';
+    const key = `${runtime.paramsKey}|${freqHz.toFixed(4)}|${vq}|${curveKey}`;
     const hit = this.cache.get(key);
     if (hit) return hit;
 
-    const pcm = this.renderNote(runtime, freqHz, vq);
+    const pcm = this.renderNote(runtime, freqHz, vq, curve);
 
     const buffer = this.ctx.createBuffer(1, Math.max(1, pcm.length), this.ctx.sampleRate);
     // copyToChannel 대신 set — 버퍼 타입 제약을 피하고 복사도 한 번 줄인다

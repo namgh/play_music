@@ -7,16 +7,20 @@
 //! JS 쪽에서 메모리를 할당하지 않도록 보이스 풀과 출력 버퍼를 여기서 고정 크기로
 //! 들고 있는다. 할당자를 오디오 경로에 두면 지연이 튄다.
 
+pub mod curve;
 pub mod filters;
+pub mod interp;
 pub mod string_voice;
 
+use curve::PitchCurve;
 use string_voice::{StringParams, StringVoice};
 
 pub const MAX_VOICES: usize = 32;
 pub const MAX_BLOCK: usize = 2048;
 
-/// 파라미터 슬롯 개수. JS 는 이 순서로 f32 배열을 채운다
-pub const PARAM_COUNT: usize = 6;
+/// 파라미터 슬롯 개수. JS 는 이 순서로 f32 배열을 채운다.
+/// 0~5 는 줄 파라미터, 6~10 은 음정 곡선 (0 이면 곡선 없음).
+pub const PARAM_COUNT: usize = 11;
 
 struct Engine {
     sample_rate: f64,
@@ -89,6 +93,17 @@ fn read_params() -> StringParams {
     }
 }
 
+fn read_curve() -> PitchCurve {
+    let p = &engine().param_in;
+    PitchCurve {
+        glide_cents: p[6] as f64,
+        glide_ms: p[7] as f64,
+        vibrato_cents: p[8] as f64,
+        vibrato_hz: p[9] as f64,
+        vibrato_delay_ms: p[10] as f64,
+    }
+}
+
 /// 발음. `param_buffer()` 를 채운 뒤 부른다. 반환값은 쓰인 보이스 번호
 #[no_mangle]
 pub extern "C" fn note_on(freq_hz: f32, velocity: f32, gain: f32) -> u32 {
@@ -107,7 +122,8 @@ pub extern "C" fn note_on(freq_hz: f32, velocity: f32, gain: f32) -> u32 {
 
     e.params[index] = params;
     e.gains[index] = gain;
-    e.voices[index].note_on(freq_hz as f64, velocity as f64, &params);
+    let curve = read_curve();
+    e.voices[index].note_on_curved(freq_hz as f64, velocity as f64, &params, &curve);
     index as u32
 }
 

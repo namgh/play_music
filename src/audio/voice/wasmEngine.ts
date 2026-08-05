@@ -11,7 +11,11 @@
 
 import type { ParamValue } from '../../instruments/types.ts';
 
-/** Rust 쪽 `PARAM_COUNT` 와 순서가 같아야 한다 */
+/**
+ * Rust 쪽 `PARAM_COUNT` 와 순서가 **정확히** 같아야 한다.
+ * 0~5 는 줄 파라미터, 6~10 은 음정 곡선 (0 이면 곡선 없음).
+ * 순서가 어긋나면 조용히 엉뚱한 소리가 난다 — 양쪽을 같이 고칠 것.
+ */
 export const WASM_PARAM_ORDER = [
   'scaleLengthMm',
   'stiffness',
@@ -19,7 +23,26 @@ export const WASM_PARAM_ORDER = [
   'sustainSec',
   'pluckPosition',
   'pluckHardness',
+  'glideCents',
+  'glideMs',
+  'vibratoCents',
+  'vibratoHz',
+  'vibratoDelayMs',
 ] as const;
+
+/** 모델의 `PitchCurve` 를 wasm 파라미터로 펼친다 */
+export function curveToParams(curve: {
+  glide: { cents: number; ms: number } | null;
+  vibrato: { cents: number; hz: number; delayMs: number } | null;
+} | null): Record<string, number> {
+  return {
+    glideCents: curve?.glide?.cents ?? 0,
+    glideMs: curve?.glide?.ms ?? 0,
+    vibratoCents: curve?.vibrato?.cents ?? 0,
+    vibratoHz: curve?.vibrato?.hz ?? 0,
+    vibratoDelayMs: curve?.vibrato?.delayMs ?? 0,
+  };
+}
 
 const MAX_BLOCK = 2048;
 

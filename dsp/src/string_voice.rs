@@ -11,7 +11,9 @@
 //! 루프 필터를 기본음에서 단위 이득으로 정규화해 `sustain_sec` 이 실제 T60 이 되게 하고,
 //! 그 정규화가 DC 를 발산시키지 않도록 루프에 DC 차단기를 넣는다.
 
+use crate::curve::{cents_to_ratio, PitchCurve};
 use crate::filters::{solve_allpass_coef, Allpass, DcBlock, OneZero};
+use crate::interp::{lagrange4, lagrange4_response, solve_lagrange_fraction};
 
 pub const DISPERSION_STAGES: usize = 3;
 const MIN_FREQ_HZ: f64 = 20.0;
@@ -23,6 +25,11 @@ const DC_BLOCK_POLE: f64 = 1.0 - 1e-4;
 
 /// 루프 이득 상한. 정확히 1이면 감쇠가 멈춘다
 const MAX_LOOP_GAIN: f64 = 0.9999;
+
+/// 음정 곡선을 몇 샘플마다 다시 계산할지.
+/// 48kHz 에서 32샘플 = 0.67ms → 비브라토(5~7Hz)에 충분히 촘촘하고,
+/// 계수 풀이(이분법)를 매 샘플 돌리지 않아도 된다
+const MOD_BLOCK: usize = 32;
 
 #[derive(Clone, Copy, Debug)]
 pub struct StringParams {
@@ -178,6 +185,19 @@ pub struct StringVoice {
     active: bool,
     /// 지금 울리고 있는 주파수. 발음 중 파라미터를 바꿀 때 루프를 다시 계산하려면 필요하다
     freq_hz: f64,
+
+    // --- 음정 곡선 (곡선이 없으면 전부 쓰이지 않는다) ---
+    curve: PitchCurve,
+    /// 노트 시작 후 지난 샘플 수
+    elapsed: usize,
+    /// 라그랑주 보간 계수 (최신 탭 기준)
+    interp: [f64; 4],
+    /// 보간 읽기의 정수 오프셋
+    interp_offset: usize,
+    /// 다음 변조 갱신까지 남은 샘플 수
+    mod_countdown: usize,
+    /// 곡선이 있을 때의 루프 이득 (보간기 진폭까지 보정한 값)
+    curve_loop_gain: f64,
 }
 
 impl StringVoice {
@@ -198,6 +218,12 @@ impl StringVoice {
             rng: Lcg(seed | 1),
             active: false,
             freq_hz: 0.0,
+            curve: PitchCurve::default(),
+            elapsed: 0,
+            interp: [0.0, 0.0, 1.0, 0.0],
+            interp_offset: 2,
+            mod_countdown: 0,
+            curve_loop_gain: 0.0,
         }
     }
 
@@ -210,11 +236,71 @@ impl StringVoice {
     }
 
     pub fn note_on(&mut self, freq_hz: f64, velocity: f64, params: &StringParams) {
+        self.note_on_curved(freq_hz, velocity, params, &PitchCurve::default());
+    }
+
+    /// 음정 곡선이 있는 발음. 곡선이 비어 있으면 검증된 올패스 경로를 그대로 쓴다.
+    pub fn note_on_curved(
+        &mut self,
+        freq_hz: f64,
+        velocity: f64,
+        params: &StringParams,
+        curve: &PitchCurve,
+    ) {
         self.freq_hz = freq_hz;
+        self.curve = *curve;
+        self.elapsed = 0;
+        self.mod_countdown = 0;
         self.setup = compute_loop(freq_hz, params, self.sample_rate);
         self.reset_states();
         self.fill_excitation(params, velocity);
+
+        if !self.curve.is_flat() {
+            // 보간기는 올패스가 아니라 진폭이 1이 아니다. 그만큼 루프 이득을 되돌리지
+            // 않으면 서스테인이 지정값보다 짧아진다
+            let w = 2.0 * core::f64::consts::PI * freq_hz / self.sample_rate;
+            self.update_modulation();
+            let (mag, _) = lagrange4_response(0.5, w);
+            self.curve_loop_gain = (self.setup.loop_gain / mag.max(1e-6)).min(MAX_LOOP_GAIN);
+        }
+
         self.active = true;
+    }
+
+    /// 지금 시각의 음정 오프셋에 맞춰 읽기 위치와 보간 계수를 다시 정한다.
+    fn update_modulation(&mut self) {
+        let t = self.elapsed as f64 / self.sample_rate;
+        let cents = self.curve.cents_at(t);
+        let freq = self.freq_hz * cents_to_ratio(cents);
+        let w = 2.0 * core::f64::consts::PI * freq / self.sample_rate;
+
+        // 필터 계수는 기본음 기준으로 고정하고, 그것들이 만드는 지연만 현재
+        // 주파수에서 다시 잰다. 계수까지 바꾸면 음색이 비브라토와 함께 흔들린다
+        let in_loop = OneZero::phase_delay(self.setup.lp_coef, w)
+            + DISPERSION_STAGES as f64 * Allpass::phase_delay(self.setup.disp_coef, w)
+            + DcBlock::phase_delay(DC_BLOCK_POLE, w);
+        let line_delay = (self.sample_rate / freq - in_loop).max(4.0);
+
+        // 보간기의 위상 지연은 대략 2-d 이므로 정수 오프셋을 그 앞으로 잡는다
+        let mut offset = (line_delay - 1.5).floor().max(1.0) as usize;
+        let mut fraction = solve_lagrange_fraction(line_delay - offset as f64, w);
+        for step in 1..=3usize {
+            if fraction.is_some() {
+                break;
+            }
+            for candidate in [offset + step, offset.saturating_sub(step).max(1)] {
+                if let Some(d) = solve_lagrange_fraction(line_delay - candidate as f64, w) {
+                    offset = candidate;
+                    fraction = Some(d);
+                    break;
+                }
+            }
+        }
+
+        if let Some(d) = fraction {
+            self.interp = lagrange4(d);
+            self.interp_offset = offset;
+        }
     }
 
     /// **발음 중** 파라미터 변경 (`sound.md` 9-6 — 튜닝 도구의 "실시간 반영").
@@ -308,6 +394,10 @@ impl StringVoice {
         if !self.active {
             return;
         }
+        if !self.curve.is_flat() {
+            self.process_curved(out);
+            return;
+        }
 
         let size = self.buffer.len();
         let dc_pole = DC_BLOCK_POLE;
@@ -356,8 +446,76 @@ impl StringVoice {
             }
         }
 
+        self.elapsed += out.len();
+
         // 수치 안정성 (`sound.md` 6-5) — NaN 하나가 이후 전체를 무음으로 만든다
         if !self.ap_state.is_finite() || !self.lp_state.is_finite() || !self.dc_y1.is_finite() {
+            self.reset();
+            return;
+        }
+        if quiet {
+            self.active = false;
+        }
+    }
+
+    /// 음정 곡선이 있을 때의 처리.
+    ///
+    /// 올패스 대신 **상태 없는 라그랑주 보간**으로 읽는다. 올패스는 필터라서 계수를
+    /// 계속 바꾸면 그 상태가 과도 응답을 만든다 — 비브라토는 초당 수천 번 딜레이를
+    /// 바꾸므로 그 경로로는 지글거린다.
+    fn process_curved(&mut self, out: &mut [f32]) {
+        let size = self.buffer.len();
+        let dc_pole = DC_BLOCK_POLE;
+        let s = self.setup.lp_coef;
+        let a = self.setup.disp_coef;
+        let g = self.curve_loop_gain;
+
+        let mut quiet = true;
+
+        for sample in out.iter_mut() {
+            if self.mod_countdown == 0 {
+                self.update_modulation();
+                self.mod_countdown = MOD_BLOCK;
+            }
+            self.mod_countdown -= 1;
+
+            // 4점 보간 읽기. `interp[0]` 이 가장 최근 탭이고 그 지연이 `interp_offset`.
+            // usize 언더플로를 피하려고 size 를 두 번 더한 뒤 나머지를 취한다
+            let base = self.write + 2 * size - self.interp_offset;
+            let mut v = 0.0;
+            for (m, coef) in self.interp.iter().enumerate() {
+                v += coef * self.buffer[(base - m) % size] as f64;
+            }
+
+            for k in 0..DISPERSION_STAGES {
+                let y = a * v + self.disp_state[k];
+                self.disp_state[k] = v - a * y;
+                v = y;
+            }
+
+            let dc_out = v - self.dc_x1 + dc_pole * self.dc_y1;
+            self.dc_x1 = v;
+            self.dc_y1 = dc_out;
+            v = dc_out;
+
+            let lp = (1.0 - s) * v + s * self.lp_state;
+            self.lp_state = v;
+            v = lp * g;
+
+            self.buffer[self.write] = v as f32;
+            *sample += v as f32;
+            if v.abs() > 1e-5 {
+                quiet = false;
+            }
+
+            self.write += 1;
+            if self.write == size {
+                self.write = 0;
+            }
+            self.elapsed += 1;
+        }
+
+        if !self.lp_state.is_finite() || !self.dc_y1.is_finite() {
             self.reset();
             return;
         }

@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 
-import type { NoteId, Project } from '../model/project.ts';
-import { findNote, moveNotes, nudgeCents, setCents, setPitch, setVelocity } from '../editor/edits.ts';
+import type { NoteId, PitchCurve, Project } from '../model/project.ts';
+import {
+  findNote, moveNotes, nudgeCents, setCents, setPitch, setPitchCurve, setVelocity,
+} from '../editor/edits.ts';
 import { formatPitch, hzToPitch, pitchName, pitchToHz } from '../model/pitch.ts';
 import type { ProjectEditor } from '../editor/useProjectEditor.ts';
 
@@ -156,9 +158,114 @@ export function NoteInspector({ editor, onAudition }: NoteInspectorProps) {
         />
       </div>
 
+      <CurveEditor editor={editor} onApplied={audition} />
+
       <p className="border-t border-neutral-800 pt-3 text-xs text-neutral-500">
         이 수정은 기기 안에서 바로 처리됩니다. AI 를 다시 부르지 않으니 나머지 소리는 그대로입니다.
       </p>
     </aside>
+  );
+}
+
+
+/**
+ * 음정 곡선 — 목업의 "시작 글라이드 / 흔들림".
+ *
+ * `plan.md` 5-1 이 Phase 1 에 넣은 항목이고 차별점 ①의 핵심이다.
+ * 값이 0이면 곡선이 없는 것으로 취급하고, 그때는 엔진이 검증된 올패스 경로를 쓴다.
+ */
+function CurveEditor({
+  editor,
+  onApplied,
+}: {
+  editor: ProjectEditor;
+  onApplied: (next: Project) => void;
+}) {
+  const { project, selection } = editor;
+  const primaryId = selection[0];
+  const found = primaryId === undefined ? null : findNote(project, primaryId);
+  if (!found) return null;
+
+  const curve = found.note.pitchCurve;
+  const glideCents = curve?.glide?.cents ?? 0;
+  const glideMs = curve?.glide?.ms ?? 80;
+  const vibratoCents = curve?.vibrato?.cents ?? 0;
+  const vibratoHz = curve?.vibrato?.hz ?? 5;
+  const vibratoDelayMs = curve?.vibrato?.delayMs ?? 120;
+
+  const write = (next: Partial<{
+    glideCents: number; glideMs: number;
+    vibratoCents: number; vibratoHz: number; vibratoDelayMs: number;
+  }>, commit: boolean) => {
+    const merged = {
+      glideCents, glideMs, vibratoCents, vibratoHz, vibratoDelayMs, ...next,
+    };
+    const value: PitchCurve = {
+      glide: merged.glideCents === 0 ? null : { cents: merged.glideCents, ms: merged.glideMs },
+      vibrato: merged.vibratoCents === 0
+        ? null
+        : { cents: merged.vibratoCents, hz: merged.vibratoHz, delayMs: merged.vibratoDelayMs },
+      points: null,
+    };
+    const flat = value.glide === null && value.vibrato === null;
+    const updated = setPitchCurve(project, selection, flat ? null : value);
+    if (commit) {
+      editor.commit(updated);
+      onApplied(updated);
+    } else {
+      editor.preview(updated);
+    }
+  };
+
+  const row = (
+    label: string,
+    value: number,
+    min: number,
+    max: number,
+    step: number,
+    unit: string,
+    key: 'glideCents' | 'glideMs' | 'vibratoCents' | 'vibratoHz' | 'vibratoDelayMs',
+  ) => (
+    <div className="grid grid-cols-[5.5rem_1fr_4rem] items-center gap-2">
+      <label htmlFor={`c-${key}`} className="text-xs text-neutral-500">{label}</label>
+      <input
+        id={`c-${key}`}
+        type="range"
+        min={min} max={max} step={step}
+        value={value}
+        onChange={(e) => write({ [key]: Number(e.target.value) }, false)}
+        onPointerUp={(e) => write({ [key]: Number((e.target as HTMLInputElement).value) }, true)}
+        className="accent-teal-300"
+      />
+      <span className="text-right font-mono text-xs text-neutral-300">
+        {value}{unit}
+      </span>
+    </div>
+  );
+
+  return (
+    <div className="space-y-2 border-t border-neutral-800 pt-4">
+      <div className="flex items-baseline justify-between">
+        <span className="text-xs text-neutral-500">음정 곡선</span>
+        {curve && (
+          <button
+            type="button"
+            onClick={() => { const next = setPitchCurve(project, selection, null); editor.commit(next); }}
+            className="text-xs text-neutral-500 hover:text-neutral-300"
+          >
+            곡선 지우기
+          </button>
+        )}
+      </div>
+      {row('시작 글라이드', glideCents, -80, 80, 1, ' ¢', 'glideCents')}
+      {glideCents !== 0 && row('도달 시간', glideMs, 10, 400, 5, ' ms', 'glideMs')}
+      {row('흔들림', vibratoCents, 0, 60, 1, ' ¢', 'vibratoCents')}
+      {vibratoCents !== 0 && row('흔들림 속도', vibratoHz, 1, 12, 0.1, ' Hz', 'vibratoHz')}
+      {vibratoCents !== 0 && row('흔들림 지연', vibratoDelayMs, 0, 600, 10, ' ms', 'vibratoDelayMs')}
+      <p className="text-xs text-neutral-500">
+        곡선이 붙은 음은 편집기에서 다른 색으로 보입니다. 값을 0으로 두면 곡선이 없는
+        것으로 처리되고, 그때는 엔진이 음정 정확도가 검증된 경로를 씁니다.
+      </p>
+    </div>
   );
 }

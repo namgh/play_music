@@ -19,6 +19,8 @@ import type { InstrumentDefinition } from '../instruments/types.ts';
 import { instrumentParams, resolveInstrument } from '../instruments/resolve.ts';
 import { WaveguideStringVoice } from './voice/waveguideString.ts';
 import type { Rng, Voice } from './voice/types.ts';
+import type { WasmVoiceEngine } from './voice/wasmEngine.ts';
+import { curveToParams } from './voice/wasmEngine.ts';
 import { projectLengthTicks } from '../model/factory.ts';
 
 const BLOCK = 128; // AudioWorklet 블록 크기와 같게 — 블록 경계 효과까지 같이 본다
@@ -30,6 +32,14 @@ export interface OfflineRenderOptions {
   tailSec?: number;
   /** 결정론적 결과가 필요할 때 (테스트) */
   rng?: Rng;
+  /**
+   * Rust DSP 코어. **주면 이걸 쓴다.**
+   *
+   * 내보내기가 미리듣기와 같은 DSP 를 써야 한다 (`plan.md` 5-2 — 미리듣기 =
+   * 내보내기 = 공유본). 게다가 음정 곡선은 Rust 쪽에만 있으므로, 이걸 주지 않으면
+   * 내보낸 파일에서 글라이드·비브라토가 사라진다.
+   */
+  wasm?: WasmVoiceEngine | null;
 }
 
 function createVoice(voiceType: string, sampleRate: number, rng: Rng): Voice {
@@ -70,6 +80,49 @@ export function renderProjectOffline(
   }
 
   const events = collectNoteEvents(project, 0, lengthTicks);
+
+  // --- Rust 코어 경로 -------------------------------------------------------
+  // 보이스 관리가 wasm 안에 있으므로 이벤트 시각마다 발음 요청만 보내면 된다
+  if (options.wasm) {
+    const wasm = options.wasm;
+    wasm.allOff();
+    let cursor = 0;
+    const scratch = new Float32Array(BLOCK);
+
+    const renderWasmTo = (toSample: number) => {
+      while (cursor < toSample) {
+        const frames = Math.min(BLOCK, toSample - cursor);
+        scratch.fill(0);
+        wasm.process(scratch, frames);
+        for (let i = 0; i < frames; i++) pcm[cursor + i] = pcm[cursor + i]! + scratch[i]!;
+        cursor += frames;
+      }
+    };
+
+    for (const event of events) {
+      const startSample = Math.round(ticksToSeconds(event.startTick, project.tempo) * sampleRate);
+      if (startSample >= totalSamples) break;
+      renderWasmTo(startSample);
+
+      const setup = trackSetup.get(event.trackId);
+      if (!setup) continue;
+      if (setup.voiceType !== 'waveguide-string') {
+        throw new Error(`보이스 타입 "${setup.voiceType}" 미구현`);
+      }
+      wasm.noteOn(
+        pitchToHz(event.note.pitch, project.tuning),
+        event.note.velocity,
+        { ...setup.params, ...curveToParams(event.pitchCurve) },
+        setup.gain,
+      );
+    }
+    renderWasmTo(totalSamples);
+
+    if (project.master.gain !== 1) {
+      for (let i = 0; i < pcm.length; i++) pcm[i] = pcm[i]! * project.master.gain;
+    }
+    return { pcm, sampleRate };
+  }
 
   // 보이스 풀. 트랙마다 파라미터가 달라 발음 시점에 setParams 하므로 공용으로 쓴다
   const pool: { voice: Voice; gain: number }[] = [];
@@ -138,6 +191,10 @@ export interface RenderNoteOptions {
 /**
  * 음 하나를 PCM 으로. 뜯는 줄은 노트온 시점에 결과가 결정되는 원샷이므로
  * 미리 렌더해 두고 정확한 시각에 재생할 수 있다 (`bufferRenderer.ts` 가 이걸 쓴다).
+ *
+ * **TS 보이스는 음정 곡선을 구현하지 않는다.** 곡선은 Rust 코어에만 있다
+ * (`dsp/src/curve.rs`). 여기로 오는 것은 wasm 로드가 실패한 대체 경로뿐이고,
+ * 그 경우 화면에 "TypeScript (대체)" 로 표시된다.
  */
 export function renderNoteToPcm(options: RenderNoteOptions): Float32Array {
   const { voiceType, params, freqHz, velocity, sampleRate, maxSec } = options;
