@@ -10,6 +10,7 @@
 pub mod curve;
 pub mod filters;
 pub mod interp;
+pub mod smooth;
 pub mod string_voice;
 
 use curve::PitchCurve;

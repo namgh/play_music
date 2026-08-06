@@ -276,6 +276,50 @@ test('발음 중이 아닐 때 파라미터 변경은 아무 일도 하지 않�
   assert.ok(out.every((v) => v === 0), '무음이어야 한다');
 });
 
+test('발음 중 파라미터를 크게 바꿔도 클릭이 생기지 않는다 (sound.md 6-4)', async () => {
+  // 스무딩이 없으면 계수가 한 샘플에서 점프하고 파형에 계단이 생긴다.
+  // 그게 클릭이고, 그래서 재생 경로와 튜닝 경로를 나눠 둘 수밖에 없었다.
+  const wasm = await engine();
+  const base = instrumentParams(resolveInstrument('electric-guitar', registry), 'default', null);
+  const hz = midiToHz(57);
+
+  wasm.allOff();
+  wasm.noteOn(hz, 1, base);
+
+  const total = Math.round(1.5 * FS);
+  const out = new Float32Array(total);
+  const scratch = new Float32Array(BLOCK);
+  const switchAt = Math.round(0.5 * FS);
+
+  for (let at = 0; at < total; at += BLOCK) {
+    // 렌더 중간에 파라미터를 극단으로 한 번 바꾼다
+    if (at >= switchAt && at < switchAt + BLOCK) {
+      wasm.setParamsLive({ ...base, damping: 0.25, stiffness: 0.05, sustainSec: 0.5 });
+    }
+    const frames = Math.min(BLOCK, total - at);
+    scratch.fill(0);
+    wasm.process(scratch, frames);
+    out.set(scratch.subarray(0, frames), at);
+  }
+
+  // 인접 샘플 차이의 최대값을 본다. 계단이 생기면 여기가 튄다
+  const maxStep = (from: number, to: number) => {
+    let worst = 0;
+    for (let i = from + 1; i < to; i++) worst = Math.max(worst, Math.abs(out[i]! - out[i - 1]!));
+    return worst;
+  };
+
+  // 전환 직전 구간을 기준으로 삼는다 (같은 신호의 정상 기울기)
+  const before = maxStep(switchAt - Math.round(0.1 * FS), switchAt - 1);
+  const across = maxStep(switchAt, switchAt + Math.round(0.02 * FS));
+
+  assert.ok(out.every(Number.isFinite), '파라미터 전환에서 NaN');
+  assert.ok(
+    across < before * 3,
+    `전환 지점 기울기 ${across.toExponential(2)} 가 평시 ${before.toExponential(2)} 의 3배를 넘는다 (클릭)`,
+  );
+});
+
 test('블록 상한을 넘기면 조용히 자르지 않고 에러다', async () => {
   const wasm = await engine();
   assert.throws(() => wasm.process(new Float32Array(4096), 4096), /블록이 너무 크다/);

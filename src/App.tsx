@@ -9,7 +9,7 @@ import type { ClipId, Project, TrackId } from './model/project.ts';
 import { PPQ, ticksPerBar, ticksToBarBeat } from './model/time.ts';
 import { createRegistry, playableInstrumentIds } from './instruments/definitions.ts';
 import { resolveInstrument } from './instruments/resolve.ts';
-import { useAudioEngine } from './audio/useAudioEngine.ts';
+import { ENGINE_LABELS, useAudioEngine } from './audio/useAudioEngine.ts';
 import { PianoRoll } from './ui/PianoRoll.tsx';
 import { NoteInspector } from './ui/NoteInspector.tsx';
 import { TrackList } from './ui/TrackList.tsx';
@@ -189,7 +189,7 @@ export function App() {
           <span className="flex-1" />
           {engine.engineKind && (
             <span className="font-mono text-xs text-neutral-500">
-              DSP: {engine.engineKind === 'rust' ? 'Rust/WASM' : 'TypeScript (대체)'}
+              DSP: {ENGINE_LABELS[engine.engineKind]}
             </span>
           )}
         </header>

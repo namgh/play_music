@@ -3,7 +3,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Project, TrackId } from '../model/project.ts';
 import { createNote, projectLengthTicks } from '../model/factory.ts';
 import type { InstrumentDefinition } from '../instruments/types.ts';
+import type { AudioRenderer } from './renderer.ts';
 import { BufferRenderer } from './bufferRenderer.ts';
+import { WorkletRenderer } from './workletRenderer.ts';
 import { WasmVoiceEngine } from './voice/wasmEngine.ts';
 import wasmUrl from '../generated/dsp.wasm?url';
 import { encodeWav } from './wav.ts';
@@ -13,13 +15,27 @@ import { encodeWav } from './wav.ts';
  *
  * `AudioContext` 는 사용자 제스처가 있어야 시작되므로 첫 재생·시청 때 만든다.
  * 미리 만들면 브라우저가 정지 상태로 두고, "재생을 눌렀는데 소리가 안 난다"가 된다.
+ *
+ * **렌더러는 워크렛이 기본이다** (파라미터 스무딩이 들어간 뒤 경로를 통합했다).
+ * 워크렛을 못 쓰는 환경에서는 미리 렌더 방식(`BufferRenderer`)으로 떨어진다 —
+ * 소리가 아예 안 나는 것보다는 낫고, 어느 쪽인지 화면에 표시한다.
  */
+
+export type EngineKind = 'worklet' | 'buffer' | 'typescript';
+
+export const ENGINE_LABELS: Record<EngineKind, string> = {
+  worklet: 'Rust/WASM · 워크렛',
+  buffer: 'Rust/WASM · 미리 렌더',
+  typescript: 'TypeScript (대체)',
+};
+
 export function useAudioEngine(
   project: Project,
   registry: ReadonlyMap<string, InstrumentDefinition>,
 ) {
   const ctxRef = useRef<AudioContext | null>(null);
-  const rendererRef = useRef<BufferRenderer | null>(null);
+  const rendererRef = useRef<AudioRenderer | null>(null);
+  const readyRef = useRef<(() => Promise<void>) | null>(null);
   const projectRef = useRef(project);
   projectRef.current = project;
 
@@ -27,36 +43,58 @@ export function useAudioEngine(
   const [playheadTick, setPlayheadTick] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
-  /** 어느 DSP 코어가 붙었는지 — 화면에 표시해 두면 wasm 로드 실패를 조용히 넘기지 않는다 */
-  const [engineKind, setEngineKind] = useState<'rust' | 'typescript' | null>(null);
+  const [engineKind, setEngineKind] = useState<EngineKind | null>(null);
 
-  const ensure = useCallback(async (): Promise<BufferRenderer> => {
+  const ensure = useCallback(async (): Promise<AudioRenderer> => {
     if (!ctxRef.current) ctxRef.current = new AudioContext({ latencyHint: 'interactive' });
     const ctx = ctxRef.current;
 
     if (!rendererRef.current) {
-      // Rust DSP 코어를 먼저 붙여 본다. 실패하면 TS 구현으로 떨어진다 —
-      // wasm 로드 실패가 "소리가 안 난다"로 이어지면 원인을 찾기 어렵다
-      let wasm: WasmVoiceEngine | null = null;
-      let factory: ((sampleRate: number) => Promise<WasmVoiceEngine>) | null = null;
+      let bytes: ArrayBuffer | null = null;
       try {
-        const response = await fetch(wasmUrl);
-        // 바이트를 보관한다. 내보내기가 다른 샘플레이트를 요구하면 그 레이트로
-        // 코어를 하나 더 만들어야 한다 (같은 인스턴스로는 음정이 틀어진다)
-        const bytes = await response.arrayBuffer();
-        wasm = await WasmVoiceEngine.create(bytes, ctx.sampleRate);
-        factory = (rate: number) => WasmVoiceEngine.create(bytes, rate);
+        bytes = await (await fetch(wasmUrl)).arrayBuffer();
       } catch (err) {
-        console.warn('Rust DSP 코어 로드 실패 — TS 구현으로 진행한다', err);
+        console.warn('wasm 을 가져오지 못했다', err);
       }
-      setEngineKind(wasm ? 'rust' : 'typescript');
-      rendererRef.current = new BufferRenderer(ctx, registry, wasm, factory);
+
+      // 1순위: 워크렛 (통합 경로)
+      if (bytes) {
+        try {
+          const renderer = await WorkletRenderer.create(ctx, registry, bytes);
+          rendererRef.current = renderer;
+          readyRef.current = () => renderer.whenReady();
+          setEngineKind('worklet');
+        } catch (err) {
+          console.warn('워크렛을 쓸 수 없다 — 미리 렌더 방식으로 떨어진다', err);
+        }
+      }
+
+      // 2순위: 미리 렌더 + Rust 코어
+      if (!rendererRef.current) {
+        let wasm: WasmVoiceEngine | null = null;
+        let factory: ((sampleRate: number) => Promise<WasmVoiceEngine>) | null = null;
+        if (bytes) {
+          try {
+            const owned = bytes;
+            wasm = await WasmVoiceEngine.create(owned, ctx.sampleRate);
+            factory = (rate: number) => WasmVoiceEngine.create(owned, rate);
+          } catch (err) {
+            console.warn('Rust 코어 로드 실패 — TS 구현으로 진행한다', err);
+          }
+        }
+        rendererRef.current = new BufferRenderer(ctx, registry, wasm, factory);
+        readyRef.current = null;
+        setEngineKind(wasm ? 'buffer' : 'typescript');
+      }
     }
+
     await ctx.resume();
+    // 워크렛이 wasm 을 준비하기 전에 예약하면 그 음들이 버려진다
+    await readyRef.current?.();
     return rendererRef.current;
   }, [registry]);
 
-  // 편집 결과를 렌더러에 반영한다. 이미 만들어진 뒤에만 — 없으면 만들지 않는다
+  // 편집 결과를 렌더러에 반영한다. 이미 만들어진 뒤에만
   useEffect(() => {
     const renderer = rendererRef.current;
     if (!renderer) return;

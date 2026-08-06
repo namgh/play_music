@@ -14,6 +14,14 @@
 
 const MAX_BLOCK = 2048;
 const PARAM_COUNT = 11; // Rust 쪽 PARAM_COUNT 와 같아야 한다 (줄 6 + 음정 곡선 5)
+/**
+ * 이만큼 지난 예약은 버린다.
+ *
+ * wasm 로드가 끝나기 전에 예약이 쌓이면(사용자가 곧바로 재생을 누르는 경우)
+ * 준비되는 순간 그게 전부 한꺼번에 터진다. 오래 지난 음은 제자리에 놓을 방법이
+ * 없으므로 늦게 내는 것보다 버리는 게 낫다.
+ */
+const STALE_FRAMES = 12000; // 48kHz 에서 0.25초
 
 class KsProcessor extends AudioWorkletProcessor {
   constructor() {
@@ -66,6 +74,8 @@ class KsProcessor extends AudioWorkletProcessor {
     exports.init(sampleRate);
     this.wasm = exports;
     this.refreshViews();
+    // 준비되기 전에 쌓인 예약은 버린다 — 지금 내면 전부 한 지점에 몰린다
+    this.pending.length = 0;
     this.port.postMessage({ type: 'ready', sampleRate });
   }
 
@@ -114,10 +124,12 @@ class KsProcessor extends AudioWorkletProcessor {
       const untilEvent = next ? next.frame - (currentFrame + written) : Infinity;
 
       if (untilEvent <= 0) {
+        this.pending.shift();
+        // 너무 오래 지난 예약은 버린다 (위 STALE_FRAMES 설명)
+        if (untilEvent < -STALE_FRAMES) continue;
         // 지금 이 샘플에서 발음한다
         this.writeParams(next.params);
         this.wasm.note_on(next.freq, next.velocity, next.gain);
-        this.pending.shift();
         continue;
       }
 

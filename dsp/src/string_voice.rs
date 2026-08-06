@@ -14,6 +14,7 @@
 use crate::curve::{cents_to_ratio, PitchCurve};
 use crate::filters::{solve_allpass_coef, Allpass, DcBlock, OneZero};
 use crate::interp::{lagrange4, lagrange4_response, solve_lagrange_fraction};
+use crate::smooth::{times, Smoothed};
 
 pub const DISPERSION_STAGES: usize = 3;
 const MIN_FREQ_HZ: f64 = 20.0;
@@ -198,6 +199,13 @@ pub struct StringVoice {
     mod_countdown: usize,
     /// 곡선이 있을 때의 루프 이득 (보간기 진폭까지 보정한 값)
     curve_loop_gain: f64,
+
+    // --- 파라미터 스무딩 (`sound.md` 6-4) ---
+    // 발음 중 파라미터를 바꿀 때 계수를 즉시 갈아 끼우면 파형이 점프하고 그게 클릭이다.
+    // 음정 관련은 가장 짧게 스무딩한다 — 느리면 그 사이 음정이 미끄러진다.
+    smooth_lp: Smoothed,
+    smooth_disp: Smoothed,
+    smooth_gain: Smoothed,
 }
 
 impl StringVoice {
@@ -224,6 +232,9 @@ impl StringVoice {
             interp_offset: 2,
             mod_countdown: 0,
             curve_loop_gain: 0.0,
+            smooth_lp: Smoothed::new(0.0, times::FILTER_MS, sample_rate),
+            smooth_disp: Smoothed::new(0.0, times::PITCH_MS, sample_rate),
+            smooth_gain: Smoothed::new(0.0, times::GAIN_MS, sample_rate),
         }
     }
 
@@ -254,6 +265,12 @@ impl StringVoice {
         self.setup = compute_loop(freq_hz, params, self.sample_rate);
         self.reset_states();
         self.fill_excitation(params, velocity);
+
+        // 새 음은 스무딩을 건너뛰고 즉시 맞춘다 — 이전 음의 계수에서 천천히
+        // 옮겨오면 첫 순간의 음정과 음색이 틀린다
+        self.smooth_lp.reset(self.setup.lp_coef);
+        self.smooth_disp.reset(self.setup.disp_coef);
+        self.smooth_gain.reset(self.setup.loop_gain);
 
         if !self.curve.is_flat() {
             // 보간기는 올패스가 아니라 진폭이 1이 아니다. 그만큼 루프 이득을 되돌리지
@@ -315,9 +332,17 @@ impl StringVoice {
         }
         let next = compute_loop(self.freq_hz, params, self.sample_rate);
 
-        // 딜레이 라인 길이가 바뀌면 순환 중인 파형의 위치가 어긋난다. 상태를 지우지
-        // 않고 계수만 갈아 끼우면 한 주기 동안 과도 구간이 생기고, 그게 클릭이다.
-        self.setup = next;
+        // 딜레이 길이는 바로 반영한다 (음정이므로 미끄러지면 안 된다).
+        // 필터·게인 계수는 목표만 바꿔 스무딩으로 따라가게 한다 — 즉시 갈아 끼우면
+        // 파형이 점프하고 그게 클릭이다 (`sound.md` 6-4)
+        self.smooth_lp.set_target(next.lp_coef);
+        self.smooth_disp.set_target(next.disp_coef);
+        self.smooth_gain.set_target(next.loop_gain);
+
+        self.setup = LoopSetup {
+            // 스무딩되는 값은 setup 에도 목표로 남겨 둔다 (표시·검증용)
+            ..next
+        };
     }
 
     pub fn note_off(&mut self) {
@@ -401,14 +426,30 @@ impl StringVoice {
 
         let size = self.buffer.len();
         let dc_pole = DC_BLOCK_POLE;
-        let s = self.setup.lp_coef;
-        let a = self.setup.disp_coef;
         let c = self.setup.ap_coef;
-        let g = self.setup.loop_gain;
+
+        // 스무딩이 끝났으면 계수를 상수로 고정해 샘플 루프를 가볍게 유지한다
+        let settled = self.smooth_lp.is_settled()
+            && self.smooth_disp.is_settled()
+            && self.smooth_gain.is_settled();
 
         let mut quiet = true;
 
         for sample in out.iter_mut() {
+            let (s, a, g) = if settled {
+                (
+                    self.smooth_lp.value(),
+                    self.smooth_disp.value(),
+                    self.smooth_gain.value(),
+                )
+            } else {
+                (
+                    self.smooth_lp.advance(),
+                    self.smooth_disp.advance(),
+                    self.smooth_gain.advance(),
+                )
+            };
+
             let read = (self.write + size - self.setup.delay_int) % size;
             let mut v = self.buffer[read] as f64;
 
@@ -466,13 +507,14 @@ impl StringVoice {
     fn process_curved(&mut self, out: &mut [f32]) {
         let size = self.buffer.len();
         let dc_pole = DC_BLOCK_POLE;
-        let s = self.setup.lp_coef;
-        let a = self.setup.disp_coef;
         let g = self.curve_loop_gain;
 
         let mut quiet = true;
 
         for sample in out.iter_mut() {
+            let s = self.smooth_lp.advance();
+            let a = self.smooth_disp.advance();
+
             if self.mod_countdown == 0 {
                 self.update_modulation();
                 self.mod_countdown = MOD_BLOCK;
