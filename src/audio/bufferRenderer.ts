@@ -20,17 +20,22 @@
 import type {
   AudioRenderer, ExportOptions, ExportResult, InstrumentCapabilities, TransportPosition,
 } from './renderer.ts';
-import type { Note, PitchCurve, Project, Track, TrackId } from '../model/project.ts';
+import type { EffectSpec, Note, PitchCurve, Project, Track, TrackId } from '../model/project.ts';
+import { audibleTracks } from '../model/project.ts';
 import type { Ticks } from '../model/time.ts';
+import { ticksToSeconds } from '../model/time.ts';
+import { projectLengthTicks } from '../model/factory.ts';
 import { pitchToHz } from '../model/pitch.ts';
-import { LookaheadScheduler } from './scheduler.ts';
+import { collectNoteEvents, LookaheadScheduler } from './scheduler.ts';
 import type { ScheduledNote } from './scheduler.ts';
 import type { InstrumentDefinition, ParamValue } from '../instruments/types.ts';
 import { instrumentParams, resolveInstrument } from '../instruments/resolve.ts';
 import type { ResolvedInstrument } from '../instruments/types.ts';
-import { renderNoteToPcm, renderProjectOffline } from './offlineRender.ts';
+import { renderNoteToPcm } from './offlineRender.ts';
 import type { WasmVoiceEngine } from './voice/wasmEngine.ts';
 import { curveToParams } from './voice/wasmEngine.ts';
+import { buildEffectChain } from './effectGraph.ts';
+import type { EffectChain } from './effectGraph.ts';
 
 /** 타이머 주기. 룩어헤드보다 충분히 짧아야 한다 */
 const PUMP_INTERVAL_MS = 25;
@@ -40,9 +45,16 @@ const MAX_NOTE_SEC = 12;
 const CACHE_LIMIT = 512;
 /** Rust 코어의 블록 상한과 맞춘다 */
 const WASM_BLOCK = 2048;
+/** 내보낼 때 곡 끝 뒤에 남길 여운 — 마지막 음과 리버브 꼬리가 잘리지 않게 */
+const EXPORT_TAIL_SEC = 4;
 
 interface TrackRuntime {
+  /** 보이스가 붙는 입구 */
   gainNode: GainNode;
+  panNode: StereoPannerNode;
+  effects: EffectChain;
+  /** 이펙트 구성이 바뀔 때만 다시 만들기 위한 서명 */
+  effectsKey: string;
   instrument: ResolvedInstrument;
   params: Record<string, ParamValue>;
   paramsKey: string;
@@ -60,6 +72,8 @@ export class BufferRenderer implements AudioRenderer {
 
   private pumpTimer: ReturnType<typeof setInterval> | null = null;
   private masterGain: GainNode;
+  private masterEffects: EffectChain | null = null;
+  private masterEffectsKey = '';
 
   /**
    * Rust DSP 코어. 있으면 이걸 쓴다 (`sound.md` M1).
@@ -89,6 +103,7 @@ export class BufferRenderer implements AudioRenderer {
     this.wasmFactory = wasmFactory;
     this.masterGain = ctx.createGain();
     this.masterGain.connect(ctx.destination);
+    this.rebuildMasterEffects([], '');
 
     this.scheduler = new LookaheadScheduler({
       now: () => this.ctx.currentTime,
@@ -100,10 +115,17 @@ export class BufferRenderer implements AudioRenderer {
     this.project = project;
     this.masterGain.gain.value = project.master.gain;
 
+    const masterKey = JSON.stringify(project.master.effects);
+    if (masterKey !== this.masterEffectsKey) {
+      this.rebuildMasterEffects(project.master.effects, masterKey);
+    }
+
     // 없어진 트랙 정리
     for (const [id, runtime] of this.tracks) {
       if (!project.tracks.some((t) => t.id === id)) {
         runtime.gainNode.disconnect();
+        runtime.panNode.disconnect();
+        runtime.effects.dispose();
         this.tracks.delete(id);
       }
     }
@@ -117,15 +139,48 @@ export class BufferRenderer implements AudioRenderer {
     let runtime = this.tracks.get(track.id);
     if (!runtime) {
       const gainNode = this.ctx.createGain();
-      gainNode.connect(this.masterGain);
-      runtime = { gainNode, instrument, params, paramsKey: '' };
+      const panNode = this.ctx.createStereoPanner();
+      const effects = buildEffectChain(this.ctx, []);
+      gainNode.connect(panNode).connect(effects.input);
+      effects.output.connect(this.masterEffects!.input);
+      runtime = {
+        gainNode, panNode, effects, effectsKey: '[]',
+        instrument, params, paramsKey: '',
+      };
       this.tracks.set(track.id, runtime);
     }
     runtime.instrument = instrument;
     runtime.params = params;
     runtime.paramsKey = `${instrument.id}|${JSON.stringify(params)}`;
-    // 음소거·솔로는 스케줄러가 걸러내므로 여기서는 레벨만 본다
+    // 음소거·솔로는 스케줄러가 걸러내므로 여기서는 레벨과 팬만 본다
     runtime.gainNode.gain.value = track.gain;
+    runtime.panNode.pan.value = track.pan;
+
+    // 이펙트는 구성이 바뀔 때만 다시 만든다. 매번 만들면 리버브 IR 을 계속 재합성한다
+    const effectsKey = JSON.stringify(track.effects);
+    if (effectsKey !== runtime.effectsKey) {
+      runtime.panNode.disconnect();
+      runtime.effects.dispose();
+      runtime.effects = buildEffectChain(this.ctx, track.effects);
+      runtime.effectsKey = effectsKey;
+      runtime.panNode.connect(runtime.effects.input);
+      runtime.effects.output.connect(this.masterEffects!.input);
+    }
+  }
+
+  private rebuildMasterEffects(specs: readonly EffectSpec[], key: string): void {
+    const previous = this.masterEffects;
+    const next = buildEffectChain(this.ctx, specs);
+    next.output.connect(this.masterGain);
+    this.masterEffects = next;
+    this.masterEffectsKey = key;
+
+    // 트랙들을 새 마스터 체인으로 옮긴다
+    for (const runtime of this.tracks.values()) {
+      runtime.effects.output.disconnect();
+      runtime.effects.output.connect(next.input);
+    }
+    previous?.dispose();
   }
 
   play(fromTick: Ticks = 0): void {
@@ -178,37 +233,94 @@ export class BufferRenderer implements AudioRenderer {
     };
   }
 
+  /**
+   * 내보내기 — `OfflineAudioContext` 로 클라이언트에서 렌더한다 (`plan.md` 5-2).
+   *
+   * **미리듣기와 같은 코드로 같은 그래프를 만든다.** 보이스는 같은 Rust 코어로 미리
+   * 렌더한 버퍼를 쓰고, 이펙트는 `buildEffectChain` 이 실시간과 동일하게 배선한다.
+   * 순수 JS 경로(`renderProjectOffline`)로 내보내면 이펙트가 빠진 파일이 나온다.
+   */
   async exportAudio(options: ExportOptions): Promise<ExportResult> {
     if (!this.project) throw new Error('setProject 가 먼저 호출돼야 한다');
-    // 미리듣기와 같은 보이스 코드를 쓰므로 결과가 일치한다.
-    // WASM 워크렛이 들어오면 이 자리는 OfflineAudioContext + 같은 워크렛으로 바뀐다
-    // 미리듣기와 같은 코어를 쓴다. wasm 을 안 넘기면 내보낸 파일에서 음정 곡선이 사라진다
+    const project = this.project;
     const wasm = await this.wasmForRate(options.sampleRate);
-    const render = (project: Project) =>
-      renderProjectOffline(project, this.registry, {
+
+    const lengthSec =
+      ticksToSeconds(projectLengthTicks(project), project.tempo) + EXPORT_TAIL_SEC;
+
+    const renderOne = async (tracks: Track[]): Promise<Float32Array[]> => {
+      const offline = new OfflineAudioContext({
+        numberOfChannels: 2,
+        length: Math.max(1, Math.ceil(lengthSec * options.sampleRate)),
         sampleRate: options.sampleRate,
-        wasm,
       });
 
+      const master = buildEffectChain(offline, project.master.effects);
+      const masterGain = offline.createGain();
+      masterGain.gain.value = project.master.gain;
+      master.output.connect(masterGain).connect(offline.destination);
+
+      const subset: Project = { ...project, tracks };
+      for (const track of tracks) {
+        const instrument = resolveInstrument(track.instrumentId, this.registry);
+        const params = instrumentParams(instrument, track.toneId, track.toneParams);
+
+        const gain = offline.createGain();
+        gain.gain.value = track.gain;
+        const pan = offline.createStereoPanner();
+        pan.pan.value = track.pan;
+        const effects = buildEffectChain(offline, track.effects);
+        gain.connect(pan).connect(effects.input);
+        effects.output.connect(master.input);
+
+        // 이 트랙의 음을 시각대로 예약한다
+        for (const event of collectNoteEvents(subset, 0, projectLengthTicks(project))) {
+          if (event.trackId !== track.id) continue;
+          const freqHz = pitchToHz(event.note.pitch, project.tuning);
+          const pcm = this.renderNoteWith(
+            wasm, instrument.voice, params, freqHz, event.note.velocity,
+            event.pitchCurve, options.sampleRate,
+          );
+          const buffer = offline.createBuffer(1, Math.max(1, pcm.length), options.sampleRate);
+          buffer.getChannelData(0).set(pcm);
+          const source = offline.createBufferSource();
+          source.buffer = buffer;
+          source.connect(gain);
+          source.start(ticksToSeconds(event.startTick, project.tempo));
+        }
+      }
+
+      const rendered = await offline.startRendering();
+      return Array.from({ length: rendered.numberOfChannels }, (_, ch) =>
+        rendered.getChannelData(ch));
+    };
+
     if (!options.stems) {
-      const { pcm } = render(this.project);
-      return { sampleRate: options.sampleRate, buffers: [{ trackId: null, channels: [pcm] }] };
+      // 음소거·솔로를 반영한 트랙만 (스케줄러와 같은 규칙)
+      return {
+        sampleRate: options.sampleRate,
+        buffers: [{ trackId: null, channels: await renderOne(audibleTracks(project)) }],
+      };
     }
 
     const buffers: ExportResult['buffers'] = [];
-    for (const track of this.project.tracks) {
-      const solo: Project = { ...this.project, tracks: [{ ...track, mute: false, solo: false }] };
-      const { pcm } = render(solo);
-      buffers.push({ trackId: track.id, channels: [pcm] });
+    for (const track of project.tracks) {
+      const channels = await renderOne([{ ...track, mute: false, solo: false }]);
+      buffers.push({ trackId: track.id, channels });
     }
     return { sampleRate: options.sampleRate, buffers };
   }
 
   dispose(): void {
     this.stop();
-    for (const runtime of this.tracks.values()) runtime.gainNode.disconnect();
+    for (const runtime of this.tracks.values()) {
+      runtime.gainNode.disconnect();
+      runtime.panNode.disconnect();
+      runtime.effects.dispose();
+    }
     this.tracks.clear();
     this.cache.clear();
+    this.masterEffects?.dispose();
     this.masterGain.disconnect();
   }
 
@@ -268,19 +380,33 @@ export class BufferRenderer implements AudioRenderer {
     velocity: number,
     curve: PitchCurve | null,
   ): Float32Array {
-    const params = runtime.params as Record<string, number | string>;
+    return this.renderNoteWith(
+      this.wasm, runtime.instrument.voice, runtime.params as Record<string, number | string>,
+      freqHz, velocity, curve, this.ctx.sampleRate,
+    );
+  }
 
-    if (this.wasm && runtime.instrument.voice === 'waveguide-string') {
-      this.wasm.allOff();
-      this.wasm.noteOn(freqHz, velocity, { ...params, ...curveToParams(curve) });
-      const total = Math.ceil(MAX_NOTE_SEC * this.ctx.sampleRate);
+  /** 어느 코어·샘플레이트로든 음 하나를 렌더한다 (내보내기가 다른 레이트를 쓴다) */
+  private renderNoteWith(
+    wasm: WasmVoiceEngine | null,
+    voiceType: string,
+    params: Record<string, number | string>,
+    freqHz: number,
+    velocity: number,
+    curve: PitchCurve | null,
+    sampleRate: number,
+  ): Float32Array {
+    if (wasm && voiceType === 'waveguide-string') {
+      wasm.allOff();
+      wasm.noteOn(freqHz, velocity, { ...params, ...curveToParams(curve) });
+      const total = Math.ceil(MAX_NOTE_SEC * sampleRate);
       const out = new Float32Array(total);
       const scratch = new Float32Array(WASM_BLOCK);
       let written = 0;
       while (written < total) {
         const frames = Math.min(WASM_BLOCK, total - written);
         scratch.fill(0);
-        const active = this.wasm.process(scratch, frames);
+        const active = wasm.process(scratch, frames);
         out.set(scratch.subarray(0, frames), written);
         written += frames;
         if (active === 0) break; // 보이스가 조용해졌으면 거기서 끝
@@ -289,11 +415,11 @@ export class BufferRenderer implements AudioRenderer {
     }
 
     return renderNoteToPcm({
-      voiceType: runtime.instrument.voice,
+      voiceType,
       params,
       freqHz,
       velocity,
-      sampleRate: this.ctx.sampleRate,
+      sampleRate,
       maxSec: MAX_NOTE_SEC,
     });
   }
