@@ -11,9 +11,12 @@ pub mod amp;
 pub mod curve;
 pub mod filters;
 pub mod interp;
+pub mod modal;
 pub mod oversample;
+pub mod sampler;
 pub mod smooth;
 pub mod string_voice;
+pub mod synth;
 
 use amp::{AmpChain, AmpCharacter, AmpParams};
 use curve::PitchCurve;
