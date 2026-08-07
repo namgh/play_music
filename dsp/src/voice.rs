@@ -11,6 +11,7 @@
 
 use crate::curve::PitchCurve;
 use crate::modal::{ModalParams, ModalVoice};
+use crate::percussion::{DrumParams, DrumVoice};
 use crate::sampler::{SampleData, SamplerParams, SamplerVoice};
 use crate::string_voice::{StringParams, StringVoice};
 use crate::synth::{SynthParams, SynthVoice};
@@ -22,6 +23,7 @@ pub enum VoiceKind {
     Modal,
     VirtualAnalog,
     Sampler,
+    Percussion,
 }
 
 impl VoiceKind {
@@ -30,7 +32,8 @@ impl VoiceKind {
             0 => Self::WaveguideString,
             1 => Self::Modal,
             2 => Self::VirtualAnalog,
-            _ => Self::Sampler,
+            3 => Self::Sampler,
+            _ => Self::Percussion,
         }
     }
 }
@@ -42,6 +45,7 @@ pub struct AnyVoice {
     modal: ModalVoice,
     synth: SynthVoice,
     sampler: SamplerVoice,
+    drum: DrumVoice,
     kind: VoiceKind,
 }
 
@@ -52,6 +56,7 @@ impl AnyVoice {
             modal: ModalVoice::new(sample_rate),
             synth: SynthVoice::new(sample_rate),
             sampler: SamplerVoice::new(sample_rate),
+            drum: DrumVoice::new(sample_rate, seed),
             kind: VoiceKind::WaveguideString,
         }
     }
@@ -66,6 +71,7 @@ impl AnyVoice {
             VoiceKind::Modal => self.modal.is_active(),
             VoiceKind::VirtualAnalog => self.synth.is_active(),
             VoiceKind::Sampler => self.sampler.is_active(),
+            VoiceKind::Percussion => self.drum.is_active(),
         }
     }
 
@@ -113,6 +119,12 @@ impl AnyVoice {
         self.sampler.note_on(freq_hz, velocity, sample, params);
     }
 
+    pub fn note_on_drum(&mut self, freq_hz: f64, velocity: f64, params: &DrumParams) {
+        self.stop_others(VoiceKind::Percussion);
+        self.kind = VoiceKind::Percussion;
+        self.drum.note_on(freq_hz, velocity, params);
+    }
+
     /// 타입을 바꿔 재사용할 때 이전 타입이 계속 울리면 안 된다
     fn stop_others(&mut self, next: VoiceKind) {
         if self.kind == next {
@@ -123,6 +135,7 @@ impl AnyVoice {
             VoiceKind::Modal => self.modal.reset(),
             VoiceKind::VirtualAnalog => self.synth.reset(),
             VoiceKind::Sampler => self.sampler.reset(),
+            VoiceKind::Percussion => self.drum.reset(),
         }
     }
 
@@ -132,6 +145,7 @@ impl AnyVoice {
             VoiceKind::Modal => self.modal.note_off(),
             VoiceKind::VirtualAnalog => self.synth.note_off(),
             VoiceKind::Sampler => self.sampler.note_off(),
+            VoiceKind::Percussion => self.drum.note_off(),
         }
     }
 
@@ -152,6 +166,7 @@ impl AnyVoice {
         self.modal.reset();
         self.synth.reset();
         self.sampler.reset();
+        self.drum.reset();
     }
 
     /// `out` 에 **더한다**. 샘플러는 샘플 데이터가 필요하다
@@ -161,6 +176,7 @@ impl AnyVoice {
             VoiceKind::Modal => self.modal.process(out),
             VoiceKind::VirtualAnalog => self.synth.process(out),
             VoiceKind::Sampler => self.sampler.process(out, sample),
+            VoiceKind::Percussion => self.drum.process(out),
         }
     }
 
@@ -207,6 +223,12 @@ mod tests {
         assert!(
             render(&mut voice, 4096).iter().any(|v| v.abs() > 1e-4),
             "신스"
+        );
+
+        voice.note_on_drum(50.0, 1.0, &DrumParams::default());
+        assert!(
+            render(&mut voice, 4096).iter().any(|v| v.abs() > 1e-4),
+            "드럼"
         );
     }
 

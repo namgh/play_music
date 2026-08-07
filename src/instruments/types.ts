@@ -10,7 +10,8 @@ export type VoiceType =
   | 'waveguide-string' // 뜯는 줄·때리는 줄 (Tier 1·2)
   | 'modal'            // 벨·마림바 (Tier 2)
   | 'virtual-analog'   // 신스 (Tier 3)
-  | 'sampler';         // 드럼·보컬·앙상블 (Tier 4)
+  | 'sampler'          // 드럼·보컬·앙상블 (Tier 4)
+  | 'percussion';      // 합성 드럼 (에셋 없이 리듬을 만들 수 있게)
 
 /** Rust 쪽 `VoiceKind::from_index` 와 순서가 같아야 한다 */
 export const VOICE_KIND_INDEX: Record<VoiceType, number> = {
@@ -18,6 +19,7 @@ export const VOICE_KIND_INDEX: Record<VoiceType, number> = {
   modal: 1,
   'virtual-analog': 2,
   sampler: 3,
+  percussion: 4,
 };
 
 /**

@@ -370,6 +370,111 @@ const GLOCKENSPIEL: InstrumentDefinition = {
   range: { low: 72, high: 108 },
 };
 
+// --- 드럼 (합성) -----------------------------------------------------------
+//
+// sound.md 3절은 드럼을 Tier 4(샘플)로 둔다. 그 판단은 지금도 맞지만 **샘플이 없다**
+// — 녹음이나 라이선스가 필요하고 코드로 만들 수 없다. 드럼이 아예 없으면
+// Phase 1 완료 조건("곡 하나를 끝낸다")이 성립하지 않으므로 합성 드럼을 넣는다.
+// 어쿠스틱 드럼 샘플은 에셋이 생기면 샘플러 보이스로 따로 들어온다.
+//
+// 드럼은 음정이 아니라 **소리 종류**로 고른다. 그래서 킷 하나가 아니라
+// 악기 하나 = 드럼 하나다 — 피아노롤에서 트랙마다 하나씩 찍는다.
+
+const DRUM_BASE: InstrumentDefinition = {
+  id: 'drum-base',
+  schemaVersion: 1,
+  name: '드럼 (기준)',
+  voice: 'percussion',
+  range: { low: 24, high: 84 },
+  paramSpecs: {
+    drumKind: {
+      type: 'enum', min: 0, max: 5, default: 0,
+      label: '종류', group: '드럼',
+      options: ['킥', '스네어', '하이햇(닫힘)', '하이햇(열림)', '탐', '클랩'],
+    },
+    drumDecaySec: {
+      type: 'float', min: 0.02, max: 2, default: 0.35,
+      unit: 's', label: '길이', curve: 'log', group: '드럼',
+    },
+    drumPitchDrop: {
+      type: 'float', min: 0, max: 2, default: 0.7,
+      label: '음정 스윕', group: '드럼',
+    },
+    drumNoiseAmount: {
+      type: 'float', min: 0, max: 1, default: 0,
+      label: '노이즈', group: '드럼',
+    },
+    strikePosition: {
+      type: 'float', min: 0, max: 1, default: 0.5,
+      label: '밝기', group: '드럼',
+    },
+    ampEnabled: { type: 'int', min: 0, max: 1, default: 0, label: '앰프', group: '앰프' },
+  },
+  params: {
+    drumKind: 0,
+    drumDecaySec: 0.35,
+    drumPitchDrop: 0.7,
+    drumNoiseAmount: 0,
+    strikePosition: 0.5,
+    ampEnabled: 0,
+  },
+  tones: { default: {}, 짧게: { drumDecaySec: 0.12 }, 길게: { drumDecaySec: 1.0 } },
+};
+
+const KICK: InstrumentDefinition = {
+  id: 'kick',
+  schemaVersion: 1,
+  name: '킥',
+  extends: 'drum-base',
+  params: { drumKind: 0, drumDecaySec: 0.4, drumPitchDrop: 0.8 },
+  range: { low: 24, high: 48 },
+};
+
+const SNARE: InstrumentDefinition = {
+  id: 'snare',
+  schemaVersion: 1,
+  name: '스네어',
+  extends: 'drum-base',
+  params: { drumKind: 1, drumDecaySec: 0.22, drumPitchDrop: 0.3, drumNoiseAmount: 0.7 },
+  range: { low: 36, high: 60 },
+};
+
+const HIHAT: InstrumentDefinition = {
+  id: 'hihat',
+  schemaVersion: 1,
+  name: '하이햇',
+  extends: 'drum-base',
+  params: { drumKind: 2, drumDecaySec: 0.3, drumPitchDrop: 0, drumNoiseAmount: 1 },
+  range: { low: 48, high: 84 },
+};
+
+const HIHAT_OPEN: InstrumentDefinition = {
+  id: 'hihat-open',
+  schemaVersion: 1,
+  name: '하이햇 (열림)',
+  extends: 'drum-base',
+  params: { drumKind: 3, drumDecaySec: 0.6, drumPitchDrop: 0, drumNoiseAmount: 1 },
+  range: { low: 48, high: 84 },
+};
+
+const TOM: InstrumentDefinition = {
+  id: 'tom',
+  schemaVersion: 1,
+  name: '탐',
+  extends: 'drum-base',
+  params: { drumKind: 4, drumDecaySec: 0.5, drumPitchDrop: 0.4, drumNoiseAmount: 0.15 },
+  range: { low: 36, high: 72 },
+};
+
+const CLAP: InstrumentDefinition = {
+  id: 'clap',
+  schemaVersion: 1,
+  name: '클랩',
+  extends: 'drum-base',
+  params: { drumKind: 5, drumDecaySec: 0.35, drumPitchDrop: 0, drumNoiseAmount: 1 },
+  range: { low: 48, high: 72 },
+};
+
 export const BUILT_IN_INSTRUMENTS: readonly InstrumentDefinition[] = [
   STRING_BASE,
   AMPED_STRING,
@@ -389,10 +494,19 @@ export const BUILT_IN_INSTRUMENTS: readonly InstrumentDefinition[] = [
   VIBRAPHONE,
   TUBULAR_BELL,
   GLOCKENSPIEL,
+  DRUM_BASE,
+  KICK,
+  SNARE,
+  HIHAT,
+  HIHAT_OPEN,
+  TOM,
+  CLAP,
 ];
 
 /** 기준 정의는 사용자에게 악기로 보이지 않는다 — 연주용 악기가 아니다 */
-const ABSTRACT_IDS = new Set(['string-base', 'amped-string', 'synth-base', 'modal-base']);
+const ABSTRACT_IDS = new Set([
+  'string-base', 'amped-string', 'synth-base', 'modal-base', 'drum-base',
+]);
 
 export function createRegistry(
   defs: readonly InstrumentDefinition[] = BUILT_IN_INSTRUMENTS,

@@ -13,7 +13,7 @@
  */
 
 const MAX_BLOCK = 2048;
-const PARAM_COUNT = 30; // Rust 쪽 PARAM_COUNT 와 같아야 한다 (줄 6 + 곡선 5 + 앰프 9 + 보이스 10)
+const PARAM_COUNT = 34; // Rust 쪽 PARAM_COUNT 와 같아야 한다 (줄 6 + 곡선 5 + 앰프 9 + 보이스 10 + 드럼 4)
 /**
  * 이만큼 지난 예약은 버린다.
  *

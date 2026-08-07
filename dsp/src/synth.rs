@@ -9,6 +9,7 @@
 //!
 //! 완료 판정 (`sound.md` 10절 M4): 대역제한 오실레이터 에일리어싱 측정 통과.
 
+use crate::denormal::flush;
 use crate::oversample::Oversampler;
 use crate::smooth::{times, Smoothed};
 
@@ -210,8 +211,9 @@ impl StateVariableFilter {
         let v3 = x - self.ic2;
         let v1 = self.a1 * self.ic1 + self.a2 * v3;
         let v2 = self.ic2 + self.a2 * self.ic1 + self.a3 * v3;
-        self.ic1 = 2.0 * v1 - self.ic1;
-        self.ic2 = 2.0 * v2 - self.ic2;
+        // 비정규수 방지 (`sound.md` 6-3) — 릴리즈 꼬리에서 적분기가 0으로 수렴한다
+        self.ic1 = flush(2.0 * v1 - self.ic1);
+        self.ic2 = flush(2.0 * v2 - self.ic2);
         v2
     }
 

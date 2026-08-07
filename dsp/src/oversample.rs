@@ -73,7 +73,8 @@ impl Biquad {
         self.x2 = self.x1;
         self.x1 = x;
         self.y2 = self.y1;
-        self.y1 = y;
+        // 비정규수 방지 (`sound.md` 6-3). 무음이 이어질 때 필터 상태가 0으로 수렴한다
+        self.y1 = crate::denormal::flush(y);
         y
     }
 

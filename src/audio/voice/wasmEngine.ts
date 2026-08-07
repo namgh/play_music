@@ -56,6 +56,11 @@ export const WASM_PARAM_ORDER = [
   'synthFilterEnv',
   // 샘플러 (Tier 4)
   'preserveFormant',
+  // 드럼 (합성). 밝기는 strikePosition 슬롯을 재사용한다
+  'drumKind',
+  'drumDecaySec',
+  'drumPitchDrop',
+  'drumNoiseAmount',
 ] as const;
 
 /** 모델의 `PitchCurve` 를 wasm 파라미터로 펼친다 */
@@ -75,7 +80,7 @@ export function curveToParams(curve: {
 const MAX_BLOCK = 2048;
 
 /** Rust 쪽 PARAM_COUNT 와 같아야 한다 */
-export const WASM_PARAM_COUNT = 30;
+export const WASM_PARAM_COUNT = 34;
 
 interface WasmExports {
   memory: WebAssembly.Memory;

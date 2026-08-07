@@ -12,6 +12,7 @@
 //! 그 정규화가 DC 를 발산시키지 않도록 루프에 DC 차단기를 넣는다.
 
 use crate::curve::{cents_to_ratio, PitchCurve};
+use crate::denormal::{flush, flush_slice};
 use crate::filters::{solve_allpass_coef, Allpass, DcBlock, OneZero};
 use crate::interp::{lagrange4, lagrange4_response, solve_lagrange_fraction};
 use crate::smooth::{times, Smoothed};
@@ -494,6 +495,20 @@ impl StringVoice {
 
         self.elapsed += out.len();
 
+        // 비정규수 방지 (`sound.md` 6-3). 되먹임 상태가 0으로 수렴할 때
+        // 비정규 구간에 들어가면 CPU 가 수십 배로 튄다. wasm 에는 FTZ 플래그가
+        // 없으므로 직접 눌러야 한다. 블록마다 한 번이면 충분하다
+        self.ap_state = flush(self.ap_state);
+        self.lp_state = flush(self.lp_state);
+        self.dc_x1 = flush(self.dc_x1);
+        self.dc_y1 = flush(self.dc_y1);
+        for state in self.disp_state.iter_mut() {
+            *state = flush(*state);
+        }
+        if quiet {
+            flush_slice(&mut self.buffer);
+        }
+
         // 수치 안정성 (`sound.md` 6-5) — NaN 하나가 이후 전체를 무음으로 만든다
         if !self.ap_state.is_finite() || !self.lp_state.is_finite() || !self.dc_y1.is_finite() {
             self.reset();
@@ -560,6 +575,17 @@ impl StringVoice {
                 self.write = 0;
             }
             self.elapsed += 1;
+        }
+
+        // 비정규수 방지 (`sound.md` 6-3)
+        self.lp_state = flush(self.lp_state);
+        self.dc_x1 = flush(self.dc_x1);
+        self.dc_y1 = flush(self.dc_y1);
+        for state in self.disp_state.iter_mut() {
+            *state = flush(*state);
+        }
+        if quiet {
+            flush_slice(&mut self.buffer);
         }
 
         if !self.lp_state.is_finite() || !self.dc_y1.is_finite() {

@@ -9,6 +9,7 @@
 //! 대가 (`sound.md` 3절): 모드 수만큼 공진 필터가 필요해 CPU 가 비싸다.
 //! 웨이브가이드 보이스는 딜레이 라인 + 필터 몇 개인데 여기는 모드당 2차 필터 하나다.
 
+use crate::denormal::flush;
 use crate::smooth::{times, Smoothed};
 
 /// 모드 개수 상한. 늘리면 소리는 좋아지고 CPU 는 비례해 는다
@@ -45,8 +46,9 @@ impl Mode {
         // 복소 회전 + 감쇠
         let re = self.re * self.cos_w - self.im * self.sin_w;
         let im = self.re * self.sin_w + self.im * self.cos_w;
-        self.re = re * self.decay;
-        self.im = im * self.decay;
+        // 비정규수 방지 (`sound.md` 6-3) — 감쇠하는 회전자는 0을 향해 끝없이 줄어든다
+        self.re = flush(re * self.decay);
+        self.im = flush(im * self.decay);
         self.re
     }
 

@@ -9,10 +9,12 @@
 
 pub mod amp;
 pub mod curve;
+pub mod denormal;
 pub mod filters;
 pub mod interp;
 pub mod modal;
 pub mod oversample;
+pub mod percussion;
 pub mod sampler;
 pub mod smooth;
 pub mod string_voice;
@@ -22,6 +24,7 @@ pub mod voice;
 use amp::{AmpChain, AmpCharacter, AmpParams};
 use curve::PitchCurve;
 use modal::{ModalMaterial, ModalParams};
+use percussion::{DrumKind, DrumParams};
 use sampler::{SampleData, SamplerParams};
 use string_voice::StringParams;
 use synth::{SynthParams, Waveform};
@@ -44,9 +47,10 @@ pub const MAX_BLOCK: usize = 2048;
 /// | 21~23 | 모달 |
 /// | 24~28 | 신스 |
 /// | 29 | 샘플러 |
+/// | 30~33 | 드럼 |
 ///
 /// **층을 분리한다** (`sound.md` 5절·8절): "줄 길이"와 "왜곡"은 서로 다른 층이다.
-pub const PARAM_COUNT: usize = 30;
+pub const PARAM_COUNT: usize = 34;
 
 struct Engine {
     sample_rate: f64,
@@ -171,6 +175,17 @@ fn read_sampler() -> SamplerParams {
     }
 }
 
+fn read_drum() -> DrumParams {
+    let p = &engine().param_in;
+    DrumParams {
+        kind: DrumKind::from_index(p[30] as u32),
+        decay_sec: p[31] as f64,
+        pitch_drop: p[32] as f64,
+        noise_amount: p[33] as f64,
+        tone: p[23] as f64, // 때리는 위치 슬롯을 밝기로 재사용
+    }
+}
+
 fn read_amp() -> (bool, AmpParams) {
     let p = &engine().param_in;
     let enabled = p[11] > 0.5;
@@ -235,6 +250,10 @@ pub extern "C" fn note_on(freq_hz: f32, velocity: f32, gain: f32) -> u32 {
         VoiceKind::VirtualAnalog => {
             let synth = read_synth();
             engine().voices[index].note_on_synth(freq_hz as f64, velocity as f64, &synth);
+        }
+        VoiceKind::Percussion => {
+            let drum = read_drum();
+            engine().voices[index].note_on_drum(freq_hz as f64, velocity as f64, &drum);
         }
         VoiceKind::Sampler => {
             let sampler = read_sampler();
