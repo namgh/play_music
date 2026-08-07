@@ -29,9 +29,43 @@ test('상속이 부모 → 자식 순으로 덮어쓴다', () => {
   assert.equal(lp.params.scaleLengthMm, 628);
   // 나머지는 부모(electric-guitar)에서
   assert.equal(lp.params.sustainSec, 5);
+  // 앰프 층(amped-string)에서
+  assert.equal(lp.params.ampEnabled, 1);
+  assert.equal(lp.params.ampDrive, 0.35);
   // 그 위(string-base)에서
   assert.equal(lp.params.pluckPosition, 0.18);
-  assert.deepEqual(lp.lineage, ['electric-guitar-lp', 'electric-guitar', 'string-base']);
+  assert.deepEqual(lp.lineage, [
+    'electric-guitar-lp', 'electric-guitar', 'amped-string', 'string-base',
+  ]);
+});
+
+test('앰프는 줄과 분리된 층이다 (sound.md 5절)', () => {
+  // "줄 길이"와 "왜곡"은 서로 다른 층에 있어야 한다.
+  // 어쿠스틱 악기는 앰프 층을 거치지 않으므로 앰프가 꺼진 채로 온다
+  const acoustic = resolveInstrument('acoustic-guitar', registry);
+  assert.equal(acoustic.params.ampEnabled, 0, '어쿠스틱에 앰프가 켜져 있다');
+  assert.ok(!('ampDrive' in acoustic.params), '어쿠스틱에 앰프 파라미터가 새어 들어왔다');
+  assert.ok(!acoustic.lineage.includes('amped-string'));
+
+  const electric = resolveInstrument('electric-guitar', registry);
+  assert.equal(electric.params.ampEnabled, 1);
+  assert.ok(electric.lineage.includes('amped-string'));
+
+  // 줄 파라미터는 두 악기 모두 갖고 있다 — 층이 겹치는 게 아니라 얹히는 구조다
+  assert.ok('scaleLengthMm' in acoustic.params && 'scaleLengthMm' in electric.params);
+});
+
+test('앰프 음색 프리셋이 왜곡만 바꾼다', () => {
+  // 사용자가 고르는 "클린/크런치/디스토션/퍼즈"는 앰프 단이지 줄이 아니다
+  const guitar = resolveInstrument('electric-guitar', registry);
+  const clean = instrumentParams(guitar, '클린', null);
+  const fuzz = instrumentParams(guitar, '퍼즈', null);
+
+  assert.notEqual(clean.ampCharacter, fuzz.ampCharacter);
+  assert.ok((fuzz.ampDrive as number) > (clean.ampDrive as number));
+  // 줄 파라미터는 그대로여야 한다
+  assert.equal(clean.scaleLengthMm, fuzz.scaleLengthMm);
+  assert.equal(clean.stiffness, fuzz.stiffness);
 });
 
 test('레스폴과 스트랫은 줄 길이만 다르다', () => {

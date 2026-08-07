@@ -7,12 +7,15 @@
 //! JS 쪽에서 메모리를 할당하지 않도록 보이스 풀과 출력 버퍼를 여기서 고정 크기로
 //! 들고 있는다. 할당자를 오디오 경로에 두면 지연이 튄다.
 
+pub mod amp;
 pub mod curve;
 pub mod filters;
 pub mod interp;
+pub mod oversample;
 pub mod smooth;
 pub mod string_voice;
 
+use amp::{AmpChain, AmpCharacter, AmpParams};
 use curve::PitchCurve;
 use string_voice::{StringParams, StringVoice};
 
@@ -20,11 +23,22 @@ pub const MAX_VOICES: usize = 32;
 pub const MAX_BLOCK: usize = 2048;
 
 /// 파라미터 슬롯 개수. JS 는 이 순서로 f32 배열을 채운다.
-/// 0~5 는 줄 파라미터, 6~10 은 음정 곡선 (0 이면 곡선 없음).
-pub const PARAM_COUNT: usize = 11;
+///
+/// | 인덱스 | 층 |
+/// |---|---|
+/// | 0~5 | 줄 (진동체) |
+/// | 6~10 | 음정 곡선 (0 이면 곡선 없음) |
+/// | 11~19 | 앰프 체인 (`amp_enabled` 가 0 이면 통과) |
+///
+/// **층을 분리한다** (`sound.md` 5절·8절): "줄 길이"와 "왜곡"은 서로 다른 층이다.
+pub const PARAM_COUNT: usize = 20;
 
 struct Engine {
     sample_rate: f64,
+    /// 트랙 하나당 워크렛 노드 하나이므로 앰프 체인도 하나면 된다.
+    /// 보이스들의 합에 걸린다 — 실제 기타도 픽업 하나가 여섯 줄을 함께 읽는다
+    amp: AmpChain,
+    amp_enabled: bool,
     voices: Vec<StringVoice>,
     /// 보이스별 파라미터
     params: Vec<StringParams>,
@@ -54,6 +68,8 @@ pub extern "C" fn init(sample_rate: f32) {
     let sr = sample_rate as f64;
     let engine = Engine {
         sample_rate: sr,
+        amp: AmpChain::new(sr),
+        amp_enabled: false,
         voices: (0..MAX_VOICES)
             .map(|i| StringVoice::new(sr, 0x2f6e2b1u32.wrapping_add(i as u32 * 2654435761)))
             .collect(),
@@ -94,6 +110,27 @@ fn read_params() -> StringParams {
     }
 }
 
+fn read_amp() -> (bool, AmpParams) {
+    let p = &engine().param_in;
+    let enabled = p[11] > 0.5;
+    (
+        enabled,
+        AmpParams {
+            character: AmpCharacter::from_index(p[12] as u32),
+            drive: p[13] as f64,
+            tone_low: p[14] as f64,
+            tone_mid: p[15] as f64,
+            tone_high: p[16] as f64,
+            level: p[17] as f64,
+            cabinet: p[18] > 0.5,
+            pickup_position: p[19] as f64,
+            // 코일 특성은 지금 픽업 위치와 함께 하나의 값으로 묶는다.
+            // 험버커/싱글코일을 따로 노출하게 되면 슬롯을 하나 더 쓴다
+            pickup_coil_hz: 4000.0 + (1.0 - p[19] as f64) * 4000.0,
+        },
+    )
+}
+
 fn read_curve() -> PitchCurve {
     let p = &engine().param_in;
     PitchCurve {
@@ -125,6 +162,14 @@ pub extern "C" fn note_on(freq_hz: f32, velocity: f32, gain: f32) -> u32 {
     e.gains[index] = gain;
     let curve = read_curve();
     e.voices[index].note_on_curved(freq_hz as f64, velocity as f64, &params, &curve);
+
+    // 앰프 파라미터도 같이 온다. 픽업 콤 필터가 줄 주기를 알아야 하므로 주파수를 넘긴다
+    let (enabled, amp_params) = read_amp();
+    let e = engine();
+    e.amp_enabled = enabled;
+    if enabled {
+        e.amp.set_params(&amp_params, freq_hz as f64);
+    }
     index as u32
 }
 
@@ -133,7 +178,18 @@ pub extern "C" fn note_on(freq_hz: f32, velocity: f32, gain: f32) -> u32 {
 #[no_mangle]
 pub extern "C" fn set_params_live(voice: u32) {
     let params = read_params();
+    let (amp_enabled, amp_params) = read_amp();
     let e = engine();
+    e.amp_enabled = amp_enabled;
+    if amp_enabled {
+        // 픽업 콤은 지금 울리는 음 기준으로 맞춘다
+        let freq = e
+            .voices
+            .iter()
+            .find(|v| v.is_active())
+            .map_or(220.0, |_| 220.0);
+        e.amp.set_params(&amp_params, freq);
+    }
     if voice == u32::MAX {
         for i in 0..MAX_VOICES {
             e.params[i] = params;
@@ -157,9 +213,11 @@ pub extern "C" fn note_off(voice: u32) {
 
 #[no_mangle]
 pub extern "C" fn all_off() {
-    for v in engine().voices.iter_mut() {
+    let e = engine();
+    for v in e.voices.iter_mut() {
         v.reset();
     }
+    e.amp.reset();
 }
 
 /// 한 블록 렌더. `output_buffer()` 에 결과가 들어간다.
@@ -192,6 +250,14 @@ pub extern "C" fn process(frames: u32) -> u32 {
         }
         e.scratch = scratch;
     }
+
+    // 앰프 체인은 보이스 합에 걸린다 (`sound.md` 5절의 신호 체인 순서)
+    if e.amp_enabled {
+        let mut out = core::mem::take(&mut e.out);
+        e.amp.process(&mut out[..n]);
+        e.out = out;
+    }
+
     active
 }
 
@@ -212,6 +278,15 @@ pub extern "C" fn voice_loop_gain(voice: u32) -> f32 {
         .get(voice as usize)
         .map(|v| v.setup().loop_gain as f32)
         .unwrap_or(0.0)
+}
+
+/// 파라미터 슬롯 개수. JS 쪽 `WASM_PARAM_ORDER` 와 맞는지 확인하는 데 쓴다.
+///
+/// 순서나 개수가 어긋나면 **조용히 엉뚱한 소리가 난다** — 예를 들어 드라이브 값이
+/// 톤 노브 자리에 들어간다. 양쪽이 각자 상수를 들고 있으므로 대조할 방법이 필요하다.
+#[no_mangle]
+pub extern "C" fn param_count() -> u32 {
+    PARAM_COUNT as u32
 }
 
 #[no_mangle]

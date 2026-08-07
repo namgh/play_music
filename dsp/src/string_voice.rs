@@ -246,6 +246,11 @@ impl StringVoice {
         self.setup
     }
 
+    /// 지금 울리고 있는 주파수. 앰프의 픽업 콤 필터가 줄 주기를 알아야 한다
+    pub fn freq_hz(&self) -> f64 {
+        self.freq_hz
+    }
+
     pub fn note_on(&mut self, freq_hz: f64, velocity: f64, params: &StringParams) {
         self.note_on_curved(freq_hz, velocity, params, &PitchCurve::default());
     }

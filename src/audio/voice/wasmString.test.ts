@@ -114,7 +114,10 @@ test('모든 내장 악기가 Rust 코어에서 음정이 맞는다', async () =
 
   for (const id of playableInstrumentIds()) {
     const instrument = resolveInstrument(id, registry);
-    const params = instrumentParams(instrument, 'default', null);
+    // **앰프를 끄고 잰다.** ±1센트 주장은 합성 엔진(줄)에 대한 것이다.
+    // 왜곡은 상호변조 성분을 기본음 근처에 만들어 측정값을 당긴다 — 실제 디스토션
+    // 기타에서도 일어나는 일이고, 아래 별도 테스트가 그 크기를 따로 묶는다
+    const params = { ...instrumentParams(instrument, 'default', null), ampEnabled: 0 };
     for (const midi of [
       instrument.range.low,
       Math.round((instrument.range.low + instrument.range.high) / 2),
@@ -318,6 +321,69 @@ test('발음 중 파라미터를 크게 바꿔도 클릭이 생기지 않는다 
     across < before * 3,
     `전환 지점 기울기 ${across.toExponential(2)} 가 평시 ${before.toExponential(2)} 의 3배를 넘는다 (클릭)`,
   );
+});
+
+test('앰프를 켜도 음정이 크게 밀리지 않는다', async () => {
+  // 왜곡은 상호변조로 기본음 근처에 성분을 만들어 측정값을 당긴다.
+  // 없앨 수는 없지만(실제 기타도 그렇다) 크기는 묶어 둔다
+  const wasm = await engine();
+  const lp = resolveInstrument('electric-guitar-lp', registry);
+  const params = instrumentParams(lp, 'default', null);
+
+  for (const midi of [40, 52, 64, 76, 88]) {
+    const hz = midiToHz(midi);
+    const err = measureCentsError(renderWasm(wasm, hz, params, 2), hz, FS);
+    assert.ok(Math.abs(err) <= 2, `midi=${midi}: 앰프를 거쳐 ${err.toFixed(3)} 센트 밀렸다`);
+  }
+});
+
+test('앰프 체인이 실제로 소리를 바꾼다 (M2)', async () => {
+  // sound.md 5절: 사용자가 고르는 "클린/크런치/디스토션/퍼즈"는 앰프 단의 파라미터다.
+  // 정의에 값을 넣었는데 소리가 안 바뀌면 배선이 끊긴 것이다.
+  //
+  // **왜곡 정도는 크레스트 팩터(피크/RMS)로 잰다.** 하모닉 비율로 재려다 실패했는데,
+  // 심한 클리핑은 사각파에 가까워져 기본음도 같이 커지므로 비율이 오히려 떨어진다.
+  // 압축 정도는 왜곡의 양을 단조롭게 반영한다.
+  const wasm = await engine();
+  const guitar = resolveInstrument('electric-guitar', registry);
+
+  const crestFactor = (params: Record<string, ParamValue>) => {
+    const out = renderWasm(wasm, midiToHz(52), params, 1);
+    let peak = 0;
+    let square = 0;
+    for (const v of out) {
+      peak = Math.max(peak, Math.abs(v));
+      square += v * v;
+    }
+    assert.ok(out.every(Number.isFinite), '앰프에서 NaN');
+    assert.ok(peak > 1e-4, '소리가 안 난다');
+    return peak / Math.sqrt(square / out.length);
+  };
+
+  let previous = Infinity;
+  for (const tone of ['클린', '크런치', '디스토션', '퍼즈']) {
+    const crest = crestFactor(instrumentParams(guitar, tone, null));
+    assert.ok(
+      crest < previous,
+      `${tone} 의 크레스트 ${crest.toFixed(2)} 가 이전 ${previous.toFixed(2)} 보다 작지 않다 (왜곡이 안 늘었다)`,
+    );
+    previous = crest;
+  }
+  assert.ok(previous < 2, `퍼즈가 충분히 압축되지 않았다: ${previous.toFixed(2)}`);
+});
+
+test('앰프가 꺼진 악기는 앰프를 거치지 않는다', async () => {
+  // 어쿠스틱 기타에 앰프가 걸리면 소리가 완전히 달라진다
+  const wasm = await engine();
+  const acoustic = instrumentParams(resolveInstrument('acoustic-guitar', registry), 'default', null);
+  assert.equal(acoustic.ampEnabled, 0);
+
+  wasm.allOff();
+  wasm.noteOn(midiToHz(57), 1, acoustic);
+  const out = new Float32Array(BLOCK);
+  wasm.process(out, BLOCK);
+  assert.ok(out.every(Number.isFinite));
+  assert.ok(Math.max(...[...out].map(Math.abs)) > 1e-4, '소리가 안 난다');
 });
 
 test('블록 상한을 넘기면 조용히 자르지 않고 에러다', async () => {

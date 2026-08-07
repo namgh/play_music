@@ -45,6 +45,13 @@ const STRING_BASE: InstrumentDefinition = {
       type: 'float', min: 0, max: 1, default: 0.4,
       label: '뜯는 세기', curve: 'linear', group: '연주',
     },
+    // --- 앰프 체인 (sound.md 5절) ---
+    // **줄과 분리된 층이다.** "줄 길이"와 "왜곡"은 서로 다른 곳에 있다.
+    // 어쿠스틱 악기는 ampEnabled 를 0 으로 두고 나머지를 무시한다
+    ampEnabled: {
+      type: 'int', min: 0, max: 1, default: 0,
+      label: '앰프', group: '앰프',
+    },
   },
   params: {
     scaleLengthMm: 648,
@@ -53,6 +60,8 @@ const STRING_BASE: InstrumentDefinition = {
     sustainSec: 3,
     pluckPosition: 0.18,
     pluckHardness: 0.4,
+    // 앰프는 기본적으로 꺼져 있다 — 어쿠스틱 악기가 다수다
+    ampEnabled: 0,
   },
   tones: {
     default: {},
@@ -72,11 +81,61 @@ const ACOUSTIC_GUITAR: InstrumentDefinition = {
   range: { low: 40, high: 88 }, // E2 ~ E6
 };
 
+/**
+ * 앰프를 쓰는 악기의 기준 정의. 일렉 기타·베이스가 여기서 상속받는다.
+ *
+ * 파라미터가 줄 정의와 **섞이지 않는다** — 상속으로 층을 얹는 구조라
+ * 어쿠스틱 악기는 이 정의를 거치지 않는다.
+ */
+const AMPED_STRING: InstrumentDefinition = {
+  id: 'amped-string',
+  schemaVersion: 1,
+  name: '앰프 줄 (기준)',
+  extends: 'string-base',
+  paramSpecs: {
+    ampCharacter: {
+      type: 'enum', default: 1, min: 0, max: 3,
+      label: '앰프 성격', group: '앰프',
+      options: ['클린', '크런치', '디스토션', '퍼즈'],
+    },
+    ampDrive: {
+      type: 'float', min: 0, max: 1, default: 0.35,
+      label: '드라이브', group: '앰프',
+    },
+    ampToneLow: { type: 'float', min: 0, max: 1, default: 0.5, label: '저역', group: '앰프' },
+    ampToneMid: { type: 'float', min: 0, max: 1, default: 0.5, label: '중역', group: '앰프' },
+    ampToneHigh: { type: 'float', min: 0, max: 1, default: 0.55, label: '고역', group: '앰프' },
+    ampLevel: { type: 'float', min: 0, max: 1, default: 0.7, label: '앰프 볼륨', group: '앰프' },
+    ampCabinet: { type: 'int', min: 0, max: 1, default: 1, label: '캐비닛', group: '앰프' },
+    pickupPosition: {
+      type: 'float', min: 0, max: 1, default: 0.15,
+      label: '픽업 위치', group: '앰프',
+    },
+  },
+  params: {
+    ampEnabled: 1,
+    ampCharacter: 1,
+    ampDrive: 0.35,
+    ampToneLow: 0.5,
+    ampToneMid: 0.5,
+    ampToneHigh: 0.55,
+    ampLevel: 0.7,
+    ampCabinet: 1,
+    pickupPosition: 0.15,
+  },
+  tones: {
+    클린: { ampCharacter: 0, ampDrive: 0.15, ampToneHigh: 0.6 },
+    크런치: { ampCharacter: 1, ampDrive: 0.45 },
+    디스토션: { ampCharacter: 2, ampDrive: 0.75, ampToneMid: 0.35 },
+    퍼즈: { ampCharacter: 3, ampDrive: 0.9, ampToneLow: 0.6 },
+  },
+};
+
 const ELECTRIC_GUITAR: InstrumentDefinition = {
   id: 'electric-guitar',
   schemaVersion: 1,
   name: '일렉 기타 (스트랫)',
-  extends: 'string-base',
+  extends: 'amped-string',
   params: { scaleLengthMm: 648, stiffness: 0.012, damping: 0.04, sustainSec: 5 },
   range: { low: 40, high: 88 },
 };
@@ -93,8 +152,12 @@ const ELECTRIC_BASS: InstrumentDefinition = {
   id: 'electric-bass',
   schemaVersion: 1,
   name: '일렉 베이스',
-  extends: 'string-base',
-  params: { scaleLengthMm: 864, stiffness: 0.02, damping: 0.06, sustainSec: 4 },
+  extends: 'amped-string',
+  params: {
+    scaleLengthMm: 864, stiffness: 0.02, damping: 0.06, sustainSec: 4,
+    // 베이스는 캐비닛 성격이 달라 기본을 클린 쪽으로 둔다
+    ampCharacter: 0, ampDrive: 0.2, ampToneLow: 0.65,
+  },
   range: { low: 28, high: 67 }, // E1 ~ G4
 };
 
@@ -127,6 +190,7 @@ const HARP: InstrumentDefinition = {
 
 export const BUILT_IN_INSTRUMENTS: readonly InstrumentDefinition[] = [
   STRING_BASE,
+  AMPED_STRING,
   ACOUSTIC_GUITAR,
   ELECTRIC_GUITAR,
   LES_PAUL,
@@ -137,7 +201,7 @@ export const BUILT_IN_INSTRUMENTS: readonly InstrumentDefinition[] = [
 ];
 
 /** 기준 정의는 사용자에게 악기로 보이지 않는다 — 연주용 악기가 아니다 */
-const ABSTRACT_IDS = new Set(['string-base']);
+const ABSTRACT_IDS = new Set(['string-base', 'amped-string']);
 
 export function createRegistry(
   defs: readonly InstrumentDefinition[] = BUILT_IN_INSTRUMENTS,

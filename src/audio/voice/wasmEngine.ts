@@ -17,17 +17,30 @@ import type { ParamValue } from '../../instruments/types.ts';
  * 순서가 어긋나면 조용히 엉뚱한 소리가 난다 — 양쪽을 같이 고칠 것.
  */
 export const WASM_PARAM_ORDER = [
+  // 진동체 (줄)
   'scaleLengthMm',
   'stiffness',
   'damping',
   'sustainSec',
   'pluckPosition',
   'pluckHardness',
+  // 음정 곡선 (0 이면 곡선 없음)
   'glideCents',
   'glideMs',
   'vibratoCents',
   'vibratoHz',
   'vibratoDelayMs',
+  // 앰프 체인 — **줄과 분리된 층**이다 (sound.md 5절·8절).
+  // ampEnabled 가 0 이면 통과 (어쿠스틱 악기)
+  'ampEnabled',
+  'ampCharacter',
+  'ampDrive',
+  'ampToneLow',
+  'ampToneMid',
+  'ampToneHigh',
+  'ampLevel',
+  'ampCabinet',
+  'pickupPosition',
 ] as const;
 
 /** 모델의 `PitchCurve` 를 wasm 파라미터로 펼친다 */
@@ -46,6 +59,9 @@ export function curveToParams(curve: {
 
 const MAX_BLOCK = 2048;
 
+/** Rust 쪽 PARAM_COUNT 와 같아야 한다 */
+export const WASM_PARAM_COUNT = 20;
+
 interface WasmExports {
   memory: WebAssembly.Memory;
   init(sampleRate: number): void;
@@ -56,6 +72,7 @@ interface WasmExports {
   note_off(voice: number): void;
   all_off(): void;
   process(frames: number): number;
+  param_count(): number;
   voice_line_delay(voice: number): number;
   voice_loop_gain(voice: number): number;
   sample_rate(): number;
@@ -90,7 +107,7 @@ export class WasmVoiceEngine {
     const buffer = this.exports.memory.buffer;
     if (buffer === this.viewBuffer) return;
     this.viewBuffer = buffer;
-    this.paramView = new Float32Array(buffer, this.exports.param_buffer(), WASM_PARAM_ORDER.length);
+    this.paramView = new Float32Array(buffer, this.exports.param_buffer(), WASM_PARAM_COUNT);
     this.outputView = new Float32Array(buffer, this.exports.output_buffer(), MAX_BLOCK);
   }
 
@@ -103,6 +120,15 @@ export class WasmVoiceEngine {
       }
     }
     exports.init(sampleRate);
+
+    // 파라미터 순서가 어긋나면 조용히 엉뚱한 소리가 난다 (드라이브가 톤 자리에 들어가는 식).
+    // 양쪽이 각자 상수를 들고 있으므로 여기서 대조한다
+    const expected = exports.param_count();
+    if (expected !== WASM_PARAM_COUNT) {
+      throw new WasmEngineError(
+        `파라미터 개수 불일치: wasm ${expected}, JS ${WASM_PARAM_COUNT} — 한쪽만 고쳤다`,
+      );
+    }
     return new WasmVoiceEngine(exports);
   }
 
