@@ -31,6 +31,7 @@ import type { InstrumentDefinition, ParamValue } from '../instruments/types.ts';
 import { instrumentParams, resolveInstrument } from '../instruments/resolve.ts';
 import type { ResolvedInstrument } from '../instruments/types.ts';
 import { curveToParams, WASM_PARAM_ORDER } from './voice/wasmEngine.ts';
+import { VOICE_KIND_INDEX } from '../instruments/types.ts';
 import { buildEffectChain } from './effectGraph.ts';
 import type { EffectChain } from './effectGraph.ts';
 import { renderOfflineWithWorklet } from './offlineExport.ts';
@@ -42,6 +43,7 @@ const EXPORT_TAIL_SEC = 4;
 
 interface TrackRuntime {
   node: AudioWorkletNode;
+  voiceKind: number;
   gainNode: GainNode;
   panNode: StereoPannerNode;
   effects: EffectChain;
@@ -147,17 +149,24 @@ export class WorkletRenderer implements AudioRenderer {
       node.connect(gainNode).connect(panNode).connect(effects.input);
       effects.output.connect(this.masterEffects.input);
 
-      runtime = { node, gainNode, panNode, effects, effectsKey: '[]', instrument, params };
+      runtime = {
+        node, gainNode, panNode, effects, effectsKey: '[]', instrument, params,
+        voiceKind: VOICE_KIND_INDEX[instrument.voice] ?? 0,
+      };
       this.tracks.set(track.id, runtime);
     }
 
     runtime.instrument = instrument;
     runtime.params = params;
+    runtime.voiceKind = VOICE_KIND_INDEX[instrument.voice] ?? 0;
     runtime.gainNode.gain.value = track.gain;
     runtime.panNode.pan.value = track.pan;
 
     // **발음 중인 소리에도 파라미터를 반영한다.** 스무딩이 클릭을 막아 준다
-    runtime.node.port.postMessage({ type: 'setParams', params: this.encodeParams(params, null) });
+    runtime.node.port.postMessage({
+      type: 'setParams',
+      params: this.encodeParams(params, null, runtime.voiceKind),
+    });
 
     const effectsKey = JSON.stringify(track.effects);
     if (effectsKey !== runtime.effectsKey) {
@@ -214,7 +223,7 @@ export class WorkletRenderer implements AudioRenderer {
       frame: Math.round(this.ctx.currentTime * this.ctx.sampleRate),
       freq: pitchToHz(note.pitch, this.project.tuning),
       velocity: note.velocity,
-      params: this.encodeParams(runtime.params, note.pitchCurve),
+      params: this.encodeParams(runtime.params, note.pitchCurve, runtime.voiceKind),
       gain: 1,
     });
   }
@@ -278,8 +287,11 @@ export class WorkletRenderer implements AudioRenderer {
   private encodeParams(
     params: Readonly<Record<string, ParamValue>>,
     curve: Note['pitchCurve'],
+    voiceKind = 0,
   ): number[] {
-    const merged = { ...params, ...curveToParams(curve) };
+    const merged: Record<string, number | string> = {
+      ...params, ...curveToParams(curve), voiceKind,
+    };
     return WASM_PARAM_ORDER.map((key) => {
       const value = merged[key];
       return typeof value === 'number' && Number.isFinite(value) ? value : 0;
@@ -295,7 +307,7 @@ export class WorkletRenderer implements AudioRenderer {
       frame: Math.round(atTime * this.ctx.sampleRate),
       freq: pitchToHz(event.note.pitch, this.project.tuning),
       velocity: event.note.velocity,
-      params: this.encodeParams(runtime.params, event.pitchCurve),
+      params: this.encodeParams(runtime.params, event.pitchCurve, runtime.voiceKind),
       gain: 1,
     });
   }

@@ -350,9 +350,12 @@ impl SynthVoice {
             return;
         }
 
-        let dt_a = self.freq_hz / self.sample_rate;
-        let ratio = (self.params.detune_cents / 1200.0).exp2();
-        let dt_b = (self.freq_hz * ratio / self.sample_rate).min(0.49);
+        // **디튠은 ±절반으로 대칭 배치한다.** 한쪽으로만 걸면 두 오실레이터의
+        // 평균 음정이 디튠의 절반만큼 샤프해진다 (8센트 디튠에서 +4센트 오차가 났다).
+        // 다른 악기와 겹쳐 쓸 때 바로 드러나는 오차다
+        let half = self.params.detune_cents / 2.0;
+        let dt_a = (self.freq_hz * (-half / 1200.0).exp2() / self.sample_rate).min(0.49);
+        let dt_b = (self.freq_hz * (half / 1200.0).exp2() / self.sample_rate).min(0.49);
         let waveform = self.params.waveform;
         let use_second = self.params.detune_cents.abs() > 0.01;
         let drive = self.params.drive.clamp(0.0, 1.0);

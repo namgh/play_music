@@ -188,6 +188,188 @@ const HARP: InstrumentDefinition = {
   range: { low: 24, high: 96 },
 };
 
+// --- 신스 (Tier 3) ---------------------------------------------------------
+//
+// 물리 모델링이 아니다. 줄 정의를 상속하지 않으므로 줄 파라미터가 섞이지 않는다.
+// 엔벌로프는 wasm 에서 줄 슬롯을 재사용하지만, 정의 층에서는 이름이 따로다.
+
+const SYNTH_BASE: InstrumentDefinition = {
+  id: 'synth-base',
+  schemaVersion: 1,
+  name: '신스 (기준)',
+  voice: 'virtual-analog',
+  range: { low: 24, high: 108 },
+  paramSpecs: {
+    synthWaveform: {
+      type: 'enum', min: 0, max: 3, default: 0,
+      label: '파형', group: '오실레이터',
+      options: ['톱니', '사각', '삼각', '사인'],
+    },
+    synthDetuneCents: {
+      type: 'float', min: 0, max: 30, default: 8,
+      unit: '¢', label: '디튠', group: '오실레이터',
+    },
+    synthCutoffHz: {
+      type: 'float', min: 100, max: 16000, default: 3000,
+      unit: 'Hz', label: '컷오프', curve: 'log', group: '필터',
+    },
+    synthResonance: {
+      type: 'float', min: 0, max: 1, default: 0.2,
+      label: '레조넌스', group: '필터',
+    },
+    synthFilterEnv: {
+      type: 'float', min: 0, max: 1, default: 0.5,
+      label: '필터 엔벌로프', group: '필터',
+    },
+    // wasm 에서 줄 슬롯 0~3 을 재사용한다 (신스에는 줄 파라미터가 의미 없다)
+    scaleLengthMm: {
+      type: 'float', min: 0.5, max: 500, default: 5,
+      unit: 'ms', label: '어택', curve: 'log', group: '엔벌로프',
+    },
+    stiffness: {
+      type: 'float', min: 1, max: 2000, default: 300,
+      unit: 'ms', label: '디케이', curve: 'log', group: '엔벌로프',
+    },
+    damping: {
+      type: 'float', min: 0, max: 1, default: 0.6,
+      label: '서스테인', group: '엔벌로프',
+    },
+    sustainSec: {
+      type: 'float', min: 5, max: 2000, default: 250,
+      unit: 'ms', label: '릴리즈', curve: 'log', group: '엔벌로프',
+    },
+    ampEnabled: { type: 'int', min: 0, max: 1, default: 0, label: '앰프', group: '앰프' },
+    ampDrive: { type: 'float', min: 0, max: 1, default: 0, label: '드라이브', group: '앰프' },
+  },
+  params: {
+    synthWaveform: 0,
+    synthDetuneCents: 8,
+    synthCutoffHz: 3000,
+    synthResonance: 0.2,
+    synthFilterEnv: 0.5,
+    scaleLengthMm: 5,
+    stiffness: 300,
+    damping: 0.6,
+    sustainSec: 250,
+    ampEnabled: 0,
+    ampDrive: 0,
+  },
+  tones: {
+    default: {},
+    리드: { synthWaveform: 0, synthCutoffHz: 5000, synthResonance: 0.35, damping: 0.5 },
+    패드: { synthWaveform: 2, scaleLengthMm: 300, sustainSec: 1200, synthCutoffHz: 1800, damping: 0.8 },
+    베이스: { synthWaveform: 1, synthCutoffHz: 900, synthDetuneCents: 0, stiffness: 200, damping: 0.4 },
+  },
+};
+
+const SYNTH_LEAD: InstrumentDefinition = {
+  id: 'synth-lead',
+  schemaVersion: 1,
+  name: '신스 리드',
+  extends: 'synth-base',
+  params: { synthCutoffHz: 5000, synthResonance: 0.35 },
+  range: { low: 48, high: 108 },
+};
+
+const SYNTH_PAD: InstrumentDefinition = {
+  id: 'synth-pad',
+  schemaVersion: 1,
+  name: '신스 패드',
+  extends: 'synth-base',
+  params: {
+    synthWaveform: 2, scaleLengthMm: 300, sustainSec: 1200,
+    synthCutoffHz: 1800, damping: 0.8, synthDetuneCents: 14,
+  },
+  range: { low: 36, high: 96 },
+};
+
+const SYNTH_BASS: InstrumentDefinition = {
+  id: 'synth-bass',
+  schemaVersion: 1,
+  name: '신스 베이스',
+  extends: 'synth-base',
+  params: {
+    synthWaveform: 1, synthCutoffHz: 900, synthDetuneCents: 0,
+    stiffness: 200, damping: 0.4,
+  },
+  range: { low: 24, high: 60 },
+};
+
+// --- 모달 (Tier 2) ---------------------------------------------------------
+
+const MODAL_BASE: InstrumentDefinition = {
+  id: 'modal-base',
+  schemaVersion: 1,
+  name: '모달 (기준)',
+  voice: 'modal',
+  range: { low: 36, high: 100 },
+  paramSpecs: {
+    modalMaterial: {
+      type: 'enum', min: 0, max: 3, default: 0,
+      label: '재질', group: '진동체',
+      options: ['마림바', '비브라폰', '벨', '글로켄슈필'],
+    },
+    modalDecaySec: {
+      type: 'float', min: 0.05, max: 12, default: 1.2,
+      unit: 's', label: '감쇠', curve: 'log', group: '진동체',
+    },
+    strikePosition: {
+      type: 'float', min: 0.02, max: 0.5, default: 0.25,
+      label: '때리는 위치', group: '연주',
+    },
+    // 때리는 세기는 wasm 에서 뜯는 세기 슬롯을 함께 쓴다
+    pluckHardness: {
+      type: 'float', min: 0, max: 1, default: 0.5,
+      label: '때리는 세기', group: '연주',
+    },
+    ampEnabled: { type: 'int', min: 0, max: 1, default: 0, label: '앰프', group: '앰프' },
+  },
+  params: {
+    modalMaterial: 0,
+    modalDecaySec: 1.2,
+    strikePosition: 0.25,
+    pluckHardness: 0.5,
+    ampEnabled: 0,
+  },
+  tones: { default: {}, 부드럽게: { pluckHardness: 0.2 }, 세게: { pluckHardness: 0.95 } },
+};
+
+const MARIMBA: InstrumentDefinition = {
+  id: 'marimba',
+  schemaVersion: 1,
+  name: '마림바',
+  extends: 'modal-base',
+  params: { modalMaterial: 0, modalDecaySec: 1.0 },
+  range: { low: 45, high: 96 },
+};
+
+const VIBRAPHONE: InstrumentDefinition = {
+  id: 'vibraphone',
+  schemaVersion: 1,
+  name: '비브라폰',
+  extends: 'modal-base',
+  params: { modalMaterial: 1, modalDecaySec: 3.5 },
+  range: { low: 53, high: 89 },
+};
+
+const TUBULAR_BELL: InstrumentDefinition = {
+  id: 'tubular-bell',
+  schemaVersion: 1,
+  name: '차임벨',
+  extends: 'modal-base',
+  params: { modalMaterial: 2, modalDecaySec: 8.0, strikePosition: 0.13 },
+  range: { low: 48, high: 84 },
+};
+
+const GLOCKENSPIEL: InstrumentDefinition = {
+  id: 'glockenspiel',
+  schemaVersion: 1,
+  name: '글로켄슈필',
+  extends: 'modal-base',
+  params: { modalMaterial: 3, modalDecaySec: 1.6 },
+  range: { low: 72, high: 108 },
+};
+
 export const BUILT_IN_INSTRUMENTS: readonly InstrumentDefinition[] = [
   STRING_BASE,
   AMPED_STRING,
@@ -198,10 +380,19 @@ export const BUILT_IN_INSTRUMENTS: readonly InstrumentDefinition[] = [
   UKULELE,
   MANDOLIN,
   HARP,
+  SYNTH_BASE,
+  SYNTH_LEAD,
+  SYNTH_PAD,
+  SYNTH_BASS,
+  MODAL_BASE,
+  MARIMBA,
+  VIBRAPHONE,
+  TUBULAR_BELL,
+  GLOCKENSPIEL,
 ];
 
 /** 기준 정의는 사용자에게 악기로 보이지 않는다 — 연주용 악기가 아니다 */
-const ABSTRACT_IDS = new Set(['string-base', 'amped-string']);
+const ABSTRACT_IDS = new Set(['string-base', 'amped-string', 'synth-base', 'modal-base']);
 
 export function createRegistry(
   defs: readonly InstrumentDefinition[] = BUILT_IN_INSTRUMENTS,

@@ -22,7 +22,12 @@ import assert from 'node:assert/strict';
 import { createClip, createEmptyProject, createNote, createTrack } from '../model/factory.ts';
 import { detune, pitchToHz } from '../model/pitch.ts';
 import { PPQ, ticksToSeconds } from '../model/time.ts';
+import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+
 import { createRegistry, playableInstrumentIds } from '../instruments/definitions.ts';
+import { resolveInstrument } from '../instruments/resolve.ts';
+import { WasmVoiceEngine } from './voice/wasmEngine.ts';
 import { measureCentsError, measureCentsErrorInContext, seededRng } from './analysis.ts';
 import { renderProjectOffline, slice } from './offlineRender.ts';
 import type { Project } from '../model/project.ts';
@@ -31,6 +36,7 @@ import type { ParamValue } from '../instruments/types.ts';
 const SAMPLE_RATE = 48000;
 const TOLERANCE_CENTS = 1;
 const registry = createRegistry();
+const wasmPath = fileURLToPath(new URL('../generated/dsp.wasm', import.meta.url));
 
 /** Float32Array 는 스프레드하면 스택이 터진다 (수십만 인자) */
 function peakAbs(pcm: Float32Array): number {
@@ -65,13 +71,27 @@ function projectWithNotes(
   return project;
 }
 
-/** 음 하나만 울리는 렌더에서 센트 오차를 잰다 */
-function centsErrorOf(instrumentId: string, midi: number, cents = 0): number {
+/**
+ * 음 하나만 울리는 렌더에서 센트 오차를 잰다.
+ *
+ * `wasm` 을 주면 실제 엔진으로, 안 주면 TS 대체 경로로 잰다.
+ * TS 경로는 웨이브가이드만 구현하므로 신스·모달을 재려면 wasm 이 필요하다.
+ */
+function centsErrorOf(
+  instrumentId: string,
+  midi: number,
+  cents = 0,
+  wasm: WasmVoiceEngine | null = null,
+): number {
   const project = projectWithNotes(instrumentId, [{ midi, cents }]);
+  // 앰프는 끈다 — ±1센트 주장은 합성 엔진에 대한 것이고, 왜곡은 상호변조로
+  // 측정값을 당긴다 (wasmString.test.ts 가 그 크기를 따로 묶는다)
+  project.tracks[0]!.toneParams = { ampEnabled: 0 };
   const { pcm } = renderProjectOffline(project, registry, {
     sampleRate: SAMPLE_RATE,
     rng: seededRng(),
     tailSec: 1,
+    wasm,
   });
   const note = project.tracks[0]!.clips[0]!.notes[0]!;
   const targetHz = pitchToHz(note.pitch, project.tuning);
@@ -96,16 +116,32 @@ test('센트 미세조정이 파형에 정확히 반영된다', () => {
   }
 });
 
-test('모든 내장 악기가 자기 음역에서 음정이 맞는다', () => {
+test('모든 내장 악기가 자기 음역에서 음정이 맞는다', async () => {
   // sound.md 9-7: 정의를 추가하면 검증이 자동으로 적용돼야 한다.
-  // 악기 목록을 순회하므로 새 악기를 넣어도 테스트를 새로 쓸 필요가 없다
+  // 악기 목록을 순회하므로 새 악기를 넣어도 테스트를 새로 쓸 필요가 없다.
+  //
+  // **실제 엔진(wasm)으로 잰다.** TS 대체 경로는 웨이브가이드만 구현하므로
+  // 신스·모달 악기를 재려면 wasm 이 필요하고, 그게 실제로 쓰이는 경로이기도 하다
+  const wasm = await WasmVoiceEngine.create(await readFile(wasmPath), SAMPLE_RATE);
   const failures: string[] = [];
 
   for (const id of playableInstrumentIds()) {
-    const { low, high } = registry.get(id)!.range ?? { low: 40, high: 88 };
+    const instrument = resolveInstrument(id, registry);
+    const { low, high } = instrument.range;
+
+    // 모달(벨·마림바)은 **모드가 촘촘한 비정수 배치**라 기본음만 따로 재기 어렵다.
+    // 예를 들어 차임벨의 1.19배 모드는 기본음에서 300센트 거리인데, 8주기 창의
+    // 분해능이 그보다 넓어 측정값을 끌어당긴다. 모드 배치 자체가 정확한지는
+    // Rust 단위 테스트(`modal.rs`)가 직접 검증하므로, 여기서는 큰 이탈만 잡는다
+    const tolerance = instrument.voice === 'modal' ? 5 : TOLERANCE_CENTS;
+
     for (const midi of [low, Math.round((low + high) / 2), high]) {
-      const err = centsErrorOf(id, midi);
-      if (Math.abs(err) > TOLERANCE_CENTS) failures.push(`${id} midi=${midi}: ${err.toFixed(3)} 센트`);
+      const err = centsErrorOf(id, midi, 0, wasm);
+      if (Math.abs(err) > tolerance) {
+        failures.push(
+          `${id} (${instrument.voice}) midi=${midi}: ${err.toFixed(3)} 센트 (허용 ±${tolerance})`,
+        );
+      }
     }
   }
 
@@ -218,7 +254,31 @@ test('극단 파라미터에서 NaN·발산이 없다', () => {
   assert.ok(peakAbs(pcm) < 4, '값이 비정상적으로 크다 (발산 의심)');
 });
 
-test('미구현 보이스 타입은 조용히 무음이 아니라 에러다', () => {
+test('모든 내장 악기가 소리를 낸다 (보이스 타입 4종)', async () => {
+  // sound.md 9-1: 악기 추가는 정의 파일 하나. 새 보이스 타입을 붙여도
+  // 상위 레이어(스케줄러·믹서·UI)는 손대지 않는다 — 그게 실제로 되는지 본다
+  const wasm = await WasmVoiceEngine.create(await readFile(wasmPath), SAMPLE_RATE);
+  const silent: string[] = [];
+
+  for (const id of playableInstrumentIds()) {
+    const instrument = resolveInstrument(id, registry);
+    const midi = Math.round((instrument.range.low + instrument.range.high) / 2);
+    const project = projectWithNotes(id, [{ midi }]);
+    const { pcm } = renderProjectOffline(project, registry, {
+      sampleRate: SAMPLE_RATE,
+      rng: seededRng(),
+      tailSec: 1,
+      wasm,
+    });
+    if (peakAbs(pcm) < 1e-4) silent.push(`${id} (${instrument.voice})`);
+    assert.ok(pcm.every(Number.isFinite), `${id}: 유한하지 않은 샘플`);
+  }
+
+  assert.deepEqual(silent, [], `소리가 안 나는 악기:\n${silent.join('\n')}`);
+});
+
+test('TS 대체 경로는 미구현 보이스를 조용히 무음으로 두지 않는다', () => {
+  // wasm 이 없을 때의 경로. 조용히 무음이면 "왜 소리가 안 나지"로 시간을 버린다
   const project = projectWithNotes('acoustic-guitar', [{ midi: 57 }]);
   const broken = createRegistry([
     { id: 'drum-kit', schemaVersion: 1, name: '드럼', voice: 'sampler' },

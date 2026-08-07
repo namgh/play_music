@@ -17,12 +17,20 @@ pub mod sampler;
 pub mod smooth;
 pub mod string_voice;
 pub mod synth;
+pub mod voice;
 
 use amp::{AmpChain, AmpCharacter, AmpParams};
 use curve::PitchCurve;
-use string_voice::{StringParams, StringVoice};
+use modal::{ModalMaterial, ModalParams};
+use sampler::{SampleData, SamplerParams};
+use string_voice::StringParams;
+use synth::{SynthParams, Waveform};
+use voice::{AnyVoice, VoiceKind};
 
 pub const MAX_VOICES: usize = 32;
+
+/// 샘플 하나가 담기는 최대 프레임 수 (48kHz 에서 약 8초)
+pub const SAMPLE_CAPACITY: usize = 384_000;
 pub const MAX_BLOCK: usize = 2048;
 
 /// 파라미터 슬롯 개수. JS 는 이 순서로 f32 배열을 채운다.
@@ -32,9 +40,13 @@ pub const MAX_BLOCK: usize = 2048;
 /// | 0~5 | 줄 (진동체) |
 /// | 6~10 | 음정 곡선 (0 이면 곡선 없음) |
 /// | 11~19 | 앰프 체인 (`amp_enabled` 가 0 이면 통과) |
+/// | 20 | 보이스 타입 (0 줄 · 1 모달 · 2 신스 · 3 샘플러) |
+/// | 21~23 | 모달 |
+/// | 24~28 | 신스 |
+/// | 29 | 샘플러 |
 ///
 /// **층을 분리한다** (`sound.md` 5절·8절): "줄 길이"와 "왜곡"은 서로 다른 층이다.
-pub const PARAM_COUNT: usize = 20;
+pub const PARAM_COUNT: usize = 30;
 
 struct Engine {
     sample_rate: f64,
@@ -42,7 +54,11 @@ struct Engine {
     /// 보이스들의 합에 걸린다 — 실제 기타도 픽업 하나가 여섯 줄을 함께 읽는다
     amp: AmpChain,
     amp_enabled: bool,
-    voices: Vec<StringVoice>,
+    /// 샘플러 보이스가 쓰는 데이터. JS 가 load_sample 로 채운다
+    sample: SampleData,
+    /// JS 가 샘플을 써 넣는 곳
+    sample_in: Vec<f32>,
+    voices: Vec<AnyVoice>,
     /// 보이스별 파라미터
     params: Vec<StringParams>,
     /// 보이스별 게인 (트랙 레벨)
@@ -74,8 +90,10 @@ pub extern "C" fn init(sample_rate: f32) {
         amp: AmpChain::new(sr),
         amp_enabled: false,
         voices: (0..MAX_VOICES)
-            .map(|i| StringVoice::new(sr, 0x2f6e2b1u32.wrapping_add(i as u32 * 2654435761)))
+            .map(|i| AnyVoice::new(sr, 0x2f6e2b1u32.wrapping_add(i as u32 * 2654435761)))
             .collect(),
+        sample: SampleData::empty(),
+        sample_in: vec![0.0; SAMPLE_CAPACITY],
         params: vec![StringParams::default(); MAX_VOICES],
         gains: vec![1.0; MAX_VOICES],
         out: vec![0.0; MAX_BLOCK],
@@ -110,6 +128,46 @@ fn read_params() -> StringParams {
         sustain_sec: p[3] as f64,
         pluck_position: p[4] as f64,
         pluck_hardness: p[5] as f64,
+    }
+}
+
+fn read_voice_kind() -> VoiceKind {
+    VoiceKind::from_index(engine().param_in[20] as u32)
+}
+
+fn read_modal() -> ModalParams {
+    let p = &engine().param_in;
+    ModalParams {
+        material: ModalMaterial::from_index(p[21] as u32),
+        decay_sec: p[22] as f64,
+        strike_position: p[23] as f64,
+        strike_hardness: p[4] as f64, // 뜯는 세기와 같은 슬롯을 쓴다 (타격 세기)
+    }
+}
+
+fn read_synth() -> SynthParams {
+    let p = &engine().param_in;
+    SynthParams {
+        waveform: Waveform::from_index(p[24] as u32),
+        detune_cents: p[25] as f64,
+        cutoff_hz: p[26] as f64,
+        resonance: p[27] as f64,
+        filter_env: p[28] as f64,
+        // 엔벌로프는 줄 슬롯을 재사용한다 — 신스에는 줄 파라미터가 의미 없다
+        attack_ms: p[0] as f64,
+        decay_ms: p[1] as f64,
+        sustain: p[2] as f64,
+        release_ms: p[3] as f64,
+        drive: p[13] as f64,
+    }
+}
+
+fn read_sampler() -> SamplerParams {
+    let p = &engine().param_in;
+    SamplerParams {
+        preserve_formant: p[29] > 0.5,
+        start: p[4] as f64,
+        level: p[5] as f64,
     }
 }
 
@@ -163,8 +221,29 @@ pub extern "C" fn note_on(freq_hz: f32, velocity: f32, gain: f32) -> u32 {
 
     e.params[index] = params;
     e.gains[index] = gain;
-    let curve = read_curve();
-    e.voices[index].note_on_curved(freq_hz as f64, velocity as f64, &params, &curve);
+
+    // 보이스 타입에 따라 라우팅한다. **여기가 유일한 분기점**이다 (`sound.md` 9-4)
+    match read_voice_kind() {
+        VoiceKind::WaveguideString => {
+            let curve = read_curve();
+            engine().voices[index].note_on_string(freq_hz as f64, velocity as f64, &params, &curve);
+        }
+        VoiceKind::Modal => {
+            let modal = read_modal();
+            engine().voices[index].note_on_modal(freq_hz as f64, velocity as f64, &modal);
+        }
+        VoiceKind::VirtualAnalog => {
+            let synth = read_synth();
+            engine().voices[index].note_on_synth(freq_hz as f64, velocity as f64, &synth);
+        }
+        VoiceKind::Sampler => {
+            let sampler = read_sampler();
+            let e = engine();
+            let sample = core::mem::replace(&mut e.sample, SampleData::empty());
+            e.voices[index].note_on_sampler(freq_hz as f64, velocity as f64, &sample, &sampler);
+            engine().sample = sample;
+        }
+    }
 
     // 앰프 파라미터도 같이 온다. 픽업 콤 필터가 줄 주기를 알아야 하므로 주파수를 넘긴다
     let (enabled, amp_params) = read_amp();
@@ -193,16 +272,20 @@ pub extern "C" fn set_params_live(voice: u32) {
             .map_or(220.0, |_| 220.0);
         e.amp.set_params(&amp_params, freq);
     }
+    let synth = read_synth();
+    let e = engine();
     if voice == u32::MAX {
         for i in 0..MAX_VOICES {
             e.params[i] = params;
-            e.voices[i].set_params_live(&params);
+            e.voices[i].set_string_params_live(&params);
+            e.voices[i].set_synth_params_live(&synth);
         }
         return;
     }
     if let Some(v) = e.voices.get_mut(voice as usize) {
         e.params[voice as usize] = params;
-        v.set_params_live(&params);
+        v.set_string_params_live(&params);
+        v.set_synth_params_live(&synth);
     }
 }
 
@@ -246,7 +329,9 @@ pub extern "C" fn process(frames: u32) -> u32 {
         }
         // 보이스와 스크래치를 동시에 빌리지 못하므로 스크래치를 잠깐 떼어 낸다
         let mut scratch = core::mem::take(&mut e.scratch);
-        e.voices[i].process(&mut scratch[..n]);
+        let sample = core::mem::replace(&mut e.sample, SampleData::empty());
+        e.voices[i].process(&mut scratch[..n], &sample);
+        e.sample = sample;
         let gain = e.gains[i];
         for (dst, src) in e.out[..n].iter_mut().zip(scratch[..n].iter()) {
             *dst += *src * gain;
@@ -270,7 +355,7 @@ pub extern "C" fn voice_line_delay(voice: u32) -> f32 {
     engine()
         .voices
         .get(voice as usize)
-        .map(|v| v.setup().line_delay as f32)
+        .map(|v| v.line_delay() as f32)
         .unwrap_or(0.0)
 }
 
@@ -279,8 +364,33 @@ pub extern "C" fn voice_loop_gain(voice: u32) -> f32 {
     engine()
         .voices
         .get(voice as usize)
-        .map(|v| v.setup().loop_gain as f32)
+        .map(|v| v.loop_gain() as f32)
         .unwrap_or(0.0)
+}
+
+/// 샘플 데이터를 넣을 버퍼의 주소. `load_sample` 전에 여기에 f32 로 써 넣는다.
+/// 최대 길이는 `sample_capacity()`.
+#[no_mangle]
+pub extern "C" fn sample_buffer() -> *mut f32 {
+    engine().sample_in.as_mut_ptr()
+}
+
+#[no_mangle]
+pub extern "C" fn sample_capacity() -> u32 {
+    SAMPLE_CAPACITY as u32
+}
+
+/// `sample_buffer()` 에 써 넣은 `frames` 개를 샘플로 등록한다.
+/// `root_hz` 가 0 이면 음정 없는 샘플(드럼)로 취급해 이조하지 않는다.
+#[no_mangle]
+pub extern "C" fn load_sample(frames: u32, sample_rate: f32, root_hz: f32) {
+    let count = (frames as usize).min(SAMPLE_CAPACITY);
+    let e = engine();
+    e.sample = SampleData {
+        frames: e.sample_in[..count].to_vec(),
+        sample_rate: sample_rate as f64,
+        root_hz: root_hz as f64,
+    };
 }
 
 /// 파라미터 슬롯 개수. JS 쪽 `WASM_PARAM_ORDER` 와 맞는지 확인하는 데 쓴다.

@@ -41,6 +41,21 @@ export const WASM_PARAM_ORDER = [
   'ampLevel',
   'ampCabinet',
   'pickupPosition',
+  // 보이스 타입 (0 줄 · 1 모달 · 2 신스 · 3 샘플러)
+  'voiceKind',
+  // 모달 (Tier 2)
+  'modalMaterial',
+  'modalDecaySec',
+  'strikePosition',
+  // 신스 (Tier 3). 엔벌로프는 줄 슬롯 0~3 을 재사용한다 —
+  // 신스에는 줄 파라미터가 의미 없으므로 슬롯을 겹쳐 쓴다
+  'synthWaveform',
+  'synthDetuneCents',
+  'synthCutoffHz',
+  'synthResonance',
+  'synthFilterEnv',
+  // 샘플러 (Tier 4)
+  'preserveFormant',
 ] as const;
 
 /** 모델의 `PitchCurve` 를 wasm 파라미터로 펼친다 */
@@ -60,7 +75,7 @@ export function curveToParams(curve: {
 const MAX_BLOCK = 2048;
 
 /** Rust 쪽 PARAM_COUNT 와 같아야 한다 */
-export const WASM_PARAM_COUNT = 20;
+export const WASM_PARAM_COUNT = 30;
 
 interface WasmExports {
   memory: WebAssembly.Memory;

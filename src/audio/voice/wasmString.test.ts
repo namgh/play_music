@@ -114,6 +114,10 @@ test('모든 내장 악기가 Rust 코어에서 음정이 맞는다', async () =
 
   for (const id of playableInstrumentIds()) {
     const instrument = resolveInstrument(id, registry);
+    // 이 파일은 줄 보이스를 검증한다. 다른 보이스 타입은 pipeline.test.ts 가
+    // 종단으로 본다 — 여기서 섞으면 무엇을 재는지 흐려진다
+    if (instrument.voice !== 'waveguide-string') continue;
+
     // **앰프를 끄고 잰다.** ±1센트 주장은 합성 엔진(줄)에 대한 것이다.
     // 왜곡은 상호변조 성분을 기본음 근처에 만들어 측정값을 당긴다 — 실제 디스토션
     // 기타에서도 일어나는 일이고, 아래 별도 테스트가 그 크기를 따로 묶는다

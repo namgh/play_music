@@ -12,6 +12,14 @@ export type VoiceType =
   | 'virtual-analog'   // 신스 (Tier 3)
   | 'sampler';         // 드럼·보컬·앙상블 (Tier 4)
 
+/** Rust 쪽 `VoiceKind::from_index` 와 순서가 같아야 한다 */
+export const VOICE_KIND_INDEX: Record<VoiceType, number> = {
+  'waveguide-string': 0,
+  modal: 1,
+  'virtual-analog': 2,
+  sampler: 3,
+};
+
 /**
  * 파라미터 선언. UI 를 자동 생성하기 위한 메타데이터 (`sound.md` 9-5).
  * 악기마다 편집 화면을 손으로 만들면 확장이 막힌다.

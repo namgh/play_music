@@ -21,6 +21,7 @@ import { collectNoteEvents } from './scheduler.ts';
 import type { InstrumentDefinition } from '../instruments/types.ts';
 import { instrumentParams, resolveInstrument } from '../instruments/resolve.ts';
 import { curveToParams, WASM_PARAM_ORDER } from './voice/wasmEngine.ts';
+import { VOICE_KIND_INDEX } from '../instruments/types.ts';
 import { buildEffectChain } from './effectGraph.ts';
 
 const WORKLET_URL = '/ks-worklet.js';
@@ -83,7 +84,11 @@ export async function renderOfflineWithWorklet(
     // 이 트랙의 음을 프레임 시각으로 예약한다
     for (const event of events) {
       if (event.trackId !== track.id) continue;
-      const merged = { ...params, ...curveToParams(event.pitchCurve) };
+      const merged: Record<string, number | string> = {
+        ...params,
+        ...curveToParams(event.pitchCurve),
+        voiceKind: VOICE_KIND_INDEX[instrument.voice] ?? 0,
+      };
       node.port.postMessage({
         type: 'noteOn',
         frame: Math.round(ticksToSeconds(event.startTick, project.tempo) * sampleRate),

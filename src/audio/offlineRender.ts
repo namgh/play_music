@@ -20,6 +20,7 @@ import { ticksToSeconds } from '../model/time.ts';
 import { pitchToHz } from '../model/pitch.ts';
 import { collectNoteEvents } from './scheduler.ts';
 import type { InstrumentDefinition } from '../instruments/types.ts';
+import { VOICE_KIND_INDEX } from '../instruments/types.ts';
 import { instrumentParams, resolveInstrument } from '../instruments/resolve.ts';
 import { WaveguideStringVoice } from './voice/waveguideString.ts';
 import type { Rng, Voice } from './voice/types.ts';
@@ -110,13 +111,14 @@ export function renderProjectOffline(
 
       const setup = trackSetup.get(event.trackId);
       if (!setup) continue;
-      if (setup.voiceType !== 'waveguide-string') {
-        throw new Error(`보이스 타입 "${setup.voiceType}" 미구현`);
-      }
       wasm.noteOn(
         pitchToHz(event.note.pitch, project.tuning),
         event.note.velocity,
-        { ...setup.params, ...curveToParams(event.pitchCurve) },
+        {
+          ...setup.params,
+          ...curveToParams(event.pitchCurve),
+          voiceKind: VOICE_KIND_INDEX[setup.voiceType as keyof typeof VOICE_KIND_INDEX] ?? 0,
+        },
         setup.gain,
       );
     }
