@@ -296,6 +296,67 @@ test('TS 대체 경로는 미구현 보이스를 조용히 무음으로 두지 �
   );
 });
 
+test('트랙마다 앰프 설정이 분리된다', async () => {
+  // **실제 버그였다.** 엔진 인스턴스 하나에 앰프 체인이 하나뿐이라 여러 트랙이
+  // 공유하면 설정이 섞였다 — 퍼즈 트랙과 클린 트랙을 동시에 울리면 나중에
+  // 발음한 쪽 설정이 둘 다에 걸렸다 (측정 오차 101%).
+  //
+  // 실제 재생·내보내기는 트랙마다 워크렛 노드를 따로 두므로 안전했지만,
+  // **검증 경로가 그 구조를 따르지 않아 이 버그를 못 보고 있었다.**
+  const bytes = await readFile(wasmPath);
+  const engines = async (count: number) =>
+    Promise.all(Array.from({ length: count }, () => WasmVoiceEngine.create(bytes, SAMPLE_RATE)));
+
+  const guitar = (tone: string, midi: number) => {
+    const project = projectWithNotes('electric-guitar', [{ midi, startBeat: 0 }]);
+    project.tracks[0]!.toneId = tone;
+    return project;
+  };
+
+  const both = projectWithNotes('electric-guitar', [{ midi: 52, startBeat: 0 }]);
+  both.tracks[0]!.toneId = '퍼즈';
+  const second = projectWithNotes('electric-guitar', [{ midi: 64, startBeat: 0 }]);
+  second.tracks[0]!.toneId = '클린';
+  both.tracks.push(second.tracks[0]!);
+
+  const render = async (project: Project) =>
+    renderProjectOffline(project, registry, {
+      sampleRate: SAMPLE_RATE,
+      rng: seededRng(),
+      tailSec: 1,
+      wasm: await engines(project.tracks.length),
+    }).pcm;
+
+  const fuzz = await render(guitar('퍼즈', 52));
+  const clean = await render(guitar('클린', 64));
+  const together = await render(both);
+
+  // 따로 렌더해 합친 것과 동시 렌더가 같아야 한다
+  let diff = 0;
+  let reference = 0;
+  for (let i = 0; i < together.length; i++) {
+    const ideal = (fuzz[i] ?? 0) + (clean[i] ?? 0);
+    diff += (together[i]! - ideal) ** 2;
+    reference += ideal ** 2;
+  }
+  const error = Math.sqrt(diff / reference);
+  assert.ok(error < 0.001, `트랙이 섞인다: 상대 오차 ${(error * 100).toFixed(2)}%`);
+});
+
+test('엔진이 트랙 수보다 적으면 조용히 섞지 않고 실패한다', async () => {
+  const bytes = await readFile(wasmPath);
+  const one = await WasmVoiceEngine.create(bytes, SAMPLE_RATE);
+
+  const project = projectWithNotes('electric-guitar', [{ midi: 52, startBeat: 0 }]);
+  const second = projectWithNotes('electric-guitar', [{ midi: 64, startBeat: 0 }]);
+  project.tracks.push(second.tracks[0]!);
+
+  assert.throws(
+    () => renderProjectOffline(project, registry, { sampleRate: SAMPLE_RATE, wasm: one }),
+    /트랙마다 하나씩/,
+  );
+});
+
 test('같은 프로젝트는 같은 파형을 낸다 (결정론)', () => {
   // 내보내기와 미리듣기가 100% 일치해야 한다는 요구(plan.md 5-2)의 최소 조건
   const project = projectWithNotes('harp', [{ midi: 60 }, { midi: 64 }, { midi: 67 }]);

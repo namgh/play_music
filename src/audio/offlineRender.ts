@@ -38,13 +38,17 @@ export interface OfflineRenderOptions {
   /** 결정론적 결과가 필요할 때 (테스트) */
   rng?: Rng;
   /**
-   * Rust DSP 코어. **주면 이걸 쓴다.**
+   * Rust DSP 코어.
    *
-   * 내보내기가 미리듣기와 같은 DSP 를 써야 한다 (`plan.md` 5-2 — 미리듣기 =
-   * 내보내기 = 공유본). 게다가 음정 곡선은 Rust 쪽에만 있으므로, 이걸 주지 않으면
-   * 내보낸 파일에서 글라이드·비브라토가 사라진다.
+   * **트랙마다 하나씩 필요하다.** 앰프 체인이 엔진 인스턴스마다 하나뿐이라
+   * 여러 트랙이 한 인스턴스를 공유하면 앰프 설정이 섞인다 — 퍼즈 트랙과 클린
+   * 트랙이 동시에 울리면 나중에 발음한 쪽 설정이 둘 다에 걸린다 (측정 오차 101%).
+   * 실제 재생·내보내기는 트랙마다 워크렛 노드를 따로 두므로 이 문제가 없고,
+   * 이 함수도 같은 구조를 따라야 검증이 의미를 갖는다.
+   *
+   * 배열로 주면 트랙 순서대로 하나씩 쓴다. 하나만 주면 트랙이 하나일 때만 허용한다.
    */
-  wasm?: WasmVoiceEngine | null;
+  wasm?: WasmVoiceEngine | readonly WasmVoiceEngine[] | null;
 }
 
 function createVoice(voiceType: string, sampleRate: number, rng: Rng): Voice {
@@ -87,42 +91,62 @@ export function renderProjectOffline(
   const events = collectNoteEvents(project, 0, lengthTicks);
 
   // --- Rust 코어 경로 -------------------------------------------------------
-  // 보이스 관리가 wasm 안에 있으므로 이벤트 시각마다 발음 요청만 보내면 된다
+  //
+  // **트랙마다 엔진 인스턴스를 따로 쓴다.** 앰프가 인스턴스당 하나뿐이라
+  // 공유하면 설정이 섞인다. 실제 재생·내보내기가 트랙마다 워크렛 노드를 따로
+  // 두는 것과 같은 구조다 — 그래야 여기서 검증한 것이 실제 동작과 일치한다.
   if (options.wasm) {
-    const wasm = options.wasm;
-    wasm.allOff();
-    let cursor = 0;
-    const scratch = new Float32Array(BLOCK);
+    const pool = Array.isArray(options.wasm)
+      ? (options.wasm as readonly WasmVoiceEngine[])
+      : [options.wasm as WasmVoiceEngine];
 
-    const renderWasmTo = (toSample: number) => {
-      while (cursor < toSample) {
-        const frames = Math.min(BLOCK, toSample - cursor);
-        scratch.fill(0);
-        wasm.process(scratch, frames);
-        for (let i = 0; i < frames; i++) pcm[cursor + i] = pcm[cursor + i]! + scratch[i]!;
-        cursor += frames;
-      }
-    };
-
-    for (const event of events) {
-      const startSample = Math.round(ticksToSeconds(event.startTick, project.tempo) * sampleRate);
-      if (startSample >= totalSamples) break;
-      renderWasmTo(startSample);
-
-      const setup = trackSetup.get(event.trackId);
-      if (!setup) continue;
-      wasm.noteOn(
-        pitchToHz(event.note.pitch, project.tuning),
-        event.note.velocity,
-        {
-          ...setup.params,
-          ...curveToParams(event.pitchCurve),
-          voiceKind: VOICE_KIND_INDEX[setup.voiceType as keyof typeof VOICE_KIND_INDEX] ?? 0,
-        },
-        setup.gain,
+    if (pool.length < project.tracks.length) {
+      throw new Error(
+        `엔진이 ${pool.length}개인데 트랙이 ${project.tracks.length}개다 — ` +
+          '앰프 설정이 섞이므로 트랙마다 하나씩 넘겨야 한다',
       );
     }
-    renderWasmTo(totalSamples);
+
+    const scratch = new Float32Array(BLOCK);
+
+    // 트랙별로 따로 렌더해 합산한다
+    project.tracks.forEach((track, trackIndex) => {
+      const setup = trackSetup.get(track.id);
+      if (!setup) return;
+      const wasm = pool[trackIndex]!;
+      wasm.allOff();
+
+      const trackEvents = events.filter((event) => event.trackId === track.id);
+      if (trackEvents.length === 0) return;
+
+      let cursor = 0;
+      const renderTrackTo = (toSample: number) => {
+        while (cursor < toSample) {
+          const frames = Math.min(BLOCK, toSample - cursor);
+          scratch.fill(0);
+          wasm.process(scratch, frames);
+          for (let i = 0; i < frames; i++) pcm[cursor + i] = pcm[cursor + i]! + scratch[i]!;
+          cursor += frames;
+        }
+      };
+
+      for (const event of trackEvents) {
+        const startSample = Math.round(ticksToSeconds(event.startTick, project.tempo) * sampleRate);
+        if (startSample >= totalSamples) break;
+        renderTrackTo(startSample);
+        wasm.noteOn(
+          pitchToHz(event.note.pitch, project.tuning),
+          event.note.velocity,
+          {
+            ...setup.params,
+            ...curveToParams(event.pitchCurve),
+            voiceKind: VOICE_KIND_INDEX[setup.voiceType as keyof typeof VOICE_KIND_INDEX] ?? 0,
+          },
+          setup.gain,
+        );
+      }
+      renderTrackTo(totalSamples);
+    });
 
     if (project.master.gain !== 1) {
       for (let i = 0; i < pcm.length; i++) pcm[i] = pcm[i]! * project.master.gain;

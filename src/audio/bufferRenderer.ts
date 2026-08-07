@@ -50,6 +50,14 @@ const WASM_BLOCK = 2048;
 const EXPORT_TAIL_SEC = 4;
 
 interface TrackRuntime {
+  /**
+   * 이 트랙 전용 DSP 코어.
+   *
+   * **트랙마다 따로 둔다.** 앰프 체인이 엔진 인스턴스당 하나뿐이라 공유하면
+   * 설정이 섞인다 — 퍼즈 트랙과 클린 트랙이 동시에 울리면 나중에 발음한 쪽
+   * 설정이 둘 다에 걸린다. 워크렛 경로가 트랙마다 노드를 따로 두는 것과 같다.
+   */
+  wasm: WasmVoiceEngine | null;
   /** 보이스가 붙는 입구 */
   gainNode: GainNode;
   panNode: StereoPannerNode;
@@ -145,9 +153,17 @@ export class BufferRenderer implements AudioRenderer {
       gainNode.connect(panNode).connect(effects.input);
       effects.output.connect(this.masterEffects!.input);
       runtime = {
-        gainNode, panNode, effects, effectsKey: '[]',
+        wasm: null, gainNode, panNode, effects, effectsKey: '[]',
         instrument, params, paramsKey: '',
       };
+      // 트랙 전용 엔진을 만든다. 팩토리가 없으면 공유 엔진으로 떨어지는데,
+      // 그때는 앰프가 섞일 수 있으므로 트랙이 하나일 때만 정확하다
+      if (this.wasmFactory) {
+        void this.wasmFactory(this.ctx.sampleRate).then((engine) => {
+          const current = this.tracks.get(track.id);
+          if (current) current.wasm = engine;
+        });
+      }
       this.tracks.set(track.id, runtime);
     }
     runtime.instrument = instrument;
@@ -382,7 +398,8 @@ export class BufferRenderer implements AudioRenderer {
     curve: PitchCurve | null,
   ): Float32Array {
     return this.renderNoteWith(
-      this.wasm, runtime.instrument.voice, runtime.params as Record<string, number | string>,
+      runtime.wasm ?? this.wasm,
+      runtime.instrument.voice, runtime.params as Record<string, number | string>,
       freqHz, velocity, curve, this.ctx.sampleRate,
     );
   }
