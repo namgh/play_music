@@ -30,7 +30,9 @@ import type { ScheduledClick, ScheduledNote } from './scheduler.ts';
 import type { InstrumentDefinition, ParamValue } from '../instruments/types.ts';
 import { instrumentParams, resolveInstrument } from '../instruments/resolve.ts';
 import type { ResolvedInstrument } from '../instruments/types.ts';
-import { curveToParams, noteOffFields, WASM_PARAM_ORDER } from './voice/wasmEngine.ts';
+import {
+  curveToParams, noteOffFields, toFreeCurve, WASM_PARAM_ORDER,
+} from './voice/wasmEngine.ts';
 import { VOICE_KIND_INDEX } from '../instruments/types.ts';
 import { buildEffectChain } from './effectGraph.ts';
 import type { EffectChain } from './effectGraph.ts';
@@ -239,6 +241,7 @@ export class WorkletRenderer implements AudioRenderer {
       velocity: note.velocity,
       params: this.encodeParams(runtime.params, note.pitchCurve, runtime.voiceKind),
       gain: 1,
+      curve: toFreeCurve(note.pitchCurve, AUDITION_SEC),
       // 미리듣기에도 길이를 준다. 없으면 **신스가 영원히 울린다** —
       // ADSR 이 Sustain 단계에서 멈춰 있고 거기서 나올 길이 노트오프뿐이다
       ...noteOffFields(runtime.params, AUDITION_SEC, this.ctx.sampleRate),
@@ -326,6 +329,8 @@ export class WorkletRenderer implements AudioRenderer {
       velocity: event.note.velocity,
       params: this.encodeParams(runtime.params, event.pitchCurve, runtime.voiceKind),
       gain: 1,
+      // 사용자가 그린 자유곡선. 있으면 글라이드·비브라토를 **대신한다**
+      curve: toFreeCurve(event.pitchCurve, durationSec),
       ...noteOffFields(runtime.params, durationSec, this.ctx.sampleRate),
     });
   }

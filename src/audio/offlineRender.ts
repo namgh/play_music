@@ -25,7 +25,7 @@ import { instrumentParams, resolveInstrument } from '../instruments/resolve.ts';
 import { WaveguideStringVoice } from './voice/waveguideString.ts';
 import type { Rng, Voice } from './voice/types.ts';
 import type { WasmVoiceEngine } from './voice/wasmEngine.ts';
-import { curveToParams } from './voice/wasmEngine.ts';
+import { curveToParams, toFreeCurve } from './voice/wasmEngine.ts';
 import { projectLengthTicks } from '../model/factory.ts';
 
 const BLOCK = 128; // AudioWorklet 블록 크기와 같게 — 블록 경계 효과까지 같이 본다
@@ -143,6 +143,9 @@ export function renderProjectOffline(
             voiceKind: VOICE_KIND_INDEX[setup.voiceType as keyof typeof VOICE_KIND_INDEX] ?? 0,
           },
           setup.gain,
+          // 자유곡선. 안 넘기면 **데이터에는 있고 소리에는 없는** 상태가 된다 —
+          // 이 파일이 검증하는 바로 그 버그다
+          toFreeCurve(event.pitchCurve, ticksToSeconds(event.lengthTick, project.tempo)),
         );
       }
       renderTrackTo(totalSamples);

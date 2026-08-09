@@ -22,7 +22,7 @@ pub mod synth;
 pub mod voice;
 
 use amp::{AmpChain, AmpCharacter, AmpParams};
-use curve::PitchCurve;
+use curve::{CurvePoint, PitchCurve, MAX_CURVE_POINTS};
 use modal::{ModalMaterial, ModalParams};
 use percussion::{DrumKind, DrumParams};
 use sampler::{SampleData, SamplerParams};
@@ -110,6 +110,12 @@ struct Engine {
     scratch: Vec<f32>,
     /// JS 가 파라미터를 써 넣는 곳
     param_in: Vec<f32>,
+    /// JS 가 자유곡선 점을 써 넣는 곳. `[t_norm, cents]` 를 번갈아 쓴다.
+    /// **다음 `note_on` 한 번에만 적용되고 소비된다** — 남겨 두면 곡선을 안 그린
+    /// 음까지 휘어진다
+    curve_in: Vec<f32>,
+    curve_point_count: usize,
+    curve_duration_sec: f64,
     /// 보이스별 발음 순번. 뺏을 때 **가장 오래된 것**을 고르는 데 쓴다
     ages: Vec<u64>,
     /// 다음 발음에 줄 순번 (단조 증가)
@@ -148,6 +154,9 @@ pub extern "C" fn init(sample_rate: f32) {
         out_r: vec![0.0; MAX_BLOCK],
         scratch: vec![0.0; MAX_BLOCK],
         param_in: vec![0.0; PARAM_COUNT],
+        curve_in: vec![0.0; MAX_CURVE_POINTS * 2],
+        curve_point_count: 0,
+        curve_duration_sec: 0.0,
         ages: vec![0; MAX_VOICES],
         note_counter: 0,
     };
@@ -161,6 +170,32 @@ pub extern "C" fn init(sample_rate: f32) {
 #[no_mangle]
 pub extern "C" fn param_buffer() -> *mut f32 {
     engine().param_in.as_mut_ptr()
+}
+
+/// JS 가 자유곡선 점을 써 넣을 f32 배열의 주소.
+/// `[t_norm0, cents0, t_norm1, cents1, ...]` 순서이고 최대 `curve_point_capacity()` 개다.
+#[no_mangle]
+pub extern "C" fn curve_buffer() -> *mut f32 {
+    engine().curve_in.as_mut_ptr()
+}
+
+#[no_mangle]
+pub extern "C" fn curve_point_capacity() -> u32 {
+    MAX_CURVE_POINTS as u32
+}
+
+/// `curve_buffer()` 에 써 넣은 점들을 **다음 `note_on` 한 번에** 적용한다.
+///
+/// 왜 파라미터 슬롯이 아닌가: 점은 개수가 가변이라 고정 슬롯에 안 들어간다.
+/// 왜 한 번만 쓰이나: 남겨 두면 **곡선을 그리지 않은 다음 음까지 휘어진다.**
+/// 노트오프(`WORKPLAN.md` 2-2)와 같은 이유로 상태를 오래 들고 있지 않는다.
+///
+/// `count = 0` 이면 예약을 지운다.
+#[no_mangle]
+pub extern "C" fn set_curve_points(count: u32, duration_sec: f32) {
+    let e = engine();
+    e.curve_point_count = (count as usize).min(MAX_CURVE_POINTS);
+    e.curve_duration_sec = duration_sec as f64;
 }
 
 /// 왼쪽 출력 버퍼의 주소 (f32, MAX_BLOCK 개)
@@ -319,15 +354,33 @@ fn read_amp() -> (bool, AmpParams) {
     )
 }
 
+/// 곡선을 읽는다. 자유곡선 점이 예약돼 있으면 그것이 **글라이드·비브라토를 대신한다**
+/// (`plan.md` 5-4: "사용자가 그리면 `points` 가 우선").
 fn read_curve() -> PitchCurve {
-    let p = &engine().param_in;
-    PitchCurve {
+    let e = engine();
+    let p = &e.param_in;
+    let mut curve = PitchCurve {
         glide_cents: p[6] as f64,
         glide_ms: p[7] as f64,
         vibrato_cents: p[8] as f64,
         vibrato_hz: p[9] as f64,
         vibrato_delay_ms: p[10] as f64,
+        ..Default::default()
+    };
+    if e.curve_point_count > 0 {
+        // 스택 배열을 쓴다 — **오디오 경로에서 힙을 건드리면 지연이 튄다.**
+        // note_on 은 워크렛 스레드에서 불린다
+        let mut raw = [CurvePoint::default(); MAX_CURVE_POINTS];
+        let n = e.curve_point_count.min(MAX_CURVE_POINTS);
+        for (i, slot) in raw[..n].iter_mut().enumerate() {
+            *slot = CurvePoint {
+                t_norm: e.curve_in[i * 2] as f64,
+                cents: e.curve_in[i * 2 + 1] as f64,
+            };
+        }
+        curve.set_points(&raw[..n], e.curve_duration_sec);
     }
+    curve
 }
 
 /// 할당 결정 (`WORKPLAN.md` 2-4). **순수 함수라 테스트가 직접 검증한다** —
@@ -428,6 +481,11 @@ pub extern "C" fn note_on(freq_hz: f32, velocity: f32, gain: f32) -> u32 {
     }
 
     // 앰프 파라미터도 같이 온다. 픽업 콤 필터가 줄 주기를 알아야 하므로 주파수를 넘긴다
+    // **예약을 여기서 비운다.** 안 비우면 다음 음이 남의 곡선을 물려받는다
+    let e = engine();
+    e.curve_point_count = 0;
+    e.curve_duration_sec = 0.0;
+
     let (enabled, amp_params) = read_amp();
     let e = engine();
     e.amp_enabled = enabled;

@@ -68,6 +68,33 @@ export const WASM_PARAM_ORDER = [
   'velocityBrightness',
 ] as const;
 
+/**
+ * 사용자가 직접 그린 자유곡선 (`plan.md` 5-4 의 `points`).
+ *
+ * `tNorm` 은 **음 길이로 정규화된 시간**이라 음을 늘려도 모양이 유지된다.
+ * 그래서 길이를 함께 넘겨야 엔진이 초로 되돌릴 수 있다.
+ */
+export interface FreeCurve {
+  points: readonly { tNorm: number; cents: number }[];
+  durationSec: number;
+}
+
+/**
+ * 자유곡선을 엔진에 넘길 형태로. **정렬은 여기서 한다** — 엔진은 오름차순이 아닌
+ * 점을 버리므로, 여기서 안 맞추면 화면에는 있는 점이 소리에서 조용히 사라진다.
+ */
+export function toFreeCurve(
+  curve: { points: readonly { tNorm: number; cents: number }[] | null } | null,
+  durationSec: number,
+): FreeCurve | undefined {
+  const points = curve?.points;
+  if (!points || points.length === 0 || !(durationSec > 0)) return undefined;
+  return {
+    points: [...points].sort((a, b) => a.tNorm - b.tNorm),
+    durationSec,
+  };
+}
+
 /** 모델의 `PitchCurve` 를 wasm 파라미터로 펼친다 */
 export function curveToParams(curve: {
   glide: { cents: number; ms: number } | null;
@@ -122,6 +149,9 @@ interface WasmExports {
   memory: WebAssembly.Memory;
   init(sampleRate: number): void;
   param_buffer(): number;
+  curve_buffer(): number;
+  curve_point_capacity(): number;
+  set_curve_points(count: number, durationSec: number): void;
   output_buffer(): number;
   output_buffer_right(): number;
   note_on(freqHz: number, velocity: number, gain: number): number;
@@ -147,6 +177,7 @@ export class WasmVoiceEngine {
   private readonly exports: WasmExports;
   private viewBuffer: ArrayBuffer | null = null;
   private paramView!: Float32Array;
+  private curveView!: Float32Array;
   private outputView!: Float32Array;
   private outputViewR!: Float32Array;
 
@@ -168,6 +199,9 @@ export class WasmVoiceEngine {
     if (buffer === this.viewBuffer) return;
     this.viewBuffer = buffer;
     this.paramView = new Float32Array(buffer, this.exports.param_buffer(), WASM_PARAM_COUNT);
+    this.curveView = new Float32Array(
+      buffer, this.exports.curve_buffer(), this.exports.curve_point_capacity() * 2,
+    );
     this.outputView = new Float32Array(buffer, this.exports.output_buffer(), MAX_BLOCK);
     this.outputViewR = new Float32Array(buffer, this.exports.output_buffer_right(), MAX_BLOCK);
   }
@@ -202,8 +236,10 @@ export class WasmVoiceEngine {
     velocity: number,
     params: Readonly<Record<string, ParamValue>>,
     gain = 1,
+    freeCurve?: FreeCurve,
   ): number {
     this.refreshViews();
+    this.stageCurvePoints(freeCurve);
     WASM_PARAM_ORDER.forEach((key, i) => {
       const value = params[key];
       this.paramView[i] = typeof value === 'number' && Number.isFinite(value) ? value : 0;
@@ -226,6 +262,26 @@ export class WasmVoiceEngine {
     });
     this.exports.set_params_live(voice);
     this.refreshViews();
+  }
+
+  /**
+   * 자유곡선 점을 **다음 발음 한 번에** 예약한다 (`ROADMAP.md` S1-4).
+   *
+   * 점이 없으면 예약을 지운다 — 안 지우면 곡선을 그리지 않은 다음 음까지 휘어진다.
+   */
+  private stageCurvePoints(curve: FreeCurve | undefined): void {
+    const points = curve?.points ?? [];
+    if (points.length === 0 || !(curve!.durationSec > 0)) {
+      this.exports.set_curve_points(0, 0);
+      return;
+    }
+    const capacity = Math.floor(this.curveView.length / 2);
+    const count = Math.min(points.length, capacity);
+    for (let i = 0; i < count; i++) {
+      this.curveView[i * 2] = points[i]!.tNorm;
+      this.curveView[i * 2 + 1] = points[i]!.cents;
+    }
+    this.exports.set_curve_points(count, curve!.durationSec);
   }
 
   noteOff(voice: number, releaseMs = DEFAULT_RELEASE_MS): void {

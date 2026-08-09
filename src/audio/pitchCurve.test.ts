@@ -290,3 +290,101 @@ test('평평 판정이 두 구현에서 같다', async () => {
     }
   }
 });
+
+// --- 자유곡선 (ROADMAP.md S1-4) --------------------------------------------
+
+/**
+ * 특정 시각의 센트 값 — **그 시각이 실제로 추적됐을 때만.**
+ *
+ * `centsAt` 은 가장 가까운 점을 돌려주는데, 음이 감쇠해 추적이 끊기면 **마지막 점을
+ * 조용히 돌려준다.** 그러면 3.5초를 물었는데 2.1초 값을 받고도 테스트는 그걸 모른다
+ * (실제로 이걸로 한 번 헛짚었다). 재려는 시각이 추적 범위 밖이면 실패시킨다.
+ */
+function centsAtStrict(track: { timeSec: number; cents: number }[], seconds: number): number {
+  const nearest = track.reduce((best, p) => (
+    Math.abs(p.timeSec - seconds) < Math.abs(best.timeSec - seconds) ? p : best
+  ), track[0]!);
+  assert.ok(
+    Math.abs(nearest.timeSec - seconds) < 0.1,
+    `${seconds}초를 재려는데 가장 가까운 추적점이 ${nearest.timeSec.toFixed(2)}초다 `
+    + '— 음이 그 전에 감쇠했다. 측정 구간이 틀렸다',
+  );
+  return nearest.cents;
+}
+
+/** 자유곡선만 붙은 곡선 객체 */
+function freeCurve(points: { tNorm: number; cents: number }[]): PitchCurve {
+  return { glide: null, vibrato: null, points };
+}
+
+test('그린 자유곡선이 실제 파형의 음정으로 나온다', async () => {
+  // 차별점 ①의 완성형. **데이터에만 있고 소리에 없으면** 이 기능은 존재하지 않는 것과 같다.
+  // 4/4 60BPM 에 4박 = 4초짜리 음이다
+  const curve = freeCurve([
+    { tNorm: 0, cents: 0 },
+    { tNorm: 0.5, cents: 200 }, // 온음 위로
+    { tNorm: 1, cents: 0 },
+  ]);
+  // **서스테인을 길게 준다.** 기본값이면 2초쯤 음이 감쇠해 추적이 끊기고
+  // 뒷부분을 아예 못 잰다
+  const { pcm, targetHz } = await render(projectWithCurve(57, curve, 30));
+  const tracked = trackPitchCents(pcm, targetHz, FS);
+
+  // 4초 음이므로 0.5초 = tNorm 0.125 → 200 × (0.125/0.5) = 50센트
+  for (const [at, expected] of [[0.5, 50], [2.0, 200], [3.5, 50]] as const) {
+    const got = centsAtStrict(tracked, at);
+    assert.ok(
+      Math.abs(got - expected) < 20,
+      `${at}초: ${got.toFixed(1)} 센트 (기대 ${expected})`,
+    );
+  }
+});
+
+test('화면 예측과 실제 음정이 자유곡선에서도 일치한다', async () => {
+  // **화면·소리 불일치 방어선.** 그린 모양과 들리는 음정이 다르면 편집 도구로서 최악이다
+  const durationSec = 4;
+  const curve = freeCurve([
+    { tNorm: 0, cents: -150 },
+    { tNorm: 0.25, cents: 100 },
+    { tNorm: 1, cents: 0 },
+  ]);
+  const { pcm, targetHz } = await render(projectWithCurve(57, curve, 30));
+  const tracked = trackPitchCents(pcm, targetHz, FS);
+
+  for (const at of [0.3, 1.0, 2.0, 3.0]) {
+    const predicted = curveCentsAt(curve, at, durationSec);
+    const measured = centsAtStrict(tracked, at);
+    assert.ok(
+      Math.abs(predicted - measured) < 25,
+      `${at}초: 화면 ${predicted.toFixed(1)} vs 소리 ${measured.toFixed(1)} 센트`,
+    );
+  }
+});
+
+test('자유곡선이 글라이드·비브라토를 대신한다', async () => {
+  // plan.md 5-4: "사용자가 그리면 points 가 우선". 섞이면 그린 모양과 달라진다
+  const curve: PitchCurve = {
+    glide: { cents: -300, ms: 100 },
+    vibrato: { cents: 50, hz: 6, delayMs: 0 },
+    points: [{ tNorm: 0, cents: 0 }, { tNorm: 1, cents: 0 }],
+  };
+  assert.ok(isCurveFlat(curve, 4), '전부 0인 자유곡선인데 평평하지 않다고 한다');
+
+  const { pcm, targetHz } = await render(projectWithCurve(57, curve));
+  const tracked = trackPitchCents(pcm, targetHz, FS);
+  const window = tracked.filter((p) => p.timeSec > 0.3 && p.timeSec < 2);
+  const worst = Math.max(...window.map((p) => Math.abs(p.cents)));
+  assert.ok(worst < 15, `글라이드·비브라토가 새어 들어왔다 (최대 ${worst.toFixed(1)} 센트)`);
+});
+
+test('길이를 안 주면 자유곡선을 쓰지 않는다', () => {
+  // 정규화 시간을 초로 되돌릴 수 없으므로 글라이드·비브라토로 떨어져야 한다.
+  // 조용히 0 을 내면 "그렸는데 아무 일도 안 일어난다"가 된다
+  const curve: PitchCurve = {
+    glide: { cents: -24, ms: 60 },
+    vibrato: null,
+    points: [{ tNorm: 0, cents: 500 }],
+  };
+  assert.equal(curveCentsAt(curve, 0, 0), -24);
+  assert.equal(curveCentsAt(curve, 0, 4), 500);
+});

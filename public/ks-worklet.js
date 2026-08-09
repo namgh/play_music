@@ -39,6 +39,7 @@ class KsProcessor extends AudioWorkletProcessor {
     this.wasm = null;
     this.paramView = null;
     this.outputView = null;
+    this.curveView = null;
     /** { frame, freq, velocity, params, gain, durationFrames, releaseMs } — frame 순 정렬 */
     this.pending = [];
     /** { frame, voice, serial, releaseMs } — frame 순 정렬 */
@@ -74,6 +75,8 @@ class KsProcessor extends AudioWorkletProcessor {
           // 0 이면 노트오프를 예약하지 않는다 (= 울림 유지, letRing)
           durationFrames: message.durationFrames ?? 0,
           releaseMs: message.releaseMs ?? 120,
+          // 사용자가 그린 자유곡선 (`ROADMAP.md` S1-4). 없으면 undefined
+          curve: message.curve,
         });
         this.pending.sort((a, b) => a.frame - b.frame);
         break;
@@ -118,6 +121,29 @@ class KsProcessor extends AudioWorkletProcessor {
     this.paramView = new Float32Array(buffer, this.wasm.param_buffer(), PARAM_COUNT);
     this.outputView = new Float32Array(buffer, this.wasm.output_buffer(), MAX_BLOCK);
     this.outputViewR = new Float32Array(buffer, this.wasm.output_buffer_right(), MAX_BLOCK);
+    this.curveView = new Float32Array(
+      buffer, this.wasm.curve_buffer(), this.wasm.curve_point_capacity() * 2,
+    );
+  }
+
+  /**
+   * 자유곡선 점을 **다음 발음 한 번에** 예약한다.
+   * 점이 없으면 지운다 — 안 지우면 곡선을 안 그린 다음 음까지 휘어진다.
+   */
+  writeCurve(curve) {
+    const points = curve?.points;
+    if (!points || points.length === 0 || !(curve.durationSec > 0)) {
+      this.wasm.set_curve_points(0, 0);
+      return;
+    }
+    this.refreshViews();
+    const capacity = Math.floor(this.curveView.length / 2);
+    const count = Math.min(points.length, capacity);
+    for (let i = 0; i < count; i++) {
+      this.curveView[i * 2] = points[i].tNorm;
+      this.curveView[i * 2 + 1] = points[i].cents;
+    }
+    this.wasm.set_curve_points(count, curve.durationSec);
   }
 
   writeParams(params) {
@@ -189,6 +215,7 @@ class KsProcessor extends AudioWorkletProcessor {
         // 너무 오래 지난 예약은 버린다 (위 STALE_FRAMES 설명)
         if (untilOn < -STALE_FRAMES) continue;
         this.writeParams(nextOn.params);
+        this.writeCurve(nextOn.curve);
         const voice = this.wasm.note_on(nextOn.freq, nextOn.velocity, nextOn.gain);
         this.refreshViews(); // note_on 안에서 메모리가 자랐을 수 있다
 
