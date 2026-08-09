@@ -26,6 +26,10 @@ const REF_SCALE_MM: f64 = 648.0;
 const DC_BLOCK_POLE: f64 = 1.0 - 1e-4;
 
 /// 루프 이득 상한. 정확히 1이면 감쇠가 멈춘다
+/// `process_scaled` 가 스택에 잡는 작업 버퍼. 워크렛 블록(128)보다 넉넉하고
+/// `MAX_BLOCK`(2048)까지 받는다 — 오디오 경로에서 힙을 쓰지 않기 위해서다
+const MAX_SCALED_BLOCK: usize = 2048;
+
 const MAX_LOOP_GAIN: f64 = 0.9999;
 
 /// 음정 곡선을 몇 샘플마다 다시 계산할지.
@@ -41,6 +45,12 @@ pub struct StringParams {
     pub sustain_sec: f64,
     pub pluck_position: f64,
     pub pluck_hardness: f64,
+    /// 두 번째 편광의 디튠 (센트). 0 이면 편광이 하나뿐이다 (예전 동작)
+    pub polarization_detune_cents: f64,
+    /// 두 번째 편광의 섞는 양 (0~1)
+    pub polarization_mix: f64,
+    /// 두 번째 편광의 감쇠 배율. 실제 줄은 브리지에 세로로 더 잘 붙어 먼저 죽는다
+    pub polarization_decay_ratio: f64,
 }
 
 impl Default for StringParams {
@@ -52,6 +62,10 @@ impl Default for StringParams {
             sustain_sec: 3.0,
             pluck_position: 0.18,
             pluck_hardness: 0.4,
+            // 기본은 꺼짐 — 악기가 켜야 예전 소리가 안 바뀐다
+            polarization_detune_cents: 0.0,
+            polarization_mix: 0.0,
+            polarization_decay_ratio: 0.35,
         }
     }
 }
@@ -418,6 +432,26 @@ impl StringVoice {
         }
 
         self.write = n % self.buffer.len();
+    }
+
+    /// `out` 에 **게인을 곱해 더한다** — 두 번째 편광을 섞을 때 쓴다.
+    ///
+    /// 스크래치 버퍼를 따로 두지 않으려고 렌더한 뒤 그 구간만 다시 훑는다.
+    /// 오디오 경로에서 할당하지 않기 위해서다 (`lib.rs` 머리말).
+    pub fn process_scaled(&mut self, out: &mut [f32], gain: f64) {
+        if !self.active {
+            return;
+        }
+        let before_last = out.len();
+        // 자기 출력만 따로 받아야 게인을 곱할 수 있다. `process` 는 += 라
+        // 앞의 편광이 이미 써 넣은 값에 섞이면 그것까지 배로 커진다
+        let mut mine = [0.0f32; MAX_SCALED_BLOCK];
+        let n = before_last.min(MAX_SCALED_BLOCK);
+        self.process(&mut mine[..n]);
+        let g = gain as f32;
+        for (dst, src) in out[..n].iter_mut().zip(mine[..n].iter()) {
+            *dst += *src * g;
+        }
     }
 
     /// `out` 에 **더한다**. 믹싱은 호출자 책임

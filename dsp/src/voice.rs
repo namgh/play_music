@@ -9,7 +9,7 @@
 //! 그래서 여기가 유일한 분기점이다. 보이스 타입을 추가할 때 고치는 곳은
 //! 이 파일과 그 타입의 모듈뿐이다.
 
-use crate::curve::PitchCurve;
+use crate::curve::{cents_to_ratio, PitchCurve};
 use crate::modal::{ModalParams, ModalVoice};
 use crate::percussion::{DrumParams, DrumVoice};
 use crate::sampler::{SampleData, SamplerParams, SamplerVoice};
@@ -38,6 +38,24 @@ impl VoiceKind {
     }
 }
 
+/// 편광 디튠의 기준 음역과 하한 배율.
+///
+/// 디튠을 전 음역에 **같은 센트**로 걸면 안 된다. 고음은 딜레이 라인이 짧아 두
+/// 편광의 간섭이 세지고, 측정한 기본음이 밀려 **±1센트 회귀 테스트를 깬다**
+/// (C6 위에서 실측 1.9센트). 물리적으로도 편광 갈라짐을 7옥타브에 걸쳐 같은
+/// 비율로 두는 근거가 없다 — 높고 뻣뻣한 줄일수록 덜 갈린다.
+const DETUNE_REF_HZ: f64 = 250.0;
+const DETUNE_MIN_SCALE: f64 = 0.25;
+
+/// 음 높이에 따라 줄인 편광 디튠 (센트). **순수 함수라 테스트가 직접 본다.**
+pub fn effective_detune_cents(detune_cents: f64, freq_hz: f64) -> f64 {
+    // NaN 을 명시적으로 거른다 — 나누면 결과가 통째로 NaN 이 된다
+    if freq_hz.is_nan() || freq_hz <= 0.0 {
+        return detune_cents;
+    }
+    detune_cents * (DETUNE_REF_HZ / freq_hz).clamp(DETUNE_MIN_SCALE, 1.0)
+}
+
 /// 페이드아웃이 끝났다고 보는 진폭 (-80dB). 여기서 보이스를 반환한다
 const FADE_END: f64 = 1e-4;
 
@@ -45,6 +63,18 @@ const FADE_END: f64 = 1e-4;
 /// 보이스 풀을 타입별로 쪼개지 않아도 된다
 pub struct AnyVoice {
     string: StringVoice,
+    /// **두 번째 편광** (`ROADMAP.md` S2-1).
+    ///
+    /// 실제 줄은 두 방향으로 진동하고 두 주파수가 미세하게 다르다. 그래서 실제 악기는
+    /// "빠른 초기 감쇠 + 느린 꼬리"와 맥놀이가 생기는데, 편광이 하나면 지수 감쇠
+    /// 하나뿐이라 **"합성음 같다"는 인상의 1순위 원인**이 된다.
+    ///
+    /// 웨이브가이드를 통째로 하나 더 두는 이유: 음정 정확도가 걸린 코드
+    /// (분수 딜레이·위상 보정)를 **한 줄도 건드리지 않기 위해서**다. 파라미터만
+    /// 다르게 줘서 검증된 같은 경로를 두 번 태운다.
+    string_b: StringVoice,
+    /// 두 번째 편광을 섞는 양. 0 이면 아예 돌리지 않는다 (예전과 같은 소리·CPU)
+    polarization_mix: f64,
     modal: ModalVoice,
     synth: SynthVoice,
     sampler: SamplerVoice,
@@ -68,6 +98,12 @@ impl AnyVoice {
     pub fn new(sample_rate: f64, seed: u32) -> Self {
         Self {
             string: StringVoice::new(sample_rate, seed),
+            // **여진 씨앗을 같게 준다.** 다르게 주면 두 편광의 위상이 어긋나고, 감쇠
+            // 속도가 다르므로 섞이는 비율이 시간에 따라 변하면서 **합의 위상이 천천히
+            // 돈다.** 그게 측정된 기본음을 최대 2.7센트까지 민다 (실측). 위상을 맞춰 두면
+            // 음정은 그대로면서 "빠른 초기 감쇠 + 느린 꼬리"만 남는다
+            string_b: StringVoice::new(sample_rate, seed),
+            polarization_mix: 0.0,
             modal: ModalVoice::new(sample_rate),
             synth: SynthVoice::new(sample_rate),
             sampler: SamplerVoice::new(sample_rate),
@@ -85,7 +121,7 @@ impl AnyVoice {
 
     pub fn is_active(&self) -> bool {
         match self.kind {
-            VoiceKind::WaveguideString => self.string.is_active(),
+            VoiceKind::WaveguideString => self.string.is_active() || self.string_b.is_active(),
             VoiceKind::Modal => self.modal.is_active(),
             VoiceKind::VirtualAnalog => self.synth.is_active(),
             VoiceKind::Sampler => self.sampler.is_active(),
@@ -110,7 +146,37 @@ impl AnyVoice {
     ) {
         self.begin(VoiceKind::WaveguideString);
         self.kind = VoiceKind::WaveguideString;
-        self.string.note_on_curved(freq_hz, velocity, params, curve);
+
+        // 두 번째 편광 (`ROADMAP.md` S2-1). 섞는 양이 0 이면 **아예 돌리지 않는다** —
+        // 켜지 않은 악기는 소리도 CPU 도 예전 그대로여야 한다
+        self.polarization_mix = params.polarization_mix.clamp(0.0, 1.0);
+        let m = self.polarization_mix;
+
+        // **디튠은 진폭 가중 대칭으로 나눈다.** 한쪽으로만 걸면 두 편광의 무게중심이
+        // 밀려 음정이 통째로 틀어진다 — 실제로 재 보니 최대 4센트까지 갔고, 그건
+        // "음정 오차 ±1센트"라는 타협 불가 항목을 깬다
+        // (`HANDOFF.md` 10번 신스 디튠과 같은 함정이다).
+        //
+        // **주파수를 발음 전에 정한다.** 발음 뒤에 루프를 다시 잡으면 이미 채워 둔
+        // 여진 길이가 딜레이 라인 길이와 어긋나 DC 모드가 살아난다 (`HANDOFF.md` 3번).
+        let d = if m > 0.0 {
+            effective_detune_cents(params.polarization_detune_cents, freq_hz)
+        } else {
+            0.0
+        };
+        let freq_a = freq_hz * cents_to_ratio(-d * m / (1.0 + m));
+        self.string.note_on_curved(freq_a, velocity, params, curve);
+
+        if m > 0.0 {
+            let mut b = *params;
+            // 세로 편광은 브리지에 더 잘 붙어 먼저 죽는다. 이 차이가 "빠른 초기 감쇠 +
+            // 느린 꼬리"를 만든다 — 디튠만 주면 그냥 코러스가 된다
+            b.sustain_sec = params.sustain_sec * params.polarization_decay_ratio.clamp(0.05, 1.0);
+            let freq_b = freq_hz * cents_to_ratio(d / (1.0 + m));
+            self.string_b.note_on_curved(freq_b, velocity, &b, curve);
+        } else {
+            self.string_b.reset();
+        }
     }
 
     pub fn note_on_modal(&mut self, freq_hz: f64, velocity: f64, params: &ModalParams) {
@@ -152,7 +218,10 @@ impl AnyVoice {
             return;
         }
         match self.kind {
-            VoiceKind::WaveguideString => self.string.reset(),
+            VoiceKind::WaveguideString => {
+                self.string.reset();
+                self.string_b.reset();
+            }
             VoiceKind::Modal => self.modal.reset(),
             VoiceKind::VirtualAnalog => self.synth.reset(),
             VoiceKind::Sampler => self.sampler.reset(),
@@ -200,6 +269,12 @@ impl AnyVoice {
     pub fn set_string_params_live(&mut self, params: &StringParams) {
         if self.kind == VoiceKind::WaveguideString {
             self.string.set_params_live(params);
+            if self.polarization_mix > 0.0 {
+                let mut b = *params;
+                b.sustain_sec =
+                    params.sustain_sec * params.polarization_decay_ratio.clamp(0.05, 1.0);
+                self.string_b.set_params_live(&b);
+            }
         }
     }
 
@@ -211,6 +286,7 @@ impl AnyVoice {
 
     pub fn reset(&mut self) {
         self.string.reset();
+        self.string_b.reset();
         self.modal.reset();
         self.synth.reset();
         self.sampler.reset();
@@ -226,7 +302,12 @@ impl AnyVoice {
     /// 깎인다. `lib.rs` 의 `process()` 가 보이스마다 스크래치를 비워서 부른다.
     pub fn process(&mut self, out: &mut [f32], sample: &SampleData) {
         match self.kind {
-            VoiceKind::WaveguideString => self.string.process(out),
+            VoiceKind::WaveguideString => {
+                self.string.process(out);
+                if self.polarization_mix > 0.0 {
+                    self.string_b.process_scaled(out, self.polarization_mix);
+                }
+            }
             VoiceKind::Modal => self.modal.process(out),
             VoiceKind::VirtualAnalog => self.synth.process(out),
             VoiceKind::Sampler => self.sampler.process(out, sample),
@@ -253,6 +334,124 @@ impl AnyVoice {
 
     pub fn loop_gain(&self) -> f64 {
         self.string.setup().loop_gain
+    }
+}
+
+#[cfg(test)]
+mod polarization_tests {
+    use super::*;
+
+    const FS: f64 = 48000.0;
+
+    fn render(params: &StringParams, seconds: f64) -> Vec<f32> {
+        let mut voice = AnyVoice::new(FS, 0x1234_5678);
+        voice.note_on_string(220.0, 1.0, params, &PitchCurve::default());
+        let n = (FS * seconds) as usize;
+        let mut out = vec![0.0f32; n];
+        // 블록으로 쪼개 돌린다 — 한 번에 넘기면 `process_scaled` 의 스택 버퍼를 넘는다
+        for chunk in out.chunks_mut(512) {
+            voice.process(chunk, &SampleData::empty());
+        }
+        out
+    }
+
+    fn rms(x: &[f32]) -> f64 {
+        (x.iter().map(|v| (*v as f64) * (*v as f64)).sum::<f64>() / x.len().max(1) as f64).sqrt()
+    }
+
+    fn single() -> StringParams {
+        StringParams {
+            sustain_sec: 4.0,
+            ..Default::default()
+        }
+    }
+
+    fn dual() -> StringParams {
+        StringParams {
+            polarization_detune_cents: 1.8,
+            polarization_mix: 0.6,
+            polarization_decay_ratio: 0.3,
+            ..single()
+        }
+    }
+
+    #[test]
+    fn detune_shrinks_in_the_top_octaves() {
+        // 고음에서 그대로 걸면 간섭이 세져 음정 회귀 테스트를 깬다
+        let low = effective_detune_cents(1.8, 82.0);
+        let mid = effective_detune_cents(1.8, 440.0);
+        let high = effective_detune_cents(1.8, 4186.0);
+        assert!(low > mid && mid > high, "고음으로 갈수록 줄어들지 않는다");
+        assert!((low - 1.8).abs() < 1e-9, "저음은 지정값 그대로여야 한다");
+        assert!(high > 0.0, "완전히 사라지면 편광이 하나가 된다");
+    }
+
+    #[test]
+    fn disabled_polarization_is_bit_identical() {
+        // **켜지 않은 악기는 예전과 완전히 같은 소리여야 한다.**
+        // 이게 깨지면 이미 맞춰 둔 악기가 전부 흔들린다
+        let a = render(&single(), 0.5);
+        let b = render(
+            &StringParams {
+                // 디튠·감쇠비가 들어 있어도 mix 가 0 이면 꺼진 것이다
+                polarization_detune_cents: 5.0,
+                polarization_mix: 0.0,
+                ..single()
+            },
+            0.5,
+        );
+        assert_eq!(a, b, "편광을 껐는데 소리가 달라졌다");
+    }
+
+    #[test]
+    fn two_polarizations_beat_against_each_other() {
+        // 맥놀이 = 포락선이 주기적으로 오르내린다. 편광이 하나면 단조 감소뿐이다.
+        //
+        // **여기서는 기법이 동작하는지만 본다.** 그래서 디튠을 실제 악기보다 크게
+        // 주고 두 편광의 감쇠를 같게 맞춘다 — 실제 설정(1.8센트, 빠른 편광이 먼저
+        // 죽음)에서는 맥놀이 주기가 4초를 넘고 두 번째 편광이 그 전에 사라져서
+        // 있어도 안 보인다. 그건 아래 `fast_polarization_dies_before_the_slow_one`
+        // 이 따로 본다
+        let beating = StringParams {
+            polarization_detune_cents: 12.0, // 220Hz 에서 약 1.5Hz 맥놀이
+            polarization_mix: 1.0,
+            polarization_decay_ratio: 1.0, // 둘 다 살아 있어야 맥놀이가 보인다
+            ..single()
+        };
+        let x = render(&beating, 3.0);
+        let window = (FS * 0.05) as usize;
+        let env: Vec<f64> = x.chunks(window).map(rms).collect();
+        let rises = env.windows(2).filter(|w| w[1] > w[0] * 1.02).count();
+        assert!(rises > 0, "맥놀이가 없다 — 포락선이 단조 감소뿐이다");
+    }
+
+    #[test]
+    fn single_polarization_decays_monotonically() {
+        // 측정기 검증: 편광 하나짜리에서는 위 판정이 **안 걸려야** 한다.
+        // 안 그러면 위 테스트가 무엇이든 통과시킨다
+        let x = render(&single(), 3.0);
+        let window = (FS * 0.05) as usize;
+        let env: Vec<f64> = x.chunks(window).map(rms).collect();
+        let rises = env.windows(2).filter(|w| w[1] > w[0] * 1.02).count();
+        assert_eq!(rises, 0, "편광 하나인데 포락선이 다시 커진다");
+    }
+
+    #[test]
+    fn fast_polarization_dies_before_the_slow_one() {
+        // "빠른 초기 감쇠 + 느린 꼬리" — 실제 줄의 특징이다.
+        // 두 번째 편광이 먼저 죽으므로 초반에 비해 꼬리에서 두 소리의 차이가 줄어든다
+        let single_x = render(&single(), 3.0);
+        let dual_x = render(&dual(), 3.0);
+        let at = |x: &[f32], sec: f64| {
+            let i = (FS * sec) as usize;
+            rms(&x[i..(i + (FS * 0.1) as usize).min(x.len())])
+        };
+        let early_ratio = at(&dual_x, 0.05) / at(&single_x, 0.05);
+        let late_ratio = at(&dual_x, 2.0) / at(&single_x, 2.0);
+        assert!(
+            early_ratio > late_ratio,
+            "빠른 편광이 먼저 죽지 않는다 (초반 {early_ratio:.2}, 꼬리 {late_ratio:.2})"
+        );
     }
 }
 

@@ -65,12 +65,14 @@ pub const MAX_BLOCK: usize = 2048;
 /// | 29 | 샘플러 |
 /// | 30~33 | 드럼 |
 /// | 34~36 | 연주 표현 (스테레오 · 픽업 · 벨로시티 밝기) |
+/// | 37~41 | 표현력 (2편광 3개 · 연주 노이즈 · 공명현) |
 ///
 /// **층을 분리한다** (`sound.md` 5절·8절): "줄 길이"와 "왜곡"은 서로 다른 층이다.
 ///
-/// 34~36 은 `ROADMAP.md` S1 에서 한꺼번에 추가했다. 슬롯을 늘리면 Rust·TS·워크렛
-/// 세 곳을 같이 고쳐야 하므로 **나눠서 늘리지 않고 한 번에 늘린다** (S1 원칙 1).
-pub const PARAM_COUNT: usize = 37;
+/// 34~36 은 `ROADMAP.md` S1, 37~41 은 S2 에서 **각각 한 번에** 추가했다.
+/// 슬롯을 늘리면 Rust·TS·워크렛 세 곳을 같이 고쳐야 하므로 나눠서 늘리지 않는다
+/// (로드맵 원칙 1).
+pub const PARAM_COUNT: usize = 42;
 
 /// 벨로시티 밝기의 기준점. 이 세기로 쳤을 때 악기 정의의 값이 그대로 쓰인다.
 /// 0.7 은 mf(보통 세기)에 해당한다 — 위면 밝아지고 아래면 어두워진다.
@@ -262,6 +264,9 @@ fn read_params(bright: f64) -> StringParams {
         // 세게 뜯으면 더 단단하게(= 밝게) 뜯은 것이 된다.
         // `fill_excitation` 이 이 값으로 여진 노이즈의 저역통과를 정한다
         pluck_hardness: (p[5] as f64 + bright).clamp(0.0, 1.0),
+        polarization_detune_cents: p[37] as f64,
+        polarization_mix: p[38] as f64,
+        polarization_decay_ratio: if p[39] > 0.0 { p[39] as f64 } else { 0.35 },
     }
 }
 

@@ -38,7 +38,11 @@ function projectWithCurve(midi: number, curve: PitchCurve | null, sustainSec = 4
   project.lengthBars = 1;
 
   const track = createTrack({ name: '기타', instrumentId: 'electric-guitar' });
-  track.toneParams = { sustainSec };
+  // **편광은 하나로 둔다.** 여기서 보려는 것은 곡선 엔진이고, 2편광을 켜면 맥놀이가
+  // 추적된 음정에 얹혀 "비브라토 속도"를 세는 영점 통과 횟수가 늘어난다 —
+  // 곡선이 틀린 게 아니라 **측정이 다른 것을 같이 재는 것**이다.
+  // 2편광 자체는 `voice.rs` 의 편광 테스트가 따로 본다
+  track.toneParams = { sustainSec, polarizationMix: 0 };
   const clip = createClip({ startTick: 0, lengthTick: 4 * PPQ });
   const note = createNote({ startTick: 0, lengthTick: 4 * PPQ, midi });
   note.pitchCurve = curve;

@@ -66,6 +66,12 @@ export const WASM_PARAM_ORDER = [
   'stereoWidth',
   'pickupHumbucker',
   'velocityBrightness',
+  // 표현력 (`ROADMAP.md` S2). 여기도 **0 이면 예전과 같은 소리**다
+  'polarizationDetuneCents',
+  'polarizationMix',
+  'polarizationDecayRatio',
+  'playNoiseAmount',
+  'sympatheticAmount',
 ] as const;
 
 /**
@@ -143,7 +149,7 @@ export function noteOffFields(
 const MAX_BLOCK = 2048;
 
 /** Rust 쪽 PARAM_COUNT 와 같아야 한다 */
-export const WASM_PARAM_COUNT = 37;
+export const WASM_PARAM_COUNT = 42;
 
 interface WasmExports {
   memory: WebAssembly.Memory;

@@ -60,6 +60,28 @@ const EXPRESSION_SPECS: Record<string, ParamSpec> = {
   },
 };
 
+/**
+ * 줄 악기의 표현력 파라미터 (`ROADMAP.md` S2). 줄에만 의미가 있어 공통에 넣지 않는다.
+ */
+const STRING_EXPRESSION_SPECS: Record<string, ParamSpec> = {
+  polarizationMix: {
+    // 실제 줄은 두 방향으로 진동한다. 0 이면 편광이 하나뿐이라 지수 감쇠만 남고,
+    // 그게 "합성음 같다"는 인상의 1순위 원인이다
+    type: 'float', min: 0, max: 1, default: 0,
+    label: '2편광 섞기', curve: 'linear', group: '진동체',
+  },
+  polarizationDetuneCents: {
+    // 두 편광의 주파수 차이. **키우면 음정 정확도를 먹는다** — 기본값 주석 참고
+    type: 'float', min: 0, max: 20, default: 0.3,
+    unit: '¢', label: '편광 디튠', curve: 'linear', group: '진동체',
+  },
+  polarizationDecayRatio: {
+    // 세로 편광은 브리지에 더 잘 붙어 먼저 죽는다 → "빠른 초기 감쇠 + 느린 꼬리"
+    type: 'float', min: 0.05, max: 1, default: 0.25,
+    label: '편광 감쇠비', curve: 'linear', group: '진동체',
+  },
+};
+
 /** 모든 악기가 공통으로 갖는 파라미터 */
 const COMMON_SPECS: Record<string, ParamSpec> = { ...NOTE_OFF_SPECS, ...EXPRESSION_SPECS };
 
@@ -106,6 +128,7 @@ const STRING_BASE: InstrumentDefinition = {
       type: 'int', min: 0, max: 1, default: 0,
       label: '앰프', group: '앰프',
     },
+    ...STRING_EXPRESSION_SPECS,
     ...COMMON_SPECS,
   },
   params: {
@@ -122,6 +145,12 @@ const STRING_BASE: InstrumentDefinition = {
     letRing: 0,
     // 세게 뜯으면 밝아진다 — 줄 악기에서 가장 뚜렷하게 들리는 성질이다
     velocityBrightness: 0.35,
+    // **2편광을 기본으로 켠다** (`ROADMAP.md` S2-1). 실제 줄은 두 방향으로 진동하고
+    // 두 주파수가 미세하게 다르다. 편광이 하나면 지수 감쇠뿐이라 소리가
+    // "삐- 하고 사라지고", 그게 "합성음 같다"는 인상의 1순위 원인이다
+    polarizationMix: 0.55,
+    polarizationDetuneCents: 1.8,
+    polarizationDecayRatio: 0.3,
     // 좌우 퍼짐은 악기마다 다르므로 기준에서는 끈다.
     // **선언만 하고 값을 안 두면 해석된 파라미터에서 아예 빠진다** — 그러면
     // 튜닝 화면에 나오지 않고 "이 악기엔 없는 값"처럼 보인다
