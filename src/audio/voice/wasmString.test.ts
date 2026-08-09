@@ -467,3 +467,161 @@ test('블록 상한을 넘기면 조용히 자르지 않고 에러다', async ()
   const wasm = await engine();
   assert.throws(() => wasm.process(new Float32Array(4096), 4096), /블록이 너무 크다/);
 });
+
+// --- 스테레오 배치 · 벨로시티 밝기 (ROADMAP.md S1) -------------------------
+
+/**
+ * 좌우를 따로 렌더한다. **엔진을 새로 만들어 쓴다.**
+ *
+ * 왜: 여진 노이즈가 보이스의 RNG 에서 나오고 그 RNG 는 발음마다 나아간다. 한 엔진으로
+ * A 와 B 를 연달아 렌더하면 **파형이 애초에 다른 두 신호**를 비교하게 된다.
+ * 실제로 그것 때문에 파워가 1.19배로 나와 멀쩡한 코드가 틀린 것처럼 보였다
+ * (`HANDOFF.md`: 측정기를 먼저 검증하라).
+ */
+async function renderStereo(
+  freqHz: number,
+  params: Readonly<Record<string, ParamValue>>,
+  seconds: number,
+  velocity = 1,
+): Promise<{ left: Float32Array; right: Float32Array }> {
+  const wasm = await engine();
+  wasm.noteOn(freqHz, velocity, params);
+  const total = Math.round(seconds * FS);
+  const left = new Float32Array(total);
+  const right = new Float32Array(total);
+  const scratchL = new Float32Array(BLOCK);
+  const scratchR = new Float32Array(BLOCK);
+  for (let at = 0; at < total; at += BLOCK) {
+    const frames = Math.min(BLOCK, total - at);
+    scratchL.fill(0);
+    scratchR.fill(0);
+    wasm.processStereo(scratchL, scratchR, frames);
+    left.set(scratchL.subarray(0, frames), at);
+    right.set(scratchR.subarray(0, frames), at);
+  }
+  return { left, right };
+}
+
+const rms = (x: Float32Array): number =>
+  Math.sqrt(x.reduce((sum, v) => sum + v * v, 0) / Math.max(1, x.length));
+
+/**
+ * 스펙트럼 중심 — "밝기"의 수치다. 높을수록 밝다.
+ *
+ * **측정기를 먼저 검증한다** (`HANDOFF.md` 교훈). 정답을 아는 사인파로 확인한 뒤
+ * 엔진을 재야 무엇이 틀렸는지 알 수 있다.
+ */
+function spectralCentroid(x: Float32Array, sampleRate: number): number {
+  const n = Math.min(x.length, 8192);
+  const bins = 256;
+  const maxHz = 12000;
+  let weighted = 0;
+  let total = 0;
+  for (let b = 1; b <= bins; b++) {
+    const hz = (maxHz * b) / bins;
+    const w = (2 * Math.PI * hz) / sampleRate;
+    let re = 0;
+    let im = 0;
+    for (let i = 0; i < n; i++) {
+      // 해닝 창 — 없으면 양 끝 불연속이 고역 성분으로 새어 들어와 밝기를 부풀린다
+      const window = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (n - 1));
+      const v = x[i]! * window;
+      re += v * Math.cos(w * i);
+      im -= v * Math.sin(w * i);
+    }
+    const mag = Math.hypot(re, im);
+    weighted += hz * mag;
+    total += mag;
+  }
+  return total > 0 ? weighted / total : 0;
+}
+
+test('밝기 측정기 자체 검증 — 정답을 아는 신호로 먼저 잰다', () => {
+  const tone = (hz: number) => {
+    const x = new Float32Array(8192);
+    for (let i = 0; i < x.length; i++) x[i] = Math.sin((2 * Math.PI * hz * i) / FS);
+    return x;
+  };
+  for (const hz of [1000, 4000, 8000]) {
+    const measured = spectralCentroid(tone(hz), FS);
+    assert.ok(
+      Math.abs(measured - hz) < hz * 0.1,
+      `${hz}Hz 사인파의 중심이 ${measured.toFixed(0)}Hz 로 나왔다 — 측정기가 틀렸다`,
+    );
+  }
+});
+
+test('좌우 퍼짐이 0이면 예전과 똑같이 모노다', async () => {
+  // **이게 깨지면 이미 맞춰 둔 악기들의 소리가 전부 바뀐다.**
+  const guitar = instrumentParams(resolveInstrument('electric-guitar', registry), 'default', null);
+  assert.equal(guitar.stereoWidth, 0, '일렉기타는 앰프가 모노라 퍼뜨리지 않는다');
+
+  const { left, right } = await renderStereo(midiToHz(52), guitar, 0.3);
+  for (let i = 0; i < left.length; i++) {
+    assert.equal(left[i], right[i], `${i}번 샘플에서 좌우가 갈라졌다`);
+  }
+  assert.ok(rms(left) > 1e-4, '소리가 안 난다');
+});
+
+test('퍼짐을 켜면 낮은 음은 왼쪽, 높은 음은 오른쪽에서 크다', async () => {
+  const harp = instrumentParams(resolveInstrument('harp', registry), 'default', null);
+  assert.ok((harp.stereoWidth as number) > 0, '하프는 퍼짐이 켜져 있어야 한다');
+
+  const low = await renderStereo(midiToHz(36), harp, 0.3);
+  const high = await renderStereo(midiToHz(84), harp, 0.3);
+  assert.ok(rms(low.left) > rms(low.right) * 1.1, '낮은 음이 왼쪽으로 안 갔다');
+  assert.ok(rms(high.right) > rms(high.left) * 1.1, '높은 음이 오른쪽으로 안 갔다');
+});
+
+test('퍼짐을 켜도 전체 음량이 유지된다', async () => {
+  // 배치를 바꿨다고 곡이 조용해지면 안 된다
+  const harp = resolveInstrument('harp', registry);
+  const spread = instrumentParams(harp, 'default', null);
+  const mono = { ...spread, stereoWidth: 0 };
+
+  const withWidth = await renderStereo(midiToHz(40), spread, 0.3);
+  const withoutWidth = await renderStereo(midiToHz(40), mono, 0.3);
+  const power = (s: { left: Float32Array; right: Float32Array }) =>
+    rms(s.left) ** 2 + rms(s.right) ** 2;
+  const ratio = power(withWidth) / power(withoutWidth);
+  assert.ok(Math.abs(ratio - 1) < 0.05, `파워가 ${ratio.toFixed(3)}배로 변했다`);
+});
+
+test('세게 치면 밝아진다 — 벨로시티가 음량만 바꾸지 않는다', async () => {
+  // 이게 없으면 벨로시티 레인이 볼륨 오토메이션으로만 들린다 (ROADMAP.md S1-2)
+  const guitar = instrumentParams(resolveInstrument('acoustic-guitar', registry), 'default', null);
+  assert.ok((guitar.velocityBrightness as number) > 0);
+
+  const soft = (await renderStereo(midiToHz(52), guitar, 0.25, 0.2)).left;
+  const hard = (await renderStereo(midiToHz(52), guitar, 0.25, 1.0)).left;
+  const softCentroid = spectralCentroid(soft, FS);
+  const hardCentroid = spectralCentroid(hard, FS);
+  assert.ok(
+    hardCentroid > softCentroid * 1.05,
+    `세게 친 쪽이 더 밝지 않다 (약 ${softCentroid.toFixed(0)}Hz, 강 ${hardCentroid.toFixed(0)}Hz)`,
+  );
+});
+
+test('세기→밝기를 끄면 음색이 그대로다', async () => {
+  // 기본값은 꺼짐이다. 끈 악기는 예전과 같은 소리가 나야 한다
+  const base = instrumentParams(resolveInstrument('acoustic-guitar', registry), 'default', null);
+  const off = { ...base, velocityBrightness: 0 };
+
+  const soft = (await renderStereo(midiToHz(52), off, 0.25, 0.3)).left;
+  const hard = (await renderStereo(midiToHz(52), off, 0.25, 1.0)).left;
+  const ratio = spectralCentroid(hard, FS) / spectralCentroid(soft, FS);
+  assert.ok(Math.abs(ratio - 1) < 0.02, `껐는데 밝기가 ${ratio.toFixed(3)}배 달라졌다`);
+});
+
+test('험버커가 싱글코일보다 어둡다', async () => {
+  // 스트랫과 레스폴의 차이가 줄 길이 20mm 뿐이던 것을 고친 부분 (ROADMAP.md S1-3)
+  const strat = instrumentParams(resolveInstrument('electric-guitar', registry), '클린', null);
+  const lp = instrumentParams(resolveInstrument('electric-guitar-lp', registry), '클린', null);
+
+  const stratOut = (await renderStereo(midiToHz(52), strat, 0.25)).left;
+  const lpOut = (await renderStereo(midiToHz(52), lp, 0.25)).left;
+  assert.ok(
+    spectralCentroid(lpOut, FS) < spectralCentroid(stratOut, FS),
+    '험버커가 더 어둡지 않다 — 코일 공진이 반영되지 않았다',
+  );
+});

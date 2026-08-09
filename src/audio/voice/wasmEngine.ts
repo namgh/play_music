@@ -61,6 +61,11 @@ export const WASM_PARAM_ORDER = [
   'drumDecaySec',
   'drumPitchDrop',
   'drumNoiseAmount',
+  // 연주 표현 (`ROADMAP.md` S1). 셋 다 **0 이면 예전과 완전히 같은 소리**다 —
+  // 악기가 켜지 않으면 아무 영향이 없게 기본값을 0 으로 둔다
+  'stereoWidth',
+  'pickupHumbucker',
+  'velocityBrightness',
 ] as const;
 
 /** 모델의 `PitchCurve` 를 wasm 파라미터로 펼친다 */
@@ -111,13 +116,14 @@ export function noteOffFields(
 const MAX_BLOCK = 2048;
 
 /** Rust 쪽 PARAM_COUNT 와 같아야 한다 */
-export const WASM_PARAM_COUNT = 34;
+export const WASM_PARAM_COUNT = 37;
 
 interface WasmExports {
   memory: WebAssembly.Memory;
   init(sampleRate: number): void;
   param_buffer(): number;
   output_buffer(): number;
+  output_buffer_right(): number;
   note_on(freqHz: number, velocity: number, gain: number): number;
   set_params_live(voice: number): void;
   note_off(voice: number, releaseMs: number): void;
@@ -142,6 +148,7 @@ export class WasmVoiceEngine {
   private viewBuffer: ArrayBuffer | null = null;
   private paramView!: Float32Array;
   private outputView!: Float32Array;
+  private outputViewR!: Float32Array;
 
   readonly sampleRate: number;
 
@@ -162,12 +169,16 @@ export class WasmVoiceEngine {
     this.viewBuffer = buffer;
     this.paramView = new Float32Array(buffer, this.exports.param_buffer(), WASM_PARAM_COUNT);
     this.outputView = new Float32Array(buffer, this.exports.output_buffer(), MAX_BLOCK);
+    this.outputViewR = new Float32Array(buffer, this.exports.output_buffer_right(), MAX_BLOCK);
   }
 
   static async create(bytes: BufferSource, sampleRate: number): Promise<WasmVoiceEngine> {
     const { instance } = await WebAssembly.instantiate(bytes, {});
     const exports = instance.exports as unknown as WasmExports;
-    for (const name of ['init', 'note_on', 'process', 'param_buffer', 'output_buffer'] as const) {
+    const required = [
+      'init', 'note_on', 'process', 'param_buffer', 'output_buffer', 'output_buffer_right',
+    ] as const;
+    for (const name of required) {
       if (typeof exports[name] !== 'function') {
         throw new WasmEngineError(`wasm 에 ${name} 이 없다 — 빌드가 오래됐을 수 있다`);
       }
@@ -236,14 +247,36 @@ export class WasmVoiceEngine {
   }
 
   /**
-   * 한 블록 렌더해서 `out` 에 **더한다**. 반환값은 아직 울리는 보이스 수.
+   * 한 블록 렌더해서 `out` 에 **모노로 더한다**. 반환값은 아직 울리는 보이스 수.
    * 블록은 최대 2048 프레임이다 — 넘으면 호출자가 쪼개야 한다.
+   *
+   * 좌우 평균을 쓴다. `stereoWidth = 0` 이면 좌우가 같으므로 **예전과 정확히 같은
+   * 값**이 나오고, 폭을 켠 악기도 한쪽만 읽어 음이 사라지는 일이 없다.
    */
   process(out: Float32Array, frames: number): number {
     if (frames > MAX_BLOCK) throw new WasmEngineError(`블록이 너무 크다: ${frames} > ${MAX_BLOCK}`);
     const active = this.exports.process(frames);
     this.refreshViews();
-    for (let i = 0; i < frames; i++) out[i] = out[i]! + this.outputView[i]!;
+    for (let i = 0; i < frames; i++) {
+      out[i] = out[i]! + (this.outputView[i]! + this.outputViewR[i]!) * 0.5;
+    }
+    return active;
+  }
+
+  /**
+   * 한 블록 렌더해서 좌우에 **각각 더한다** (`ROADMAP.md` S1-1).
+   *
+   * 보이스별 좌우 배치는 wasm 안에서 이미 적용돼 있다. 합산한 뒤에는 나눌 수 없으므로
+   * 여기서 채널을 만들어 내려 하지 말 것 — 그건 가짜 스테레오다.
+   */
+  processStereo(left: Float32Array, right: Float32Array, frames: number): number {
+    if (frames > MAX_BLOCK) throw new WasmEngineError(`블록이 너무 크다: ${frames} > ${MAX_BLOCK}`);
+    const active = this.exports.process(frames);
+    this.refreshViews();
+    for (let i = 0; i < frames; i++) {
+      left[i] = left[i]! + this.outputView[i]!;
+      right[i] = right[i]! + this.outputViewR[i]!;
+    }
     return active;
   }
 

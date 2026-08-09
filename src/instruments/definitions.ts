@@ -35,6 +35,35 @@ const NOTE_OFF_SPECS: Record<string, ParamSpec> = {
 };
 
 /**
+ * 연주 표현 파라미터 (`ROADMAP.md` S1). **보이스 타입과 무관하게 모든 악기가 갖는다.**
+ *
+ * 셋 다 **기본값이 0이고, 0이면 예전과 완전히 같은 소리**다. 악기가 명시적으로 켜야
+ * 효과가 생긴다 — 그래야 이미 맞춰 둔 악기들이 이 변경으로 흔들리지 않는다.
+ */
+const EXPRESSION_SPECS: Record<string, ParamSpec> = {
+  stereoWidth: {
+    // 음 높이로 좌우에 편다. 실제로 마이크로 잡은 피아노·말렛·하프가 그렇게 들린다.
+    // 앰프를 통과하는 일렉기타는 실제로 모노라 0 으로 둔다
+    type: 'float', min: 0, max: 1, default: 0,
+    label: '좌우 퍼짐', curve: 'linear', group: '연주',
+  },
+  velocityBrightness: {
+    // 세게 치면 밝아진다. 없으면 벨로시티가 볼륨 오토메이션으로만 들린다
+    type: 'float', min: 0, max: 1, default: 0,
+    label: '세기→밝기', curve: 'linear', group: '연주',
+  },
+  pickupHumbucker: {
+    // 코일 두 개가 직렬이라 공진이 아래로 내려간다 = 더 두껍고 어둡다.
+    // 앰프를 쓰는 악기에만 의미가 있다
+    type: 'int', min: 0, max: 1, default: 0,
+    label: '험버커 픽업', group: '앰프',
+  },
+};
+
+/** 모든 악기가 공통으로 갖는 파라미터 */
+const COMMON_SPECS: Record<string, ParamSpec> = { ...NOTE_OFF_SPECS, ...EXPRESSION_SPECS };
+
+/**
  * 웨이브가이드 줄의 기준 정의. 파생 악기들은 여기서 숫자만 덮어쓴다.
  * 파라미터 의미는 `spike/m0-karplus/ks-string.js` 와 같다.
  */
@@ -77,7 +106,7 @@ const STRING_BASE: InstrumentDefinition = {
       type: 'int', min: 0, max: 1, default: 0,
       label: '앰프', group: '앰프',
     },
-    ...NOTE_OFF_SPECS,
+    ...COMMON_SPECS,
   },
   params: {
     scaleLengthMm: 648,
@@ -91,6 +120,13 @@ const STRING_BASE: InstrumentDefinition = {
     // 손을 떼면 줄이 죽는다. 아르페지오처럼 일부러 울리려면 letRing 을 켠다
     releaseMs: 120,
     letRing: 0,
+    // 세게 뜯으면 밝아진다 — 줄 악기에서 가장 뚜렷하게 들리는 성질이다
+    velocityBrightness: 0.35,
+    // 좌우 퍼짐은 악기마다 다르므로 기준에서는 끈다.
+    // **선언만 하고 값을 안 두면 해석된 파라미터에서 아예 빠진다** — 그러면
+    // 튜닝 화면에 나오지 않고 "이 악기엔 없는 값"처럼 보인다
+    stereoWidth: 0,
+    pickupHumbucker: 0,
   },
   tones: {
     default: {},
@@ -107,7 +143,11 @@ const ACOUSTIC_GUITAR: InstrumentDefinition = {
   name: '어쿠스틱 기타',
   category: '기타',
   extends: 'string-base',
-  params: { scaleLengthMm: 650, stiffness: 0.01, damping: 0.045, sustainSec: 4 },
+  params: {
+    scaleLengthMm: 650, stiffness: 0.01, damping: 0.045, sustainSec: 4,
+    // 어쿠스틱은 몸통이 공기를 울려 소리가 한 점에서 나오지 않는다
+    stereoWidth: 0.2,
+  },
   range: { low: 40, high: 88 }, // E2 ~ E6
 };
 
@@ -167,7 +207,11 @@ const ELECTRIC_GUITAR: InstrumentDefinition = {
   name: '일렉 기타 (스트랫)',
   category: '기타',
   extends: 'amped-string',
-  params: { scaleLengthMm: 648, stiffness: 0.012, damping: 0.04, sustainSec: 5 },
+  params: {
+    scaleLengthMm: 648, stiffness: 0.012, damping: 0.04, sustainSec: 5,
+    // 스트랫은 싱글코일. 앰프를 통과하는 소리는 실제로 모노라 좌우로 펴지 않는다
+    pickupHumbucker: 0,
+  },
   range: { low: 40, high: 88 },
 };
 
@@ -177,7 +221,12 @@ const LES_PAUL: InstrumentDefinition = {
   name: '일렉 기타 (레스폴)',
   category: '기타',
   extends: 'electric-guitar',
-  params: { scaleLengthMm: 628 }, // 스트랫 648 과의 차이가 이 한 줄
+  params: {
+    scaleLengthMm: 628, // 스트랫 648
+    // **여기가 두 기타의 진짜 차이다.** 예전에는 줄 길이 20mm 뿐이라
+    // 실제 스트랫과 레스폴의 차이를 못 냈다 (`ROADMAP.md` S1-3)
+    pickupHumbucker: 1,
+  },
 };
 
 const ELECTRIC_BASS: InstrumentDefinition = {
@@ -224,6 +273,8 @@ const HARP: InstrumentDefinition = {
     scaleLengthMm: 700, stiffness: 0.006, damping: 0.03, sustainSec: 6, pluckHardness: 0.15,
     // 하프는 뜯고 손을 떼도 울린다 — 줄을 짚어 죽이는 연주가 예외다
     letRing: 1,
+    // 줄이 47개나 늘어서 있어 낮은 음과 높은 음의 위치가 실제로 멀다
+    stereoWidth: 0.45,
   },
   range: { low: 24, high: 96 },
 };
@@ -281,7 +332,7 @@ const SYNTH_BASE: InstrumentDefinition = {
     },
     ampEnabled: { type: 'int', min: 0, max: 1, default: 0, label: '앰프', group: '앰프' },
     ampDrive: { type: 'float', min: 0, max: 1, default: 0, label: '드라이브', group: '앰프' },
-    ...NOTE_OFF_SPECS,
+    ...COMMON_SPECS,
   },
   params: {
     synthWaveform: 0,
@@ -299,6 +350,8 @@ const SYNTH_BASE: InstrumentDefinition = {
     // 멈춰 영원히 울린다 (거기서 나올 길이 노트오프뿐이다).
     // 뮤트는 자기 릴리즈(`sustainSec` 슬롯)가 하므로 `releaseMs` 는 쓰이지 않는다
     letRing: 0,
+    // 신스의 밝기는 필터 컷오프다. 벨로시티→컷오프는 아날로그 신스의 기본 배선이다
+    velocityBrightness: 0.3,
   },
   tones: {
     default: {},
@@ -325,6 +378,8 @@ const SYNTH_PAD: InstrumentDefinition = {
   params: {
     synthWaveform: 2, scaleLengthMm: 300, sustainSec: 1200,
     synthCutoffHz: 1800, damping: 0.8, synthDetuneCents: 14,
+    // 패드는 넓게 깔리는 것이 존재 이유다
+    stereoWidth: 0.4,
   },
   range: { low: 36, high: 96 },
 };
@@ -371,7 +426,7 @@ const MODAL_BASE: InstrumentDefinition = {
       label: '때리는 세기', group: '연주',
     },
     ampEnabled: { type: 'int', min: 0, max: 1, default: 0, label: '앰프', group: '앰프' },
-    ...NOTE_OFF_SPECS,
+    ...COMMON_SPECS,
   },
   params: {
     modalMaterial: 0,
@@ -383,6 +438,10 @@ const MODAL_BASE: InstrumentDefinition = {
     // 감쇠는 `modalDecaySec` 이 정한다
     letRing: 1,
     releaseMs: 150,
+    // 말렛은 세게 때리면 확실히 밝아진다
+    velocityBrightness: 0.3,
+    // 건반처럼 음판이 왼쪽(낮음)에서 오른쪽(높음)으로 늘어서 있다
+    stereoWidth: 0.3,
   },
   tones: { default: {}, 부드럽게: { pluckHardness: 0.2 }, 세게: { pluckHardness: 0.95 } },
 };
@@ -463,7 +522,7 @@ const DRUM_BASE: InstrumentDefinition = {
       label: '밝기', group: '드럼',
     },
     ampEnabled: { type: 'int', min: 0, max: 1, default: 0, label: '앰프', group: '앰프' },
-    ...NOTE_OFF_SPECS,
+    ...COMMON_SPECS,
   },
   params: {
     drumKind: 0,
@@ -472,6 +531,12 @@ const DRUM_BASE: InstrumentDefinition = {
     drumNoiseAmount: 0,
     strikePosition: 0.5,
     ampEnabled: 0,
+    // 세게 치면 밝아진다. 드럼에서 특히 크게 들리는 성질이다
+    velocityBrightness: 0.4,
+    // **좌우 퍼짐은 켜지 않는다.** 지금 배치는 음 높이로 정해지는데, 그러면
+    // 킥이 왼쪽으로 가 버린다. 드럼은 킥·스네어가 가운데인 것이 기준이다.
+    // 악기별 팬 오프셋이 생기면 그때 하이햇·탐만 편다
+    stereoWidth: 0,
     // 원샷이다. 킥을 짧게 눌렀다고 짧아지면 안 된다 — 길이는 `drumDecaySec` 이 정한다.
     // Rust 쪽도 타악기의 노트오프를 무시하지만(`voice.rs`), 여기서 명시해 두면
     // 애초에 노트오프를 보내지 않아 헛일이 줄고 의도가 드러난다

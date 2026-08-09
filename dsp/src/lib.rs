@@ -64,15 +64,33 @@ pub const MAX_BLOCK: usize = 2048;
 /// | 24~28 | 신스 |
 /// | 29 | 샘플러 |
 /// | 30~33 | 드럼 |
+/// | 34~36 | 연주 표현 (스테레오 · 픽업 · 벨로시티 밝기) |
 ///
 /// **층을 분리한다** (`sound.md` 5절·8절): "줄 길이"와 "왜곡"은 서로 다른 층이다.
-pub const PARAM_COUNT: usize = 34;
+///
+/// 34~36 은 `ROADMAP.md` S1 에서 한꺼번에 추가했다. 슬롯을 늘리면 Rust·TS·워크렛
+/// 세 곳을 같이 고쳐야 하므로 **나눠서 늘리지 않고 한 번에 늘린다** (S1 원칙 1).
+pub const PARAM_COUNT: usize = 37;
+
+/// 벨로시티 밝기의 기준점. 이 세기로 쳤을 때 악기 정의의 값이 그대로 쓰인다.
+/// 0.7 은 mf(보통 세기)에 해당한다 — 위면 밝아지고 아래면 어두워진다.
+const VELOCITY_REFERENCE: f64 = 0.7;
+
+/// 음 높이 → 좌우 위치를 계산할 때 기준이 되는 음 (C4) 과 폭.
+/// C4 에서 ±3옥타브를 좌우 끝으로 편다 — 악기 음역 대부분이 이 안에 들어온다.
+const PAN_CENTER_HZ: f64 = 261.625_57;
+const PAN_OCTAVE_SPAN: f64 = 3.0;
 
 struct Engine {
     sample_rate: f64,
-    /// 트랙 하나당 워크렛 노드 하나이므로 앰프 체인도 하나면 된다.
-    /// 보이스들의 합에 걸린다 — 실제 기타도 픽업 하나가 여섯 줄을 함께 읽는다
+    /// 트랙 하나당 워크렛 노드 하나이므로 앰프도 트랙당 하나다.
+    /// 보이스들의 합에 걸린다 — 실제 기타도 픽업 하나가 여섯 줄을 함께 읽는다.
+    ///
+    /// **좌우로 두 벌을 둔다.** 앰프는 비선형이라 좌우를 한 벌로 처리한 뒤 나누면
+    /// 보이스별 좌우 배치가 사라진다. `stereo_width = 0` 이면 두 채널의 입력이
+    /// 같으므로 출력도 **비트 단위로 같다** — 모노였던 기존 동작이 그대로 보존된다
     amp: AmpChain,
+    amp_r: AmpChain,
     amp_enabled: bool,
     /// 샘플러 보이스가 쓰는 데이터. JS 가 load_sample 로 채운다
     sample: SampleData,
@@ -83,7 +101,11 @@ struct Engine {
     params: Vec<StringParams>,
     /// 보이스별 게인 (트랙 레벨)
     gains: Vec<f32>,
+    /// 보이스별 좌우 게인. 발음 시점의 음 높이로 정해진다 (`pan_gains`)
+    pan_l: Vec<f32>,
+    pan_r: Vec<f32>,
     out: Vec<f32>,
+    out_r: Vec<f32>,
     /// 보이스별 합산용. 미리 잡아 둔다 — process() 에서 할당하지 않는다
     scratch: Vec<f32>,
     /// JS 가 파라미터를 써 넣는 곳
@@ -111,6 +133,7 @@ pub extern "C" fn init(sample_rate: f32) {
     let engine = Engine {
         sample_rate: sr,
         amp: AmpChain::new(sr),
+        amp_r: AmpChain::new(sr),
         amp_enabled: false,
         voices: (0..MAX_VOICES)
             .map(|i| AnyVoice::new(sr, 0x2f6e2b1u32.wrapping_add(i as u32 * 2654435761)))
@@ -119,7 +142,10 @@ pub extern "C" fn init(sample_rate: f32) {
         sample_in: vec![0.0; SAMPLE_CAPACITY],
         params: vec![StringParams::default(); MAX_VOICES],
         gains: vec![1.0; MAX_VOICES],
+        pan_l: vec![1.0; MAX_VOICES],
+        pan_r: vec![1.0; MAX_VOICES],
         out: vec![0.0; MAX_BLOCK],
+        out_r: vec![0.0; MAX_BLOCK],
         scratch: vec![0.0; MAX_BLOCK],
         param_in: vec![0.0; PARAM_COUNT],
         ages: vec![0; MAX_VOICES],
@@ -137,13 +163,60 @@ pub extern "C" fn param_buffer() -> *mut f32 {
     engine().param_in.as_mut_ptr()
 }
 
-/// 출력 버퍼의 주소 (f32, MAX_BLOCK 개)
+/// 왼쪽 출력 버퍼의 주소 (f32, MAX_BLOCK 개)
 #[no_mangle]
 pub extern "C" fn output_buffer() -> *const f32 {
     engine().out.as_ptr()
 }
 
-fn read_params() -> StringParams {
+/// 오른쪽 출력 버퍼의 주소.
+///
+/// 좌우를 인터리브하지 않고 **따로 둔다.** Web Audio 의 출력이 채널별 배열(planar)
+/// 이라 인터리브로 주면 워크렛이 매 샘플 갈라내야 한다.
+#[no_mangle]
+pub extern "C" fn output_buffer_right() -> *const f32 {
+    engine().out_r.as_ptr()
+}
+
+/// 음 높이 → 좌우 게인. **순수 함수라 테스트가 직접 검증한다.**
+///
+/// 왜 음 높이인가: 실제로 마이크로 잡은 피아노·말렛·하프는 낮은 음이 한쪽, 높은 음이
+/// 반대쪽에서 들린다. 소리를 내는 지점이 실제로 떨어져 있기 때문이다. 보이스마다
+/// 게인 두 개를 곱하는 것뿐이라 **CPU 가 사실상 0** 이다.
+///
+/// `width = 0` 이면 좌우가 정확히 1.0 으로 같다 — 모노였던 기존 동작과 **비트 단위로
+/// 같은 출력**이 나온다. 그래서 이 값을 켜지 않은 악기는 아무 영향도 받지 않는다.
+///
+/// 등가 파워 팬을 쓰되 중앙이 1.0 이 되게 맞춘다. 중앙을 0.707 로 두는 관례를 그대로
+/// 쓰면 **오늘까지 나던 소리가 갑자기 3dB 작아진다.**
+pub fn pan_gains(freq_hz: f64, width: f64) -> (f32, f32) {
+    let width = width.clamp(0.0, 1.0);
+    // NaN 도 여기서 걸러진다 — 비교가 전부 거짓이라 `> 0.0` 이 성립하지 않는다
+    if !(width > 0.0 && freq_hz > 0.0) {
+        return (1.0, 1.0);
+    }
+    let octaves = (freq_hz / PAN_CENTER_HZ).log2() / PAN_OCTAVE_SPAN;
+    let pan = octaves.clamp(-1.0, 1.0) * width;
+    // -1 → 0, 0 → π/4, +1 → π/2
+    let theta = (pan + 1.0) * core::f64::consts::FRAC_PI_4;
+    let norm = core::f64::consts::SQRT_2;
+    ((theta.cos() * norm) as f32, (theta.sin() * norm) as f32)
+}
+
+/// 벨로시티 → 밝기 보정값. **순수 함수.**
+///
+/// 지금까지 벨로시티는 진폭만 바꿨다. 실제 악기는 세게 치면 **밝아진다** — 그게 없으면
+/// 벨로시티 레인을 아무리 그려도 볼륨 오토메이션으로만 들린다 (`ROADMAP.md` S1-2).
+///
+/// 반환값은 "밝기 파라미터에 더할 양"이다. 보이스마다 밝기를 담당하는 파라미터가
+/// 다르므로(줄은 뜯는 세기, 신스는 컷오프) 더하는 쪽은 호출자가 정한다.
+pub fn velocity_brightness(velocity: f64, amount: f64) -> f64 {
+    amount.clamp(0.0, 1.0) * (velocity.clamp(0.0, 1.0) - VELOCITY_REFERENCE)
+}
+
+/// `bright` 는 `velocity_brightness()` 가 준 보정값이다. 발음이 아닌 경로
+/// (`set_params_live`)에서는 0 을 넘긴다 — 그쪽에는 벨로시티가 없다.
+fn read_params(bright: f64) -> StringParams {
     let p = &engine().param_in;
     StringParams {
         scale_length_mm: p[0] as f64,
@@ -151,30 +224,43 @@ fn read_params() -> StringParams {
         damping: p[2] as f64,
         sustain_sec: p[3] as f64,
         pluck_position: p[4] as f64,
-        pluck_hardness: p[5] as f64,
+        // 세게 뜯으면 더 단단하게(= 밝게) 뜯은 것이 된다.
+        // `fill_excitation` 이 이 값으로 여진 노이즈의 저역통과를 정한다
+        pluck_hardness: (p[5] as f64 + bright).clamp(0.0, 1.0),
     }
+}
+
+fn read_stereo_width() -> f64 {
+    engine().param_in[34] as f64
+}
+
+fn read_velocity_brightness(velocity: f64) -> f64 {
+    velocity_brightness(velocity, engine().param_in[36] as f64)
 }
 
 fn read_voice_kind() -> VoiceKind {
     VoiceKind::from_index(engine().param_in[20] as u32)
 }
 
-fn read_modal() -> ModalParams {
+fn read_modal(bright: f64) -> ModalParams {
     let p = &engine().param_in;
     ModalParams {
         material: ModalMaterial::from_index(p[21] as u32),
         decay_sec: p[22] as f64,
         strike_position: p[23] as f64,
-        strike_hardness: p[4] as f64, // 뜯는 세기와 같은 슬롯을 쓴다 (타격 세기)
+        // 뜯는 세기와 같은 슬롯을 쓴다 (타격 세기). 세게 때리면 밝아진다
+        strike_hardness: (p[4] as f64 + bright).clamp(0.0, 1.0),
     }
 }
 
-fn read_synth() -> SynthParams {
+fn read_synth(bright: f64) -> SynthParams {
     let p = &engine().param_in;
     SynthParams {
         waveform: Waveform::from_index(p[24] as u32),
         detune_cents: p[25] as f64,
-        cutoff_hz: p[26] as f64,
+        // 신스의 밝기는 필터 컷오프다. 옥타브(비율)로 움직여야 저역·고역에서 같은
+        // 느낌이 난다 — 헤르츠로 더하면 낮은 컷오프에서만 크게 변한다
+        cutoff_hz: p[26] as f64 * (bright * 2.0).exp2(),
         resonance: p[27] as f64,
         filter_env: p[28] as f64,
         // 엔벌로프는 줄 슬롯을 재사용한다 — 신스에는 줄 파라미터가 의미 없다
@@ -195,14 +281,15 @@ fn read_sampler() -> SamplerParams {
     }
 }
 
-fn read_drum() -> DrumParams {
+fn read_drum(bright: f64) -> DrumParams {
     let p = &engine().param_in;
     DrumParams {
         kind: DrumKind::from_index(p[30] as u32),
         decay_sec: p[31] as f64,
         pitch_drop: p[32] as f64,
         noise_amount: p[33] as f64,
-        tone: p[23] as f64, // 때리는 위치 슬롯을 밝기로 재사용
+        // 때리는 위치 슬롯을 밝기로 재사용. 세게 치면 밝아진다
+        tone: (p[23] as f64 + bright).clamp(0.0, 1.0),
     }
 }
 
@@ -220,9 +307,14 @@ fn read_amp() -> (bool, AmpParams) {
             level: p[17] as f64,
             cabinet: p[18] > 0.5,
             pickup_position: p[19] as f64,
-            // 코일 특성은 지금 픽업 위치와 함께 하나의 값으로 묶는다.
-            // 험버커/싱글코일을 따로 노출하게 되면 슬롯을 하나 더 쓴다
-            pickup_coil_hz: 4000.0 + (1.0 - p[19] as f64) * 4000.0,
+            // 코일 종류가 공진 주파수를 정한다 (`ROADMAP.md` S1-3).
+            //
+            // 험버커는 코일 두 개가 직렬이라 인덕턴스가 커지고 공진이 아래로 내려간다
+            // — 그래서 더 두껍고 어둡게 들린다. 싱글코일은 그 반대다.
+            // 예전에는 이 값이 픽업 **위치**에서 파생돼서, 스트랫과 레스폴의 차이가
+            // 줄 길이 20mm 뿐이었다
+            pickup_coil_hz: if p[35] > 0.5 { 3000.0 } else { 6500.0 }
+                + (1.0 - p[19] as f64) * 1000.0,
         },
     )
 }
@@ -291,7 +383,11 @@ fn allocate_voice(e: &mut Engine) -> usize {
 /// 발음. `param_buffer()` 를 채운 뒤 부른다. 반환값은 쓰인 보이스 번호
 #[no_mangle]
 pub extern "C" fn note_on(freq_hz: f32, velocity: f32, gain: f32) -> u32 {
-    let params = read_params();
+    // 세게 칠수록 밝아진다. 보이스마다 밝기를 담당하는 파라미터가 다르므로
+    // 보정값만 구해 두고 적용은 각 `read_*` 가 한다
+    let bright = read_velocity_brightness(velocity as f64);
+    let params = read_params(bright);
+    let (pan_l, pan_r) = pan_gains(freq_hz as f64, read_stereo_width());
     let e = engine();
 
     let index = allocate_voice(e);
@@ -300,6 +396,9 @@ pub extern "C" fn note_on(freq_hz: f32, velocity: f32, gain: f32) -> u32 {
 
     e.params[index] = params;
     e.gains[index] = gain;
+    // 좌우 배치는 **발음 시점에 정한다.** 울리는 도중 바뀌면 음이 화면을 가로지른다
+    e.pan_l[index] = pan_l;
+    e.pan_r[index] = pan_r;
 
     // 보이스 타입에 따라 라우팅한다. **여기가 유일한 분기점**이다 (`sound.md` 9-4)
     match read_voice_kind() {
@@ -308,15 +407,15 @@ pub extern "C" fn note_on(freq_hz: f32, velocity: f32, gain: f32) -> u32 {
             engine().voices[index].note_on_string(freq_hz as f64, velocity as f64, &params, &curve);
         }
         VoiceKind::Modal => {
-            let modal = read_modal();
+            let modal = read_modal(bright);
             engine().voices[index].note_on_modal(freq_hz as f64, velocity as f64, &modal);
         }
         VoiceKind::VirtualAnalog => {
-            let synth = read_synth();
+            let synth = read_synth(bright);
             engine().voices[index].note_on_synth(freq_hz as f64, velocity as f64, &synth);
         }
         VoiceKind::Percussion => {
-            let drum = read_drum();
+            let drum = read_drum(bright);
             engine().voices[index].note_on_drum(freq_hz as f64, velocity as f64, &drum);
         }
         VoiceKind::Sampler => {
@@ -333,7 +432,10 @@ pub extern "C" fn note_on(freq_hz: f32, velocity: f32, gain: f32) -> u32 {
     let e = engine();
     e.amp_enabled = enabled;
     if enabled {
+        // 좌우 두 벌에 **같은 설정**을 넣는다. 다르게 주면 두 대의 앰프가 되어
+        // 음색이 좌우로 갈라진다 — 우리가 원하는 건 배치이지 다른 악기가 아니다
         e.amp.set_params(&amp_params, freq_hz as f64);
+        e.amp_r.set_params(&amp_params, freq_hz as f64);
     }
     index as u32
 }
@@ -342,7 +444,9 @@ pub extern "C" fn note_on(freq_hz: f32, velocity: f32, gain: f32) -> u32 {
 /// `param_buffer()` 를 채운 뒤 부른다. `voice` 가 u32::MAX 면 전체에 적용.
 #[no_mangle]
 pub extern "C" fn set_params_live(voice: u32) {
-    let params = read_params();
+    // 튜닝 도구에서 오는 경로다. 벨로시티가 없으므로 밝기 보정은 0 —
+    // 악기 정의에 적힌 값이 그대로 들린다
+    let params = read_params(0.0);
     let (amp_enabled, amp_params) = read_amp();
     let e = engine();
     e.amp_enabled = amp_enabled;
@@ -354,8 +458,9 @@ pub extern "C" fn set_params_live(voice: u32) {
             .find(|v| v.is_active())
             .map_or(220.0, |_| 220.0);
         e.amp.set_params(&amp_params, freq);
+        e.amp_r.set_params(&amp_params, freq);
     }
-    let synth = read_synth();
+    let synth = read_synth(0.0);
     let e = engine();
     if voice == u32::MAX {
         for i in 0..MAX_VOICES {
@@ -394,6 +499,7 @@ pub extern "C" fn all_off() {
         v.reset();
     }
     e.amp.reset();
+    e.amp_r.reset();
 }
 
 /// 한 블록 렌더. `output_buffer()` 에 결과가 들어간다.
@@ -404,6 +510,9 @@ pub extern "C" fn process(frames: u32) -> u32 {
     let e = engine();
 
     for v in e.out[..n].iter_mut() {
+        *v = 0.0;
+    }
+    for v in e.out_r[..n].iter_mut() {
         *v = 0.0;
     }
 
@@ -422,18 +531,27 @@ pub extern "C" fn process(frames: u32) -> u32 {
         let sample = core::mem::replace(&mut e.sample, SampleData::empty());
         e.voices[i].process(&mut scratch[..n], &sample);
         e.sample = sample;
-        let gain = e.gains[i];
+        // 좌우 게인을 여기서 곱한다. 보이스마다 배치가 다르므로 합산한 뒤에는 못 나눈다
+        let gain_l = e.gains[i] * e.pan_l[i];
+        let gain_r = e.gains[i] * e.pan_r[i];
         for (dst, src) in e.out[..n].iter_mut().zip(scratch[..n].iter()) {
-            *dst += *src * gain;
+            *dst += *src * gain_l;
+        }
+        for (dst, src) in e.out_r[..n].iter_mut().zip(scratch[..n].iter()) {
+            *dst += *src * gain_r;
         }
         e.scratch = scratch;
     }
 
-    // 앰프 체인은 보이스 합에 걸린다 (`sound.md` 5절의 신호 체인 순서)
+    // 앰프 체인은 보이스 합에 걸린다 (`sound.md` 5절의 신호 체인 순서).
+    // 좌우를 각각 통과시킨다 — 비선형이라 합쳐서 처리한 뒤 나눌 수 없다
     if e.amp_enabled {
         let mut out = core::mem::take(&mut e.out);
         e.amp.process(&mut out[..n]);
         e.out = out;
+        let mut out_r = core::mem::take(&mut e.out_r);
+        e.amp_r.process(&mut out_r[..n]);
+        e.out_r = out_r;
     }
 
     active
@@ -585,6 +703,90 @@ mod tests {
             Some(2),
             "이미 페이드 중인 것을 다시 골랐거나 엉뚱한 것을 골랐다"
         );
+    }
+
+    // --- 스테레오 배치 (S1-1) ---------------------------------------------
+
+    #[test]
+    fn zero_width_is_exactly_mono() {
+        // **이게 깨지면 오늘까지 나던 소리가 전부 바뀐다.** 폭을 켜지 않은 악기는
+        // 좌우가 1.0 으로 같아야 하고, 그래야 기존 동작이 비트 단위로 보존된다
+        for hz in [55.0, 261.6, 1000.0, 4186.0] {
+            assert_eq!(pan_gains(hz, 0.0), (1.0, 1.0), "{hz}Hz 에서 모노가 아니다");
+        }
+    }
+
+    #[test]
+    fn center_pitch_stays_centered() {
+        // C4 는 기준음이라 폭과 무관하게 가운데
+        let (l, r) = pan_gains(PAN_CENTER_HZ, 1.0);
+        assert!((l - r).abs() < 1e-6, "기준음이 한쪽으로 치우쳤다");
+        assert!(
+            (l - 1.0).abs() < 1e-6,
+            "중앙 게인이 1.0 이 아니다 — 소리가 작아진다"
+        );
+    }
+
+    #[test]
+    fn low_goes_left_and_high_goes_right() {
+        let (low_l, low_r) = pan_gains(PAN_CENTER_HZ / 4.0, 0.5);
+        let (high_l, high_r) = pan_gains(PAN_CENTER_HZ * 4.0, 0.5);
+        assert!(low_l > low_r, "낮은 음이 왼쪽으로 가지 않았다");
+        assert!(high_r > high_l, "높은 음이 오른쪽으로 가지 않았다");
+        // 대칭이어야 한다 — 한쪽으로 쏠리면 곡 전체가 기운다
+        assert!((low_l - high_r).abs() < 1e-6);
+        assert!((low_r - high_l).abs() < 1e-6);
+    }
+
+    #[test]
+    fn pan_keeps_total_power_constant() {
+        // 등가 파워 — 배치를 바꿨다고 소리 크기가 달라지면 안 된다
+        for hz in [55.0, 130.8, 261.6, 880.0, 4186.0] {
+            let (l, r) = pan_gains(hz, 1.0);
+            let power = (l * l + r * r) as f64;
+            assert!((power - 2.0).abs() < 1e-5, "{hz}Hz 에서 파워가 {power}");
+        }
+    }
+
+    #[test]
+    fn pan_is_clamped_beyond_the_span() {
+        // 음역 밖으로 나가도 완전히 한쪽으로 사라지지 않는다
+        let far = pan_gains(1.0, 1.0);
+        let edge = pan_gains(PAN_CENTER_HZ / 8.0, 1.0);
+        assert_eq!(far, edge, "범위 밖에서 계속 더 왼쪽으로 갔다");
+    }
+
+    // --- 벨로시티 → 밝기 (S1-2) -------------------------------------------
+
+    #[test]
+    fn velocity_brightness_is_zero_when_disabled() {
+        // 기본값은 꺼짐이다. 악기가 켜지 않으면 예전과 같은 소리가 나야 한다
+        for v in [0.0, 0.3, 0.7, 1.0] {
+            assert_eq!(velocity_brightness(v, 0.0), 0.0);
+        }
+    }
+
+    #[test]
+    fn harder_is_brighter_and_softer_is_darker() {
+        assert!(velocity_brightness(1.0, 1.0) > 0.0, "세게 쳐도 안 밝아진다");
+        assert!(
+            velocity_brightness(0.2, 1.0) < 0.0,
+            "약하게 쳐도 안 어두워진다"
+        );
+        // 기준 세기에서는 악기 정의 값이 그대로 쓰인다
+        assert_eq!(velocity_brightness(VELOCITY_REFERENCE, 1.0), 0.0);
+    }
+
+    #[test]
+    fn velocity_brightness_is_monotonic_and_bounded() {
+        let mut prev = f64::NEG_INFINITY;
+        for step in 0..=10 {
+            let v = step as f64 / 10.0;
+            let b = velocity_brightness(v, 1.0);
+            assert!(b > prev, "벨로시티가 올라갔는데 밝기가 안 올라갔다");
+            assert!(b.abs() <= 1.0, "보정값이 파라미터 범위를 통째로 넘는다");
+            prev = b;
+        }
     }
 
     #[test]

@@ -22,7 +22,8 @@
  */
 
 const MAX_BLOCK = 2048;
-const PARAM_COUNT = 34; // Rust 쪽 PARAM_COUNT 와 같아야 한다 (줄 6 + 곡선 5 + 앰프 9 + 보이스 10 + 드럼 4)
+// Rust 쪽 PARAM_COUNT 와 같아야 한다 (줄 6 + 곡선 5 + 앰프 9 + 보이스 10 + 드럼 4 + 표현 3)
+const PARAM_COUNT = 37;
 /**
  * 이만큼 지난 예약은 버린다.
  *
@@ -116,6 +117,7 @@ class KsProcessor extends AudioWorkletProcessor {
     this.viewBuffer = buffer;
     this.paramView = new Float32Array(buffer, this.wasm.param_buffer(), PARAM_COUNT);
     this.outputView = new Float32Array(buffer, this.wasm.output_buffer(), MAX_BLOCK);
+    this.outputViewR = new Float32Array(buffer, this.wasm.output_buffer_right(), MAX_BLOCK);
   }
 
   writeParams(params) {
@@ -123,15 +125,34 @@ class KsProcessor extends AudioWorkletProcessor {
     for (let i = 0; i < PARAM_COUNT; i++) this.paramView[i] = params[i] ?? 0;
   }
 
-  /** `[from, from+count)` 를 렌더해 출력 채널의 `offset` 위치에 쓴다 */
+  /**
+   * `[from, from+count)` 를 렌더해 출력 채널의 `offset` 위치에 쓴다.
+   *
+   * wasm 이 좌우를 따로 준다 (`ROADMAP.md` S1-1). 예전에는 모노 하나를 좌우에
+   * 복사해서 **전곡이 사실상 모노**였다. 보이스마다 음 높이로 좌우 배치가 정해지므로
+   * 합산한 뒤에는 나눌 수 없고, 그래서 wasm 안에서 두 갈래로 합산한다.
+   */
   renderSegment(channels, offset, count) {
     if (count <= 0) return;
     this.wasm.process(count);
     this.refreshViews();
     const left = channels[0];
     for (let i = 0; i < count; i++) left[offset + i] = this.outputView[i];
-    for (let ch = 1; ch < channels.length; ch++) {
-      for (let i = 0; i < count; i++) channels[ch][offset + i] = left[offset + i];
+
+    if (channels.length > 1) {
+      const right = channels[1];
+      for (let i = 0; i < count; i++) right[offset + i] = this.outputViewR[i];
+      // 3채널 이상은 쓰지 않지만, 남으면 조용해지므로 왼쪽을 복사해 둔다
+      for (let ch = 2; ch < channels.length; ch++) {
+        for (let i = 0; i < count; i++) channels[ch][offset + i] = left[offset + i];
+      }
+      return;
+    }
+
+    // 모노 출력으로 배선된 경우 — 한쪽만 내보내면 반대쪽에 배치된 음이 사라진다.
+    // 폭이 0 이면 좌우가 같으므로 이 평균은 원래 값 그대로다
+    for (let i = 0; i < count; i++) {
+      left[offset + i] = (this.outputView[i] + this.outputViewR[i]) * 0.5;
     }
   }
 

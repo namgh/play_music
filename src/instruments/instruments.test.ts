@@ -70,14 +70,21 @@ test('앰프 음색 프리셋이 왜곡만 바꾼다', () => {
   assert.equal(clean.stiffness, fuzz.stiffness);
 });
 
-test('레스폴과 스트랫은 줄 길이만 다르다', () => {
-  // 제품이 실제로 주장하는 미세한 차이. 이 둘이 파라미터 하나로 갈린다는 게 핵심
+test('레스폴과 스트랫은 줄 길이와 픽업으로 갈린다', () => {
+  // 제품이 실제로 주장하는 미세한 차이. **정의 파일의 숫자 두 개**로 갈린다.
+  //
+  // 예전에는 줄 길이 20mm 뿐이라 실제 두 기타의 차이를 못 냈다 (`ROADMAP.md` S1-3).
+  // 레스폴은 험버커라 코일 공진이 아래로 내려가 더 두껍고 어둡다.
   const strat = resolveInstrument('electric-guitar', registry);
   const lp = resolveInstrument('electric-guitar-lp', registry);
-  const differing = Object.keys(strat.params).filter((k) => strat.params[k] !== lp.params[k]);
-  assert.deepEqual(differing, ['scaleLengthMm']);
+  const differing = Object.keys(strat.params)
+    .filter((k) => strat.params[k] !== lp.params[k])
+    .sort();
+  assert.deepEqual(differing, ['pickupHumbucker', 'scaleLengthMm']);
   assert.equal(strat.params.scaleLengthMm, 648);
   assert.equal(lp.params.scaleLengthMm, 628);
+  assert.equal(strat.params.pickupHumbucker, 0, '스트랫은 싱글코일이다');
+  assert.equal(lp.params.pickupHumbucker, 1, '레스폴은 험버커다');
 });
 
 test('정의만 추가해서 새 악기가 나온다 — 엔진 코드 수정 0줄', () => {
