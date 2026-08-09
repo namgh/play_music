@@ -3,7 +3,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BRAND } from './brand.ts';
 import {
   addClip, addTrack, copyNotes, deleteNotes, duplicateNotes, moveNotes, pasteNotes,
-  moveNotesToTrack, quantizeNotes, setKey, setLoop, setLoopEnabled, setTempo,
+  moveNotesToTrack, quantizeNotes, setKey, setLoop, setLoopEnabled, setSwing, setTempo,
+  setTempoChange,
 } from './editor/edits.ts';
 import { useProjectEditor } from './editor/useProjectEditor.ts';
 import { downloadProject, loadAutosave, readProjectFile, saveAutosave } from './editor/projectStorage.ts';
@@ -494,6 +495,42 @@ export function App() {
               <option key={option.label} value={option.ticks}>{option.label}</option>
             ))}
           </select>
+
+          {/* 스윙 — **곡의 성격이라 프로젝트에 저장된다** */}
+          <label className="ml-2 text-xs text-neutral-500" htmlFor="swing">스윙</label>
+          <input
+            id="swing"
+            type="range"
+            min={0}
+            max={0.6}
+            step={0.05}
+            value={project.swing ?? 0}
+            onChange={(e) => editor.commit(setSwing(project, Number(e.target.value)))}
+            className="w-20"
+            title={`뒷박을 ${Math.round((project.swing ?? 0) * 100)}% 뒤로 (1/3 이 삼잇단)`}
+          />
+
+          {/* 템포 변화 — 커서 위치에 지점을 놓는다 */}
+          <button
+            type="button"
+            onClick={() => {
+              const at = cursorTick + (clip?.startTick ?? 0);
+              if (at <= 0) {
+                setNotice('곡 시작 템포는 BPM 칸에서 바꿉니다');
+                return;
+              }
+              const existing = (project.tempo.changes ?? []).find((c) => c.tick === at);
+              if (existing) {
+                editor.commit(setTempoChange(project, at, null));
+                setNotice('템포 변화를 지웠습니다');
+                return;
+              }
+              editor.commit(setTempoChange(project, at, project.tempo.bpm));
+              setNotice('커서 위치에 템포 변화를 놓았습니다 — BPM 칸에서 값을 바꾸세요');
+            }}
+            className="rounded border border-neutral-700 px-2 py-1 text-sm"
+            title="커서 위치에 템포 변화를 놓거나 지웁니다"
+          >템포 변화{(project.tempo.changes?.length ?? 0) > 0 ? ` (${project.tempo.changes!.length})` : ''}</button>
 
           {/* 세기 — 찍을 때 적용된다 */}
           <label className="ml-2 text-xs text-neutral-500" htmlFor="vel">세기</label>

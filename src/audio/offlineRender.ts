@@ -18,7 +18,7 @@
 import type { Project } from '../model/project.ts';
 import { ticksToSeconds } from '../model/time.ts';
 import { pitchToHz } from '../model/pitch.ts';
-import { applyLegato, collectNoteEvents } from './scheduler.ts';
+import { applyLegato, applySwing, collectNoteEvents } from './scheduler.ts';
 import type { InstrumentDefinition } from '../instruments/types.ts';
 import { VOICE_KIND_INDEX } from '../instruments/types.ts';
 import { instrumentParams, resolveInstrument } from '../instruments/resolve.ts';
@@ -91,7 +91,7 @@ export function renderProjectOffline(
   // 레가토는 **앞 음을 알아야** 계산되므로 스케줄러 층에서 얹는다 (`ROADMAP.md` S2-3).
   // 트랙별 설정을 이미 펼쳐 뒀으므로 그것을 그대로 쓴다
   const events = applyLegato(
-    collectNoteEvents(project, 0, lengthTicks),
+    applySwing(collectNoteEvents(project, 0, lengthTicks), project.swing ?? 0),
     (trackId) => Number(trackSetup.get(trackId)?.params.legatoMs) || 0,
     project.tuning,
   );

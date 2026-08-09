@@ -488,6 +488,34 @@ export function setTempo(project: Project, bpm: number): Project {
   return { ...project, tempo: { ...project.tempo, bpm: Math.min(300, Math.max(20, bpm)) } };
 }
 
+/**
+ * 템포 변화 지점을 넣거나 지운다 (`ROADMAP.md` P2).
+ *
+ * `bpm` 이 null 이면 그 지점의 변화를 없앤다. 틱 0 은 시작 템포라 `setTempo` 가 맡는다.
+ */
+export function setTempoChange(project: Project, tick: Ticks, bpm: number | null): Project {
+  const at = Math.max(0, Math.round(tick));
+  if (at === 0) {
+    if (bpm === null) return project;
+    return setTempo(project, bpm);
+  }
+  const rest = (project.tempo.changes ?? []).filter((c) => c.tick !== at);
+  const changes = bpm === null || !(bpm > 0)
+    ? rest
+    : [...rest, { tick: at, bpm }].sort((a, b) => a.tick - b.tick);
+  return { ...project, tempo: { ...project.tempo, changes } };
+}
+
+/**
+ * 스윙 (`ROADMAP.md` P2) — 짝수 번째 격자를 뒤로 민다.
+ *
+ * **프로젝트에 저장한다.** 곡의 성격이지 보기 설정이 아니다 — 파일을 다시 열었을 때
+ * 그루브가 사라지면 다른 곡이 된다.
+ */
+export function setSwing(project: Project, amount: number): Project {
+  return { ...project, swing: Math.max(0, Math.min(0.75, amount)) };
+}
+
 export function setProjectName(project: Project, name: string): Project {
   return { ...project, name };
 }

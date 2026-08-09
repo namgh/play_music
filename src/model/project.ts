@@ -176,6 +176,13 @@ export interface Project {
   id: ProjectId;
   name: string;
   tempo: Tempo;
+  /**
+   * 스윙 (0~0.75). 짝수 번째 격자를 이 비율만큼 뒤로 민다 (`ROADMAP.md` P2).
+   *
+   * **곡의 성격이라 프로젝트에 저장한다.** 보기 설정이 아니다 — 파일을 다시 열었을 때
+   * 그루브가 사라지면 다른 곡이 된다. 필드 추가라 마이그레이션은 필요 없다
+   */
+  swing?: number;
   timeSignature: TimeSignature;
   /** 표시·AI 힌트용. 렌더에는 영향이 없다 */
   key: MusicalKey | null;

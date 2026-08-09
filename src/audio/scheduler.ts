@@ -84,6 +84,33 @@ export function legatoLookup(
   return (trackId) => byTrack.get(trackId) ?? 0;
 }
 
+/**
+ * 스윙 — 짝수 번째 8분음표를 뒤로 민다 (`ROADMAP.md` P2).
+ *
+ * 재즈·셔플의 "삼잇단 느낌"이 이것이다. `amount = 1/3` 이면 정확히 삼잇단이 된다.
+ *
+ * **음 길이는 줄이지 않는다.** 시작만 밀면 앞 음과 겹치는데, 그게 실제 연주에
+ * 가깝다 — 스윙은 음을 짧게 자르는 게 아니라 뒤에 놓는 것이다.
+ *
+ * 순수 함수. 렌더러 세 곳이 같은 결과를 써야 하므로 여기 한 곳에 둔다.
+ */
+export function applySwing(
+  events: readonly ScheduledNote[],
+  amount: number,
+  gridTicks: Ticks = PPQ / 2,
+): ScheduledNote[] {
+  if (!(amount > 0) || !(gridTicks > 0)) return events as ScheduledNote[];
+  const shift = gridTicks * Math.min(0.75, amount);
+
+  return events.map((event) => {
+    // 격자에서 몇 번째 칸인가. 홀수 칸(뒷박)만 민다
+    const index = Math.round(event.startTick / gridTicks);
+    const onGrid = Math.abs(event.startTick - index * gridTicks) < 1;
+    if (!onGrid || index % 2 === 0) return event;
+    return { ...event, startTick: event.startTick + shift };
+  });
+}
+
 /** 레가토로 이어졌다고 보는 최대 간격 (틱). 32분음표쯤 */
 const LEGATO_GAP_TICKS = PPQ / 8;
 
@@ -330,7 +357,10 @@ export class LookaheadScheduler {
       const toSong = fromSong + (toRaw - fromRaw);
       const offset = fromRaw - fromSong;
 
-      const collected = collectNoteEvents(this.project, fromSong, toSong);
+      // 스윙은 레가토 **앞**이다 — 민 뒤의 간격으로 이어졌는지 판단해야 한다
+      const collected = applySwing(
+        collectNoteEvents(this.project, fromSong, toSong), this.project.swing ?? 0,
+      );
       const legatoMsFor = this.host.legatoMsFor?.bind(this.host);
       const events = legatoMsFor
         ? applyLegato(collected, legatoMsFor, this.project.tuning, this.legatoPrevious)

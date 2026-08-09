@@ -12,7 +12,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { DEFAULT_TUNING } from '../model/pitch.ts';
-import { applyLegato, collectBeatEvents, collectNoteEvents, LookaheadScheduler } from './scheduler.ts';
+import { applyLegato, applySwing, collectBeatEvents, collectNoteEvents, LookaheadScheduler } from './scheduler.ts';
 import type { ScheduledClick, ScheduledNote, SchedulerHost } from './scheduler.ts';
 import { createClip, createEmptyProject, createNote, createTrack } from '../model/factory.ts';
 import { PPQ } from '../model/time.ts';
@@ -397,4 +397,46 @@ test('비브라토는 남기고 글라이드만 얹는다', () => {
   );
   assert.ok(events[1]!.pitchCurve!.glide, '글라이드가 안 얹혔다');
   assert.equal(events[1]!.pitchCurve!.vibrato!.cents, 20, '비브라토가 사라졌다');
+});
+
+// --- 스윙 (ROADMAP.md P2) ---------------------------------------------------
+
+test('스윙이 뒷박만 뒤로 민다', () => {
+  const project = legatoProject(0, [60, 62, 64, 65]);
+  const raw = collectNoteEvents(project, 0, 8 * PPQ);
+  // 8분 격자에 0, 0.5, 1, 1.5박 → 홀수 칸(뒷박)만 밀린다
+  const swung = applySwing(raw, 1 / 3, PPQ / 2);
+
+  assert.equal(swung[0]!.startTick, raw[0]!.startTick, '앞박이 밀렸다');
+  assert.ok(swung[1]!.startTick > raw[1]!.startTick, '뒷박이 안 밀렸다');
+  assert.equal(swung[2]!.startTick, raw[2]!.startTick, '앞박이 밀렸다');
+  // 1/3 스윙 = 삼잇단
+  assert.ok(Math.abs((swung[1]!.startTick - raw[1]!.startTick) - PPQ / 6) < 1);
+});
+
+test('스윙이 0이면 아무것도 안 바뀐다', () => {
+  const project = legatoProject(0, [60, 62, 64]);
+  const raw = collectNoteEvents(project, 0, 8 * PPQ);
+  assert.deepEqual(applySwing(raw, 0), raw);
+});
+
+test('격자에 안 걸린 음은 스윙이 건드리지 않는다', () => {
+  // 사람이 일부러 밀어 놓은 음을 다시 밀면 의도가 뭉개진다
+  const project = createEmptyProject('오프그리드');
+  const track = createTrack({ name: 'T', instrumentId: 'acoustic-guitar' });
+  const clip = createClip({ startTick: 0, lengthTick: 4 * PPQ });
+  clip.notes.push(createNote({ startTick: PPQ / 2 + 37, lengthTick: PPQ / 4, midi: 60 }));
+  track.clips.push(clip);
+  project.tracks.push(track);
+
+  const raw = collectNoteEvents(project, 0, 4 * PPQ);
+  assert.equal(applySwing(raw, 1 / 3)[0]!.startTick, raw[0]!.startTick);
+});
+
+test('스윙은 음 길이를 줄이지 않는다', () => {
+  // 스윙은 음을 짧게 자르는 게 아니라 뒤에 놓는 것이다
+  const project = legatoProject(0, [60, 62]);
+  const raw = collectNoteEvents(project, 0, 8 * PPQ);
+  const swung = applySwing(raw, 0.5);
+  assert.equal(swung[1]!.lengthTick, raw[1]!.lengthTick);
 });
