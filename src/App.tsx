@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BRAND } from './brand.ts';
 import {
   addClip, addTrack, copyNotes, deleteNotes, duplicateNotes, moveNotes, pasteNotes,
-  quantizeNotes, setKey, setLoop, setLoopEnabled, setTempo,
+  moveNotesToTrack, quantizeNotes, setKey, setLoop, setLoopEnabled, setTempo,
 } from './editor/edits.ts';
 import { useProjectEditor } from './editor/useProjectEditor.ts';
 import { downloadProject, loadAutosave, readProjectFile, saveAutosave } from './editor/projectStorage.ts';
@@ -82,6 +82,11 @@ export function App() {
    * 4분음표를 넣고 싶은 건 흔한 요구인데, 묶여 있으면 매번 늘려야 했다
    */
   const [noteLengthTicks, setNoteLengthTicks] = useState(PPQ / 4);
+  /** 피아노롤 줌. 8마디만 돼도 가로가 화면 밖으로 나가서 필요하다 */
+  const [zoomX, setZoomX] = useState(1);
+  const [zoomY, setZoomY] = useState(1);
+  /** 새로 찍는 음의 세기. 예전에는 전부 기본값으로 들어갔다 */
+  const [inputVelocity, setInputVelocity] = useState(0.8);
   const [view, setView] = useState<View>('editor');
   const [notice, setNotice] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement | null>(null);
@@ -488,6 +493,47 @@ export function App() {
             ))}
           </select>
 
+          {/* 세기 — 찍을 때 적용된다 */}
+          <label className="ml-2 text-xs text-neutral-500" htmlFor="vel">세기</label>
+          <input
+            id="vel"
+            type="range"
+            min={0.05}
+            max={1}
+            step={0.05}
+            value={inputVelocity}
+            onChange={(e) => setInputVelocity(Number(e.target.value))}
+            className="w-20"
+            title={`새로 찍는 음의 세기 ${Math.round(inputVelocity * 100)}%`}
+          />
+
+          {/* 줌 — 가로는 마디를, 세로는 줄을 늘린다 */}
+          <span className="ml-2 text-xs text-neutral-500">확대</span>
+          <button
+            type="button"
+            onClick={() => setZoomX((z) => Math.max(0.25, z / 1.5))}
+            className="rounded border border-neutral-700 px-2 py-1 text-sm"
+            title="가로 축소"
+          >가로 −</button>
+          <button
+            type="button"
+            onClick={() => setZoomX((z) => Math.min(8, z * 1.5))}
+            className="rounded border border-neutral-700 px-2 py-1 text-sm"
+            title="가로 확대"
+          >＋</button>
+          <button
+            type="button"
+            onClick={() => setZoomY((z) => Math.max(0.5, z / 1.3))}
+            className="rounded border border-neutral-700 px-2 py-1 text-sm"
+            title="세로 축소"
+          >세로 −</button>
+          <button
+            type="button"
+            onClick={() => setZoomY((z) => Math.min(4, z * 1.3))}
+            className="rounded border border-neutral-700 px-2 py-1 text-sm"
+            title="세로 확대"
+          >＋</button>
+
           {/* 조성 — 피아노롤 스케일 표시용. 렌더에는 영향이 없다 */}
           <label className="ml-2 text-xs text-neutral-500" htmlFor="key">조성</label>
           <select
@@ -526,6 +572,29 @@ export function App() {
             title="커서 위치에 붙여넣기 (⌘V)"
             className="rounded border border-neutral-700 px-3 py-1.5 text-sm disabled:opacity-40"
           >붙여넣기{clipboardSize > 0 ? ` (${clipboardSize})` : ''}</button>
+
+          {/* 선택한 음을 다른 트랙으로 — 드럼에 잘못 찍었을 때 지우고 다시 찍지 않아도 된다 */}
+          {selection.length > 0 && project.tracks.length > 1 && (
+            <select
+              value=""
+              aria-label="선택한 음을 다른 트랙으로"
+              onChange={(e) => {
+                if (!e.target.value) return;
+                try {
+                  editor.commit(moveNotesToTrack(project, selection, e.target.value as TrackId));
+                  setNotice(`${selection.length}개를 옮겼습니다`);
+                } catch (err) {
+                  setNotice(err instanceof Error ? err.message : String(err));
+                }
+              }}
+              className="rounded border border-neutral-700 bg-neutral-900 px-2 py-1 text-sm"
+            >
+              <option value="">트랙으로 이동…</option>
+              {project.tracks
+                .filter((t) => t.id !== track?.id)
+                .map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </select>
+          )}
 
           <button type="button" disabled={!editor.canUndo} onClick={editor.undo}
             className="rounded border border-neutral-700 px-3 py-1.5 text-sm disabled:opacity-40">되돌리기</button>
@@ -639,6 +708,9 @@ export function App() {
                     ghosts={ghosts}
                     gridTicks={gridTicks}
             noteLengthTicks={noteLengthTicks}
+            zoomX={zoomX}
+            zoomY={zoomY}
+            velocity={inputVelocity}
                     playheadTick={engine.playheadTick}
                     cursorTick={cursorTick}
                     onMoveCursor={setCursorTick}

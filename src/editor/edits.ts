@@ -325,6 +325,56 @@ export function addClip(
 }
 
 /**
+ * 선택한 음을 **다른 트랙으로** 옮긴다 (`ROADMAP.md` P1).
+ *
+ * 드럼 트랙에 잘못 찍었을 때 지우고 다시 찍는 수밖에 없었다.
+ *
+ * 음의 `startTick` 은 **클립 기준**이므로 곡 전체 위치를 유지하려면 두 클립의
+ * 시작 차이만큼 보정해야 한다. 이걸 빼먹으면 음이 엉뚱한 마디로 간다.
+ */
+export function moveNotesToTrack(
+  project: Project,
+  ids: readonly NoteId[],
+  targetTrackId: TrackId,
+): Project {
+  if (ids.length === 0) return project;
+  const target = project.tracks.find((t) => t.id === targetTrackId);
+  if (!target) throw new EditError(`트랙 ${targetTrackId} 없음`);
+
+  const moving: { note: Note; absoluteTick: Ticks }[] = [];
+  for (const id of ids) {
+    const found = findNote(project, id);
+    if (!found) continue;
+    if (found.track.id === targetTrackId) continue;
+    moving.push({ note: found.note, absoluteTick: found.clip.startTick + found.note.startTick });
+  }
+  if (moving.length === 0) return project;
+
+  // 옮길 음마다 **그 시각을 덮는 클립**을 찾는다. 없으면 실패시킨다 —
+  // 조용히 아무 클립에나 넣으면 음이 엉뚱한 마디에서 울린다
+  const placed = moving.map(({ note, absoluteTick }) => {
+    const clip = target.clips.find(
+      (c) => absoluteTick >= c.startTick && absoluteTick < c.startTick + c.lengthTick,
+    );
+    if (!clip) throw new EditError('옮길 자리에 클립이 없다');
+    return { clipId: clip.id, note: { ...note, startTick: absoluteTick - clip.startTick } };
+  });
+
+  const movedIds = new Set(moving.map((m) => m.note.id));
+  return mapTracks(project, (track) => ({
+    ...track,
+    clips: track.clips.map((clip) => {
+      const kept = clip.notes.filter((n) => !movedIds.has(n.id));
+      const incoming = track.id === targetTrackId
+        ? placed.filter((p) => p.clipId === clip.id).map((p) => p.note)
+        : [];
+      if (kept.length === clip.notes.length && incoming.length === 0) return clip;
+      return { ...clip, notes: [...kept, ...incoming] };
+    }),
+  }));
+}
+
+/**
  * 클립을 옮긴다 (`ROADMAP.md` P1).
  *
  * 이게 없어서 **곡 구조를 못 짰다** — A-B-A 를 만들려면 클립을 옮기고 복제하는 것이

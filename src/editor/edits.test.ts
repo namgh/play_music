@@ -16,7 +16,7 @@ import { isPitchEdited } from '../model/project.ts';
 import type { Project } from '../model/project.ts';
 import { History } from './history.ts';
 import {
-  addClip, addNote, addTrack, copyNotes, deleteClip, deleteNotes, deleteTrack, duplicateClip, duplicateNotes, EditError, findNote, moveClip, moveNotes, nudgeCents, pasteNotes, quantizeNotes, resizeClip, resizeNotes, setCents, setKey, setLengthBars, setLoop, setLoopEnabled, setPitchCurve, setTempo, setVelocity, updateTrack,
+  addClip, addNote, addTrack, copyNotes, deleteClip, deleteNotes, deleteTrack, duplicateClip, duplicateNotes, EditError, findNote, moveClip, moveNotes, moveNotesToTrack, nudgeCents, pasteNotes, quantizeNotes, resizeClip, resizeNotes, setCents, setKey, setLengthBars, setLoop, setLoopEnabled, setPitchCurve, setTempo, setVelocity, updateTrack,
 } from './edits.ts';
 
 function base(): Project {
@@ -515,4 +515,64 @@ test('뒤에 자리가 없으면 복제하지 않는다', () => {
   project = addClip(project, { trackId, startTick: 4 * PPQ, lengthTick: 4 * PPQ }).project;
   const first = project.tracks[0]!.clips[0]!;
   assert.throws(() => duplicateClip(project, first.id), /자리가 없다/);
+});
+
+// --- 트랙 간 노트 이동 (ROADMAP.md P1) --------------------------------------
+
+test('음을 다른 트랙으로 옮기면 곡 위치가 유지된다', () => {
+  // 음의 startTick 은 **클립 기준**이라 두 클립의 시작 차이만큼 보정해야 한다.
+  // 빼먹으면 음이 엉뚱한 마디로 간다
+  let project = createEmptyProject('트랙 이동');
+  const a = addTrack(project, { name: '기타', instrumentId: 'acoustic-guitar' });
+  project = a.project;
+  const b = addTrack(project, { name: '베이스', instrumentId: 'electric-bass' });
+  project = b.project;
+
+  const clipA = addClip(project, { trackId: a.trackId, startTick: 0, lengthTick: 8 * PPQ });
+  project = clipA.project;
+  // 목적지 클립은 **2마디 뒤에서 시작**한다 — 보정이 필요한 상황을 만든다
+  const clipB = addClip(project, { trackId: b.trackId, startTick: 4 * PPQ, lengthTick: 8 * PPQ });
+  project = clipB.project;
+
+  const added = addNote(project, {
+    clipId: clipA.clipId, startTick: 6 * PPQ, lengthTick: PPQ, midi: 48,
+  });
+  project = added.project;
+
+  const moved = moveNotesToTrack(project, [added.noteId], b.trackId);
+  assert.equal(moved.tracks[0]!.clips[0]!.notes.length, 0, '원래 트랙에서 안 빠졌다');
+
+  const note = moved.tracks[1]!.clips[0]!.notes[0]!;
+  assert.equal(note.id, added.noteId, 'id 가 바뀌었다');
+  // 곡 전체 기준 6박 → 목적지 클립(4박에서 시작) 기준 2박
+  assert.equal(note.startTick, 2 * PPQ, '곡 위치가 밀렸다');
+});
+
+test('옮길 자리에 클립이 없으면 조용히 넣지 않는다', () => {
+  let project = createEmptyProject('빈 트랙');
+  const a = addTrack(project, { name: '기타', instrumentId: 'acoustic-guitar' });
+  project = a.project;
+  const b = addTrack(project, { name: '빈', instrumentId: 'electric-bass' });
+  project = b.project;
+  const clipA = addClip(project, { trackId: a.trackId, startTick: 0, lengthTick: 4 * PPQ });
+  project = clipA.project;
+  const added = addNote(project, {
+    clipId: clipA.clipId, startTick: 0, lengthTick: PPQ, midi: 48,
+  });
+  project = added.project;
+
+  // 아무 클립에나 넣으면 음이 엉뚱한 마디에서 울린다
+  assert.throws(() => moveNotesToTrack(project, [added.noteId], b.trackId), /클립이 없다/);
+});
+
+test('같은 트랙으로 옮기면 아무 일도 없다', () => {
+  let project = createEmptyProject('제자리');
+  const a = addTrack(project, { name: '기타', instrumentId: 'acoustic-guitar' });
+  project = a.project;
+  const clip = addClip(project, { trackId: a.trackId, startTick: 0, lengthTick: 4 * PPQ });
+  project = clip.project;
+  const added = addNote(project, { clipId: clip.clipId, startTick: 0, lengthTick: PPQ, midi: 48 });
+  project = added.project;
+
+  assert.equal(moveNotesToTrack(project, [added.noteId], a.trackId), project);
 });

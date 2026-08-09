@@ -25,8 +25,15 @@ import type { ProjectEditor } from '../editor/useProjectEditor.ts';
  * 안 움직이고 떼면 음 추가로 간다.
  */
 
-const ROW_HEIGHT = 15;
-const PX_PER_BEAT = 56;
+/**
+ * 줌 배율 1.0 일 때의 크기. 여기에 배율을 곱해 쓴다.
+ *
+ * 줌이 없으면 8마디만 돼도 가로가 1792px 라 화면 밖으로 나가고, 반대로 미세한
+ * 타이밍을 볼 방법도 없다. 좌표 계산은 이미 한 곳에 모여 있어서 배율만 곱하면 된다
+ * (`ROADMAP.md` P1).
+ */
+const BASE_ROW_HEIGHT = 15;
+const BASE_PX_PER_BEAT = 56;
 const MIN_NOTE_TICKS = PPQ / 16;
 /** 이만큼 움직이면 "끈 것"으로 본다. 손떨림으로 범위 선택이 시작되지 않게 */
 const DRAG_THRESHOLD_PX = 4;
@@ -43,6 +50,12 @@ export interface PianoRollProps {
    * 바꿀 때 못 쓰고, 아무 표시도 안 하면 왜 이상하게 들리는지 알 수 없다.
    */
   instrumentRange: { low: number; high: number };
+  /** 가로 줌 배율. 1 이면 기본 크기 */
+  zoomX: number;
+  /** 세로 줌 배율 */
+  zoomY: number;
+  /** 새로 찍는 음의 세기 */
+  velocity: number;
   gridTicks: number;
   /**
    * 새로 찍는 음의 길이. **격자와 분리한다** — 16분 격자로 정확히 찍으면서
@@ -108,9 +121,12 @@ const snap = (ticks: number, gridTicks: number, free: boolean): number =>
   (free ? Math.max(0, Math.round(ticks)) : quantize(ticks, gridTicks));
 
 export function PianoRoll({
-  editor, clip, range, instrumentRange, gridTicks, noteLengthTicks, playheadTick, cursorTick,
-  onMoveCursor, musicalKey, fold, ghosts, onAudition,
+  editor, clip, range, instrumentRange, zoomX, zoomY, velocity, gridTicks, noteLengthTicks,
+  playheadTick, cursorTick, onMoveCursor, musicalKey, fold, ghosts, onAudition,
 }: PianoRollProps) {
+  // 배율을 곱한 실제 크기. 아래 계산은 전부 이 두 값만 본다
+  const ROW_HEIGHT = Math.max(6, Math.round(BASE_ROW_HEIGHT * zoomY));
+  const PX_PER_BEAT = Math.max(8, BASE_PX_PER_BEAT * zoomX);
   const { project, selection } = editor;
   const gridRef = useRef<HTMLDivElement | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
@@ -250,6 +266,9 @@ export function PianoRoll({
       // 격자가 아니라 **지정한 음 길이**로 찍는다
       lengthTick: noteLengthTicks,
       midi: cell.midi,
+      // 찍을 때 세기를 정한다. 예전에는 전부 기본값으로 들어가서 나중에
+      // 벨로시티 레인에서 일일이 고쳐야 했다
+      velocity,
     });
     editor.commit(next);
     editor.select([noteId]);
