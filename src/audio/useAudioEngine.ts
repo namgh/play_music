@@ -8,7 +8,7 @@ import { BufferRenderer } from './bufferRenderer.ts';
 import { WorkletRenderer } from './workletRenderer.ts';
 import { WasmVoiceEngine } from './voice/wasmEngine.ts';
 import wasmUrl from '../generated/dsp.wasm?url';
-import { encodeWav } from './wav.ts';
+import { encodeWav, peakAmplitude } from './wav.ts';
 
 /**
  * 오디오 엔진 연결. React 쪽에서 Web Audio 를 아는 유일한 곳이다.
@@ -43,6 +43,8 @@ export function useAudioEngine(
   const [playheadTick, setPlayheadTick] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+  /** 내보낸 파일이 잘렸는지. null 이면 정상 */
+  const [clipWarning, setClipWarning] = useState<string | null>(null);
   const [engineKind, setEngineKind] = useState<EngineKind | null>(null);
 
   /**
@@ -181,6 +183,14 @@ export function useAudioEngine(
       const first = result.buffers[0];
       if (!first) throw new Error('내보낼 것이 없다');
 
+      // **피크를 재서 알려 준다.** 1 을 넘으면 인코딩에서 잘리는데, 조용히 잘린
+      // 파일이 나가면 사용자는 자기 곡이 그대로 나갔다고 믿는다 (`ROADMAP.md` P3)
+      const peak = peakAmplitude(first.channels);
+      setClipWarning(peak > 1
+        ? `피크가 ${(20 * Math.log10(peak)).toFixed(1)}dBFS 입니다 — 파일에서 잘렸습니다. `
+          + '트랙 볼륨이나 마스터 게인을 낮추고 다시 내보내세요'
+        : null);
+
       const bytes = encodeWav(first.channels, { sampleRate: result.sampleRate, bitDepth: 24 });
       const blob = new Blob([bytes as unknown as BlobPart], { type: 'audio/wav' });
       const url = URL.createObjectURL(blob);
@@ -198,7 +208,7 @@ export function useAudioEngine(
   }, [ensure]);
 
   return {
-    state, playheadTick, error, exporting, engineKind,
+    state, playheadTick, error, exporting, engineKind, clipWarning,
     play, stop, audition, exportWav, setMetronome,
   };
 }

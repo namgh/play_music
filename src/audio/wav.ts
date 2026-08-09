@@ -14,6 +14,23 @@ export interface WavOptions {
   bitDepth?: BitDepth;
 }
 
+/**
+ * 채널들의 최대 진폭. **1 을 넘으면 인코딩에서 잘린다** (`quantizeSample` 이 자른다).
+ *
+ * 조용히 잘린 파일이 나가는 것이 문제다 — 사용자는 자기 곡이 그대로 나갔다고 믿는다.
+ * 리미터를 다는 대신 **알려 준다** (`WORKPLAN.md` 4절: 마스터 리미터는 안 넣는다).
+ */
+export function peakAmplitude(channels: readonly Float32Array[]): number {
+  let peak = 0;
+  for (const channel of channels) {
+    for (const sample of channel) {
+      const magnitude = Math.abs(sample);
+      if (magnitude > peak) peak = magnitude;
+    }
+  }
+  return peak;
+}
+
 /** float 샘플을 정수로. 클리핑은 여기서 한 번만 한다 */
 function quantizeSample(value: number, maxAmplitude: number): number {
   const clamped = Math.max(-1, Math.min(1, value));

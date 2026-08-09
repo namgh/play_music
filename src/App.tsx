@@ -7,6 +7,7 @@ import {
 } from './editor/edits.ts';
 import { useProjectEditor } from './editor/useProjectEditor.ts';
 import { downloadProject, loadAutosave, readProjectFile, saveAutosave } from './editor/projectStorage.ts';
+import { decodeMidi, encodeMidi } from './model/midi.ts';
 import { createEmptyProject } from './model/factory.ts';
 import type { ClipId, MusicalKey, Note, Project, TrackId } from './model/project.ts';
 import { NOTE_NAMES } from './model/pitch.ts';
@@ -90,6 +91,7 @@ export function App() {
   const [view, setView] = useState<View>('editor');
   const [notice, setNotice] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement | null>(null);
+  const midiInput = useRef<HTMLInputElement | null>(null);
 
   /**
    * 편집 커서 (클립 기준 틱). **두 기능이 이걸 공유한다** —
@@ -626,6 +628,57 @@ export function App() {
             className="hidden"
             onChange={(e) => { void onOpenFile(e.target.files?.[0]); e.target.value = ''; }}
           />
+          {/* MIDI — 없으면 다른 DAW 와 단절돼 사용자가 갇힌다 (`ROADMAP.md` P3) */}
+          <button
+            type="button"
+            onClick={() => {
+              const { bytes, droppedCents } = encodeMidi(project);
+              const blob = new Blob([bytes as unknown as BlobPart], { type: 'audio/midi' });
+              const url = URL.createObjectURL(blob);
+              const link = document.createElement('a');
+              link.href = url;
+              link.download = `${project.name || 'project'}.mid`;
+              link.click();
+              URL.revokeObjectURL(url);
+              // **버렸다고 알린다.** 조용히 반올림하면 "정밀한 음정"이라는 주장과 어긋난다
+              setNotice(droppedCents > 0
+                ? `MIDI 로 내보냈습니다 — 센트가 있는 음 ${droppedCents}개는 반올림됐습니다 `
+                  + '(MIDI 규격이 정수 음정만 담습니다)'
+                : 'MIDI 로 내보냈습니다');
+            }}
+            className="rounded border border-neutral-700 px-3 py-1.5 text-sm"
+          >MIDI 내보내기</button>
+          <button
+            type="button"
+            onClick={() => midiInput.current?.click()}
+            className="rounded border border-neutral-700 px-3 py-1.5 text-sm"
+          >MIDI 가져오기</button>
+          <input
+            ref={midiInput}
+            type="file"
+            accept=".mid,.midi,audio/midi"
+            className="hidden"
+            onChange={async (event) => {
+              const file = event.target.files?.[0];
+              event.target.value = '';
+              if (!file) return;
+              try {
+                const loaded = decodeMidi(
+                  new Uint8Array(await file.arrayBuffer()),
+                  file.name.replace(/\.midi?$/i, ''),
+                );
+                editor.commit(loaded);
+                setSelectedTrackId(loaded.tracks[0]?.id ?? null);
+                setSelectedClipId(loaded.tracks[0]?.clips[0]?.id ?? null);
+                editor.select([]);
+                setNotice(`"${loaded.name}" 을 가져왔습니다 (트랙 ${loaded.tracks.length}개). `
+                  + '악기는 전부 어쿠스틱 기타로 시작합니다 — 트랙마다 바꾸세요');
+              } catch (err) {
+                setNotice(`MIDI 를 읽을 수 없습니다: ${err instanceof Error ? err.message : String(err)}`);
+              }
+            }}
+          />
+
           <button
             type="button"
             disabled={engine.exporting}
@@ -633,6 +686,13 @@ export function App() {
             className="rounded border border-teal-700 px-3 py-1.5 text-sm text-teal-200 disabled:opacity-40"
           >{engine.exporting ? '내보내는 중…' : 'WAV 내보내기'}</button>
         </section>
+
+        {/* 피크 경고 — 조용히 잘린 파일이 나가는 것을 막는다 (`ROADMAP.md` P3) */}
+        {engine.clipWarning && (
+          <p className="mt-3 rounded-md border border-amber-900 bg-amber-950/40 px-4 py-3 text-sm text-amber-300">
+            {engine.clipWarning}
+          </p>
+        )}
 
         {(engine.error || notice) && (
           <p

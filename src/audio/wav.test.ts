@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { decodeWav, encodeWav, readWavHeader } from './wav.ts';
+import { decodeWav, encodeWav, peakAmplitude, readWavHeader } from './wav.ts';
 
 test('헤더가 규격대로 쓰인다', () => {
   const pcm = new Float32Array(100);
@@ -69,4 +69,15 @@ test('채널이 없으면 에러다', () => {
 
 test('WAV 가 아닌 바이트를 읽으면 에러다', () => {
   assert.throws(() => readWavHeader(new Uint8Array(64)), /WAV/);
+});
+
+test('피크를 재서 잘릴 것을 미리 안다', () => {
+  // 조용히 잘린 파일이 나가면 사용자는 자기 곡이 그대로 나갔다고 믿는다
+  const quiet = [Float32Array.from([0.2, -0.5, 0.3])];
+  assert.ok(Math.abs(peakAmplitude(quiet) - 0.5) < 1e-9);
+
+  const tooLoud = [Float32Array.from([0.4, -1.7]), Float32Array.from([0.9])];
+  assert.ok(peakAmplitude(tooLoud) > 1, '넘친 것을 못 잡았다');
+
+  assert.equal(peakAmplitude([]), 0);
 });
