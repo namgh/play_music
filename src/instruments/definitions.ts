@@ -52,6 +52,12 @@ const EXPRESSION_SPECS: Record<string, ParamSpec> = {
     type: 'float', min: 0, max: 1, default: 0,
     label: '세기→밝기', curve: 'linear', group: '연주',
   },
+  variationAmount: {
+    // 같은 음을 반복하면 완전히 똑같은 파형이 나와 하이햇 16분이 머신건이 된다.
+    // **음정은 흔들지 않는다** — 세기·밝기·감쇠만 (`ROADMAP.md` S2-4)
+    type: 'float', min: 0, max: 1, default: 0,
+    label: '타건 변주', curve: 'linear', group: '연주',
+  },
   pickupHumbucker: {
     // 코일 두 개가 직렬이라 공진이 아래로 내려간다 = 더 두껍고 어둡다.
     // 앰프를 쓰는 악기에만 의미가 있다
@@ -156,6 +162,8 @@ const STRING_BASE: InstrumentDefinition = {
     // 튜닝 화면에 나오지 않고 "이 악기엔 없는 값"처럼 보인다
     stereoWidth: 0,
     pickupHumbucker: 0,
+    // 실제로 같은 줄을 같은 세기로 두 번 뜯어도 같은 소리가 안 난다
+    variationAmount: 0.5,
   },
   tones: {
     default: {},
@@ -213,6 +221,11 @@ const AMPED_STRING: InstrumentDefinition = {
   },
   params: {
     ampEnabled: 1,
+    // **자석 픽업은 한 방향 움직임에 주로 반응한다.** 폴피스에 수직인 편광이
+    // 크게 잡히고 나머지는 약하게 들어온다 — 어쿠스틱처럼 두 편광이 공기로 함께
+    // 나오는 것과 다르다. 왜곡을 거치면 두 편광이 상호변조로 기본음을 당기기도 해서
+    // (실측 2.1센트) 물리와 정확도가 같은 방향을 가리킨다
+    polarizationMix: 0.25,
     ampCharacter: 1,
     ampDrive: 0.35,
     ampToneLow: 0.5,
@@ -381,6 +394,8 @@ const SYNTH_BASE: InstrumentDefinition = {
     letRing: 0,
     // 신스의 밝기는 필터 컷오프다. 벨로시티→컷오프는 아날로그 신스의 기본 배선이다
     velocityBrightness: 0.3,
+    // 신스는 원래 기계적인 것이 특징이라 약하게만
+    variationAmount: 0.15,
   },
   tones: {
     default: {},
@@ -469,6 +484,7 @@ const MODAL_BASE: InstrumentDefinition = {
     releaseMs: 150,
     // 말렛은 세게 때리면 확실히 밝아진다
     velocityBrightness: 0.3,
+    variationAmount: 0.4,
     // 건반처럼 음판이 왼쪽(낮음)에서 오른쪽(높음)으로 늘어서 있다
     stereoWidth: 0.3,
   },
@@ -562,6 +578,8 @@ const DRUM_BASE: InstrumentDefinition = {
     ampEnabled: 0,
     // 세게 치면 밝아진다. 드럼에서 특히 크게 들리는 성질이다
     velocityBrightness: 0.4,
+    // **드럼에서 가장 크게 들린다** — 없으면 하이햇 16분이 머신건이 된다
+    variationAmount: 0.7,
     // **좌우 퍼짐은 켜지 않는다.** 지금 배치는 음 높이로 정해지는데, 그러면
     // 킥이 왼쪽으로 가 버린다. 드럼은 킥·스네어가 가운데인 것이 기준이다.
     // 악기별 팬 오프셋이 생기면 그때 하이햇·탐만 편다

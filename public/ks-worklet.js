@@ -23,8 +23,8 @@
 
 const MAX_BLOCK = 2048;
 // Rust 쪽 PARAM_COUNT 와 같아야 한다
-// (줄 6 + 곡선 5 + 앰프 9 + 보이스 10 + 드럼 4 + 연주표현 3 + 표현력 5)
-const PARAM_COUNT = 42;
+// (줄 6 + 곡선 5 + 앰프 9 + 보이스 10 + 드럼 4 + 연주표현 3 + 표현력 6)
+const PARAM_COUNT = 43;
 /**
  * 이만큼 지난 예약은 버린다.
  *
@@ -78,6 +78,8 @@ class KsProcessor extends AudioWorkletProcessor {
           releaseMs: message.releaseMs ?? 120,
           // 사용자가 그린 자유곡선 (`ROADMAP.md` S1-4). 없으면 undefined
           curve: message.curve,
+          // 타건 변주 씨앗. **음마다 결정론적**이라 재생과 내보내기가 같다
+          seed: message.seed ?? 0,
         });
         this.pending.sort((a, b) => a.frame - b.frame);
         break;
@@ -217,7 +219,7 @@ class KsProcessor extends AudioWorkletProcessor {
         if (untilOn < -STALE_FRAMES) continue;
         this.writeParams(nextOn.params);
         this.writeCurve(nextOn.curve);
-        const voice = this.wasm.note_on(nextOn.freq, nextOn.velocity, nextOn.gain);
+        const voice = this.wasm.note_on(nextOn.freq, nextOn.velocity, nextOn.gain, nextOn.seed >>> 0);
         this.refreshViews(); // note_on 안에서 메모리가 자랐을 수 있다
 
         const serial = ++this.serial;

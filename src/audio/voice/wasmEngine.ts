@@ -72,6 +72,7 @@ export const WASM_PARAM_ORDER = [
   'polarizationDecayRatio',
   'playNoiseAmount',
   'sympatheticAmount',
+  'variationAmount',
 ] as const;
 
 /**
@@ -115,6 +116,24 @@ export function curveToParams(curve: {
   };
 }
 
+/**
+ * 노트 id → 변주 씨앗 (`ROADMAP.md` S2-4).
+ *
+ * **자유 난수를 쓰면 안 된다.** `plan.md` 5-2 가 "미리듣기 = 내보내기 = 공유본"을
+ * 요구하는데, 재생할 때마다 변주가 달라지면 내보낸 파일과 들은 것이 같다는 보장이
+ * 깨진다. 노트 id 는 프로젝트에 저장되므로 **파일을 다시 열어도 같은 변주**가 나온다.
+ *
+ * FNV-1a 32비트 — 짧고, 비슷한 문자열도 잘 흩어진다.
+ */
+export function variationSeed(noteId: string): number {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < noteId.length; i++) {
+    hash ^= noteId.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return hash >>> 0;
+}
+
 /** 악기가 값을 안 주면 쓰는 뮤트 속도. 손으로 줄을 짚어 죽이는 데 실제로 걸리는 시간 */
 export const DEFAULT_RELEASE_MS = 120;
 
@@ -149,7 +168,7 @@ export function noteOffFields(
 const MAX_BLOCK = 2048;
 
 /** Rust 쪽 PARAM_COUNT 와 같아야 한다 */
-export const WASM_PARAM_COUNT = 42;
+export const WASM_PARAM_COUNT = 43;
 
 interface WasmExports {
   memory: WebAssembly.Memory;
@@ -160,7 +179,7 @@ interface WasmExports {
   set_curve_points(count: number, durationSec: number): void;
   output_buffer(): number;
   output_buffer_right(): number;
-  note_on(freqHz: number, velocity: number, gain: number): number;
+  note_on(freqHz: number, velocity: number, gain: number, variationSeed: number): number;
   set_params_live(voice: number): void;
   note_off(voice: number, releaseMs: number): void;
   all_off(): void;
@@ -243,6 +262,7 @@ export class WasmVoiceEngine {
     params: Readonly<Record<string, ParamValue>>,
     gain = 1,
     freeCurve?: FreeCurve,
+    variationSeed = 0,
   ): number {
     this.refreshViews();
     this.stageCurvePoints(freeCurve);
@@ -250,7 +270,7 @@ export class WasmVoiceEngine {
       const value = params[key];
       this.paramView[i] = typeof value === 'number' && Number.isFinite(value) ? value : 0;
     });
-    const voice = this.exports.note_on(freqHz, velocity, gain);
+    const voice = this.exports.note_on(freqHz, velocity, gain, variationSeed >>> 0);
     this.refreshViews(); // note_on 안에서 자랐을 수 있다
     return voice;
   }

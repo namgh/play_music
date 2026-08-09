@@ -31,7 +31,7 @@ import type { InstrumentDefinition, ParamValue } from '../instruments/types.ts';
 import { instrumentParams, resolveInstrument } from '../instruments/resolve.ts';
 import type { ResolvedInstrument } from '../instruments/types.ts';
 import {
-  curveToParams, noteOffFields, toFreeCurve, WASM_PARAM_ORDER,
+  curveToParams, noteOffFields, toFreeCurve, variationSeed, WASM_PARAM_ORDER,
 } from './voice/wasmEngine.ts';
 import { VOICE_KIND_INDEX } from '../instruments/types.ts';
 import { buildEffectChain } from './effectGraph.ts';
@@ -242,6 +242,7 @@ export class WorkletRenderer implements AudioRenderer {
       params: this.encodeParams(runtime.params, note.pitchCurve, runtime.voiceKind),
       gain: 1,
       curve: toFreeCurve(note.pitchCurve, AUDITION_SEC),
+      seed: variationSeed(note.id),
       // 미리듣기에도 길이를 준다. 없으면 **신스가 영원히 울린다** —
       // ADSR 이 Sustain 단계에서 멈춰 있고 거기서 나올 길이 노트오프뿐이다
       ...noteOffFields(runtime.params, AUDITION_SEC, this.ctx.sampleRate),
@@ -331,6 +332,8 @@ export class WorkletRenderer implements AudioRenderer {
       gain: 1,
       // 사용자가 그린 자유곡선. 있으면 글라이드·비브라토를 **대신한다**
       curve: toFreeCurve(event.pitchCurve, durationSec),
+      // 노트 id 에서 유도한다 — 재생과 내보내기가 같은 변주를 써야 한다
+      seed: variationSeed(event.noteId),
       ...noteOffFields(runtime.params, durationSec, this.ctx.sampleRate),
     });
   }

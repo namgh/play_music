@@ -65,14 +65,14 @@ pub const MAX_BLOCK: usize = 2048;
 /// | 29 | 샘플러 |
 /// | 30~33 | 드럼 |
 /// | 34~36 | 연주 표현 (스테레오 · 픽업 · 벨로시티 밝기) |
-/// | 37~41 | 표현력 (2편광 3개 · 연주 노이즈 · 공명현) |
+/// | 37~42 | 표현력 (2편광 3개 · 연주 노이즈 · 공명현 · 타건 변주) |
 ///
 /// **층을 분리한다** (`sound.md` 5절·8절): "줄 길이"와 "왜곡"은 서로 다른 층이다.
 ///
 /// 34~36 은 `ROADMAP.md` S1, 37~41 은 S2 에서 **각각 한 번에** 추가했다.
 /// 슬롯을 늘리면 Rust·TS·워크렛 세 곳을 같이 고쳐야 하므로 나눠서 늘리지 않는다
 /// (로드맵 원칙 1).
-pub const PARAM_COUNT: usize = 42;
+pub const PARAM_COUNT: usize = 43;
 
 /// 벨로시티 밝기의 기준점. 이 세기로 쳤을 때 악기 정의의 값이 그대로 쓰인다.
 /// 0.7 은 mf(보통 세기)에 해당한다 — 위면 밝아지고 아래면 어두워진다.
@@ -82,6 +82,36 @@ const VELOCITY_REFERENCE: f64 = 0.7;
 /// C4 에서 ±3옥타브를 좌우 끝으로 편다 — 악기 음역 대부분이 이 안에 들어온다.
 const PAN_CENTER_HZ: f64 = 261.625_57;
 const PAN_OCTAVE_SPAN: f64 = 3.0;
+
+/// 타건 변주의 최대 폭. `variation_amount = 1` 일 때 이만큼까지 벌어진다.
+///
+/// **음정은 흔들지 않는다.** "음정이 정밀하다"가 제품의 핵심 주장인데
+/// 사용자가 0.0센트로 맞춘 음을 엔진이 몰래 흔들면 그 주장이 무너진다
+/// (`CLAUDE.md` 타협 불가). 세기·밝기·감쇠만 흔든다.
+const VARIATION_GAIN: f64 = 0.12;
+const VARIATION_BRIGHT: f64 = 0.08;
+const VARIATION_DECAY: f64 = 0.10;
+
+/// 씨앗 하나에서 서로 다른 세 개의 [-1, 1] 값을 뽑는다. **순수 함수.**
+///
+/// 왜 자유 실행 난수가 아닌가: `plan.md` 5-2 가 "미리듣기 = 내보내기 = 공유본"을
+/// 요구한다. 재생할 때마다 달라지면 내보낸 파일과 들은 것이 같다는 보장이 깨진다.
+/// 그래서 **음마다 결정론적인 씨앗**(노트 id 에서 유도)에서만 변주를 만든다.
+pub fn variation_values(seed: u32) -> (f64, f64, f64) {
+    // splitmix 계열 비트 섞기 — 씨앗이 1씩만 달라도 결과가 흩어져야 한다
+    let mix = |x: u32| -> f64 {
+        // **섞기를 먼저 하고 곱한다.** 곱셈부터 하면 이웃한 씨앗이 상위 비트만
+        // 조금 달라져 결과가 뭉친다 — 연속된 음이 사실상 같은 변주를 받는다
+        let mut h = x ^ 0x2545_f491;
+        h ^= h >> 15;
+        h = h.wrapping_mul(0x2c1b_3c6d);
+        h ^= h >> 12;
+        h = h.wrapping_mul(0x2974_5b3d);
+        h ^= h >> 16;
+        (h as f64 / u32::MAX as f64) * 2.0 - 1.0
+    };
+    (mix(seed), mix(seed ^ 0x5bf0_3635), mix(seed ^ 0x27d4_eb2f))
+}
 
 struct Engine {
     sample_rate: f64,
@@ -278,6 +308,10 @@ fn read_velocity_brightness(velocity: f64) -> f64 {
     velocity_brightness(velocity, engine().param_in[36] as f64)
 }
 
+fn read_variation_amount() -> f64 {
+    (engine().param_in[42] as f64).clamp(0.0, 1.0)
+}
+
 fn read_voice_kind() -> VoiceKind {
     VoiceKind::from_index(engine().param_in[20] as u32)
 }
@@ -440,11 +474,23 @@ fn allocate_voice(e: &mut Engine) -> usize {
 
 /// 발음. `param_buffer()` 를 채운 뒤 부른다. 반환값은 쓰인 보이스 번호
 #[no_mangle]
-pub extern "C" fn note_on(freq_hz: f32, velocity: f32, gain: f32) -> u32 {
+pub extern "C" fn note_on(freq_hz: f32, velocity: f32, gain: f32, variation_seed: u32) -> u32 {
+    // 같은 음을 반복하면 완전히 똑같은 파형이 나와 하이햇 16분이 **머신건**이 된다.
+    // 변주는 **음마다 결정론적인 씨앗**에서 나온다 (`ROADMAP.md` S2-4) —
+    // 자유 난수를 쓰면 미리듣기와 내보내기가 달라진다
+    let amount = read_variation_amount();
+    let (v_gain, v_bright, v_decay) = if amount > 0.0 {
+        variation_values(variation_seed)
+    } else {
+        (0.0, 0.0, 0.0)
+    };
+
     // 세게 칠수록 밝아진다. 보이스마다 밝기를 담당하는 파라미터가 다르므로
     // 보정값만 구해 두고 적용은 각 `read_*` 가 한다
-    let bright = read_velocity_brightness(velocity as f64);
-    let params = read_params(bright);
+    let bright = read_velocity_brightness(velocity as f64) + v_bright * amount * VARIATION_BRIGHT;
+    let mut params = read_params(bright);
+    // 감쇠도 조금씩 다르다 — 실제로 같은 줄을 같은 세기로 두 번 뜯어도 같지 않다
+    params.sustain_sec *= 1.0 + v_decay * amount * VARIATION_DECAY;
     let (pan_l, pan_r) = pan_gains(freq_hz as f64, read_stereo_width());
     let e = engine();
 
@@ -453,7 +499,7 @@ pub extern "C" fn note_on(freq_hz: f32, velocity: f32, gain: f32) -> u32 {
     e.note_counter += 1;
 
     e.params[index] = params;
-    e.gains[index] = gain;
+    e.gains[index] = gain * (1.0 + v_gain * amount * VARIATION_GAIN) as f32;
     // 좌우 배치는 **발음 시점에 정한다.** 울리는 도중 바뀌면 음이 화면을 가로지른다
     e.pan_l[index] = pan_l;
     e.pan_r[index] = pan_r;
@@ -766,6 +812,47 @@ mod tests {
             Some(2),
             "이미 페이드 중인 것을 다시 골랐거나 엉뚱한 것을 골랐다"
         );
+    }
+
+    // --- 타건 변주 (S2-4) ---------------------------------------------------
+
+    #[test]
+    fn variation_is_deterministic() {
+        // **미리듣기 = 내보내기.** 같은 씨앗이면 항상 같은 변주여야 한다
+        assert_eq!(variation_values(12345), variation_values(12345));
+    }
+
+    #[test]
+    fn nearby_seeds_give_scattered_values() {
+        // 씨앗이 1씩 달라도 결과가 흩어져야 한다. 안 그러면 연속된 음이
+        // 사실상 같은 변주를 받아 머신건이 그대로 남는다
+        let a = variation_values(1000).0;
+        let b = variation_values(1001).0;
+        let c = variation_values(1002).0;
+        assert!(
+            (a - b).abs() > 0.05 && (b - c).abs() > 0.05,
+            "이웃 씨앗이 뭉쳐 있다"
+        );
+    }
+
+    #[test]
+    fn variation_axes_are_independent() {
+        // 세 축이 같은 값이면 세기·밝기·감쇠가 함께 움직여 변주가 한 방향이 된다
+        let (g, b, d) = variation_values(777);
+        assert!((g - b).abs() > 1e-6 && (b - d).abs() > 1e-6 && (g - d).abs() > 1e-6);
+    }
+
+    #[test]
+    fn variation_stays_in_range() {
+        for seed in [0u32, 1, 7, 4242, u32::MAX] {
+            let (g, b, d) = variation_values(seed);
+            for v in [g, b, d] {
+                assert!(
+                    (-1.0..=1.0).contains(&v),
+                    "씨앗 {seed} 에서 {v} 가 범위를 넘었다"
+                );
+            }
+        }
     }
 
     // --- 스테레오 배치 (S1-1) ---------------------------------------------

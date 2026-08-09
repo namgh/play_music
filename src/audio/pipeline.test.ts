@@ -313,11 +313,15 @@ test('트랙마다 앰프 설정이 분리된다', async () => {
     return project;
   };
 
-  const both = projectWithNotes('electric-guitar', [{ midi: 52, startBeat: 0 }]);
-  both.tracks[0]!.toneId = '퍼즈';
-  const second = projectWithNotes('electric-guitar', [{ midi: 64, startBeat: 0 }]);
-  second.tracks[0]!.toneId = '클린';
-  both.tracks.push(second.tracks[0]!);
+  // **따로 렌더할 때와 같은 노트를 써야 한다.** 타건 변주가 노트 id 에 걸려 있어
+  // (`ROADMAP.md` S2-4) 음을 새로 만들면 세기가 미세하게 달라지고, 그러면
+  // "따로 렌더한 합"과 "동시 렌더"가 애초에 다른 것을 비교하게 된다
+  const fuzzProject = guitar('퍼즈', 52);
+  const cleanProject = guitar('클린', 64);
+  const both: Project = {
+    ...fuzzProject,
+    tracks: [fuzzProject.tracks[0]!, cleanProject.tracks[0]!],
+  };
 
   const render = async (project: Project) =>
     renderProjectOffline(project, registry, {
@@ -327,8 +331,8 @@ test('트랙마다 앰프 설정이 분리된다', async () => {
       wasm: await engines(project.tracks.length),
     }).pcm;
 
-  const fuzz = await render(guitar('퍼즈', 52));
-  const clean = await render(guitar('클린', 64));
+  const fuzz = await render(fuzzProject);
+  const clean = await render(cleanProject);
   const together = await render(both);
 
   // 따로 렌더해 합친 것과 동시 렌더가 같아야 한다
@@ -419,5 +423,61 @@ test('악기 정의의 letRing 기본값이 보이스 타입과 맞는다', () =
   for (const [id, letRing] of Object.entries(expected)) {
     const params = instrumentParams(resolveInstrument(id, registry), 'default', null);
     assert.equal(Number(params.letRing ?? 0), letRing, `${id} 의 letRing`);
+  }
+});
+
+// --- 타건 변주 (ROADMAP.md S2-4) -------------------------------------------
+
+test('같은 음을 반복해도 파형이 조금씩 다르다', async () => {
+  // 완전히 똑같으면 하이햇 16분이 머신건이 된다
+  const project = createEmptyProject('변주');
+  project.tempo.bpm = 120;
+  project.lengthBars = 1;
+  const track = createTrack({ name: '하이햇', instrumentId: 'hihat' });
+  const clip = createClip({ startTick: 0, lengthTick: 4 * PPQ });
+  for (let i = 0; i < 4; i++) {
+    clip.notes.push(createNote({ startTick: i * PPQ, lengthTick: PPQ / 4, midi: 60 }));
+  }
+  track.clips.push(clip);
+  project.tracks.push(track);
+
+  const wasm = await WasmVoiceEngine.create(await readFile(wasmPath), 48000);
+  const { pcm } = renderProjectOffline(project, createRegistry(), {
+    sampleRate: 48000, rng: seededRng(), tailSec: 0.5, wasm,
+  });
+
+  // 각 타격의 앞부분을 잘라 서로 비교한다
+  const beat = Math.round((60 / 120) * 48000);
+  const hit = (i: number) => pcm.slice(i * beat, i * beat + 2000);
+  const peak = (x: Float32Array) => Math.max(...[...x].map(Math.abs));
+  const peaks = [0, 1, 2, 3].map((i) => peak(hit(i)));
+
+  const spread = (Math.max(...peaks) - Math.min(...peaks)) / Math.max(...peaks);
+  assert.ok(spread > 0.01, `네 타격의 세기가 사실상 같다 (편차 ${(spread * 100).toFixed(1)}%)`);
+  assert.ok(spread < 0.5, `변주가 너무 크다 (편차 ${(spread * 100).toFixed(1)}%)`);
+});
+
+test('변주가 결정론적이다 — 두 번 렌더하면 같다', async () => {
+  // **미리듣기 = 내보내기 = 공유본** (plan.md 5-2). 자유 난수를 쓰면 이게 깨진다
+  const project = createEmptyProject('결정론');
+  project.tempo.bpm = 120;
+  project.lengthBars = 1;
+  const track = createTrack({ name: '기타', instrumentId: 'acoustic-guitar' });
+  const clip = createClip({ startTick: 0, lengthTick: 4 * PPQ });
+  clip.notes.push(createNote({ startTick: 0, lengthTick: PPQ, midi: 57 }));
+  clip.notes.push(createNote({ startTick: PPQ, lengthTick: PPQ, midi: 57 }));
+  track.clips.push(clip);
+  project.tracks.push(track);
+
+  const render = async () => {
+    const wasm = await WasmVoiceEngine.create(await readFile(wasmPath), 48000);
+    return renderProjectOffline(project, createRegistry(), {
+      sampleRate: 48000, rng: seededRng(), tailSec: 0.5, wasm,
+    }).pcm;
+  };
+  const a = await render();
+  const b = await render();
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) assert.fail(`샘플 ${i} 가 다르다 — 변주가 재현되지 않는다`);
   }
 });

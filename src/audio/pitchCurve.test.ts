@@ -283,8 +283,14 @@ test('평평 판정이 두 구현에서 같다', async () => {
   const flatByTs: PitchCurve = { glide: { cents: 40, ms: 0 }, vibrato: null, points: null };
   assert.equal(isCurveFlat(flatByTs), true);
 
-  const plain = await render(projectWithCurve(57, null));
-  const withFlat = await render(projectWithCurve(57, flatByTs));
+  // **같은 노트를 써야 한다.** 타건 변주가 노트 id 에 걸려 있어(`ROADMAP.md` S2-4)
+  // 음을 새로 만들면 씨앗이 달라져 세기가 미세하게 달라진다 — 그건 의도한 동작이고,
+  // 여기서 보려는 것은 "곡선 유무로 경로가 갈리는가"다
+  const project = projectWithCurve(57, null);
+  const plain = await render(project);
+  const flatProject = projectWithCurve(57, flatByTs);
+  flatProject.tracks[0]!.clips[0]!.notes[0]!.id = project.tracks[0]!.clips[0]!.notes[0]!.id;
+  const withFlat = await render(flatProject);
 
   // 같은 경로를 타면 결정론적 렌더라 파형이 완전히 같아야 한다
   assert.equal(withFlat.pcm.length, plain.pcm.length);
