@@ -130,3 +130,46 @@ test('고역 감쇠가 실제로 고역을 줄인다', () => {
     `고역이 줄지 않는다: ${highEnergy(bright).toExponential(2)} vs ${highEnergy(dark).toExponential(2)}`,
   );
 });
+
+test('초기 반사가 또렷하게 존재한다', () => {
+  // 공간감은 꼬리가 아니라 **처음 몇 번 튀어 돌아오는 소리**가 만든다.
+  // 확산 노이즈만 있으면 방이 아니라 안개로 들린다 (ROADMAP.md S2-6)
+  const [left, right] = synthesizeReverbIr(FS, 2.0, 4000);
+
+  // 초기 구간의 최대값이 그 주변 확산 성분보다 확실히 크다 = 개별 반사가 살아 있다
+  const peakIn = (data: Float32Array, fromMs: number, toMs: number) => {
+    let peak = 0;
+    for (let i = Math.round(fromMs * 0.001 * FS); i < Math.round(toMs * 0.001 * FS); i++) {
+      peak = Math.max(peak, Math.abs(data[i]!));
+    }
+    return peak;
+  };
+  const earlyPeak = peakIn(left!, 5, 90);
+  const diffusePeak = peakIn(left!, 200, 400);
+  assert.ok(
+    earlyPeak > diffusePeak * 3,
+    `초기 반사가 확산에 묻혔다: ${earlyPeak.toExponential(2)} vs ${diffusePeak.toExponential(2)}`,
+  );
+
+  // 좌우 반사 시각이 다르다 — 같으면 리버브가 가운데 뭉쳐 스테레오가 죽는다
+  const argmax = (data: Float32Array, toMs: number) => {
+    let best = 0;
+    let at = 0;
+    for (let i = 0; i < Math.round(toMs * 0.001 * FS); i++) {
+      if (Math.abs(data[i]!) > best) { best = Math.abs(data[i]!); at = i; }
+    }
+    return at;
+  };
+  assert.notEqual(argmax(left!, 90), argmax(right!, 90), '좌우 첫 반사가 같은 시각이다');
+});
+
+test('초기 반사가 프리딜레이를 침범하지 않는다', () => {
+  // 첫 반사보다 앞에 소리가 있으면 원음보다 잔향이 먼저 오는 셈이다
+  const [left] = synthesizeReverbIr(FS, 2.0, 4000);
+  const firstTapMs = 11;
+  let peakBefore = 0;
+  for (let i = 0; i < Math.round((firstTapMs - 1) * 0.001 * FS); i++) {
+    peakBefore = Math.max(peakBefore, Math.abs(left![i]!));
+  }
+  assert.ok(peakBefore < 0.05, `첫 반사 앞에 ${peakBefore.toExponential(2)} 가 있다`);
+});

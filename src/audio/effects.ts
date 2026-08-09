@@ -101,9 +101,32 @@ function lcg(seed: number): () => number {
 }
 
 /**
+ * 초기 반사 탭 — `[지연(ms), 게인]`.
+ *
+ * **이게 "공간"과 "안개"를 가른다.** 사람이 방 크기를 느끼는 것은 꼬리가 아니라
+ * 벽에서 처음 몇 번 튀어 돌아오는 소리다. 확산 꼬리만 있으면 잔향이 어디서 오는지
+ * 알 수 없어 소리가 뭉개진 것처럼 들린다.
+ *
+ * 좌우를 다른 시각에 둔다 — 실제 방은 두 귀에 다른 시간에 도달한다. 같은 탭을 쓰면
+ * 리버브가 가운데에 뭉쳐 스테레오가 죽는다.
+ */
+const EARLY_TAPS: readonly (readonly [number, number])[][] = [
+  [[11, 0.72], [19, 0.55], [28, 0.44], [41, 0.33], [58, 0.24], [77, 0.17]],
+  [[13, 0.68], [23, 0.58], [31, 0.41], [45, 0.30], [62, 0.22], [83, 0.16]],
+];
+
+/** 초기 반사가 끝나고 확산 꼬리가 완전히 올라오는 지점 */
+const TAIL_FADE_MS = 90;
+
+/**
  * 리버브 IR 을 만든다. 브라우저 없이 테스트할 수 있게 순수 함수로 둔다.
  *
- * 앞 20ms 를 살짝 눌러 프리딜레이 느낌을 준다 — 없으면 소리가 시작부터 뭉개진다.
+ * 구조는 실제 방과 같은 순서다: **프리딜레이 → 초기 반사 → 확산 꼬리.**
+ * 예전에는 꼬리(노이즈 지수감쇠)만 있어서 공간이 아니라 안개로 들렸다
+ * (`ROADMAP.md` S2-6).
+ *
+ * 시드가 고정이라 **같은 설정이면 항상 같은 IR** 이다 — 미리듣기와 내보내기가
+ * 100% 일치해야 한다는 요구(`plan.md` 5-2)가 여기에도 걸린다.
  */
 export function synthesizeReverbIr(
   sampleRate: number,
@@ -115,25 +138,56 @@ export function synthesizeReverbIr(
   const random = lcg(seed);
   // 고역 감쇠를 일차 저역통과로 근사한다
   const alpha = Math.exp((-2 * Math.PI * dampingHz) / sampleRate);
+  const toSamples = (ms: number) => Math.round(ms * 0.001 * sampleRate);
 
   const channels: Float32Array[] = [];
   for (let ch = 0; ch < 2; ch++) {
+    const taps = EARLY_TAPS[ch]!;
     const data = new Float32Array(length);
+
+    // --- 1) 확산 꼬리 ---
+    // **첫 반사보다 먼저 시작하면 안 된다.** 잔향이 반사보다 먼저 오는 방은 없고,
+    // 그렇게 되면 원음이 시작부터 뭉개진다
+    const tailStart = toSamples(taps[0]![0]);
+    const tailFade = Math.max(1, toSamples(TAIL_FADE_MS));
     let z = 0;
     for (let i = 0; i < length; i++) {
       const noise = random() * 2 - 1;
       z = (1 - alpha) * noise + alpha * z;
+      if (i < tailStart) continue;
       // -60dB 까지 지수 감쇠
       const envelope = Math.pow(10, (-3 * i) / length);
-      const preDelay = Math.min(1, i / (0.02 * sampleRate));
-      data[i] = z * envelope * preDelay;
+      // 초기 반사 구간에서는 꼬리가 아직 덜 찼다. 처음부터 꽉 차 있으면 개별 반사가
+      // 묻혀서 결국 예전과 같은 안개가 된다
+      const buildUp = Math.min(1, (i - tailStart) / tailFade);
+      data[i] = z * envelope * buildUp;
     }
-    // 정규화 — IR 진폭이 리버브 볼륨을 결정하면 mix 파라미터가 의미를 잃는다
+
+    // 꼬리를 먼저 정규화한다 — IR 진폭이 리버브 볼륨을 결정하면 mix 가 의미를 잃는다.
+    // **초기 반사보다 먼저 해야 한다.** 나중에 하면 반사가 꼬리 세기에 휩쓸린다
     let rms = 0;
     for (const v of data) rms += v * v;
     rms = Math.sqrt(rms / length);
     const scale = rms > 1e-9 ? 0.35 / rms : 0;
-    for (let i = 0; i < length; i++) data[i] = data[i]! * scale;
+    let tailPeak = 0;
+    for (let i = 0; i < length; i++) {
+      const scaled = data[i]! * scale;
+      data[i] = scaled;
+      tailPeak = Math.max(tailPeak, Math.abs(scaled));
+    }
+
+    // --- 2) 초기 반사 ---
+    // 확산 꼬리와 달리 **또렷한 하나하나의 반사**다. 실제 방에서도 원음 다음으로
+    // 큰 사건이므로 꼬리 최대치보다 확실히 위에 놓는다
+    const tapScale = (tailPeak > 0 ? tailPeak : 1) * 4;
+    for (const [ms, gain] of taps) {
+      const at = toSamples(ms);
+      if (at >= length) continue;
+      // 벽에서 튈 때마다 고역이 깎인다 — 늦게 오는 반사일수록 둔하게 번진다
+      const dull = 1 - Math.min(0.6, ms / 200);
+      data[at] = data[at]! + gain * tapScale;
+      if (at + 1 < length) data[at + 1] = data[at + 1]! + gain * tapScale * dull * 0.5;
+    }
     channels.push(data);
   }
   return channels;
