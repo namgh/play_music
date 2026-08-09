@@ -50,11 +50,11 @@ export type ParamValue = number | string;
  * 웨이브가이드지만 사용자에게는 다른 분류다. 기법 차이는 감춘다는 원칙과도 맞다.
  */
 export type InstrumentCategory =
-  | '기타' | '베이스' | '줄' | '건반·신스' | '말렛·벨' | '드럼';
+  | '기타' | '베이스' | '피아노' | '줄' | '건반·신스' | '말렛·벨' | '드럼';
 
 /** 목록에 나올 순서. 자주 쓰는 것부터 */
 export const CATEGORY_ORDER: readonly InstrumentCategory[] = [
-  '기타', '베이스', '건반·신스', '말렛·벨', '줄', '드럼',
+  '기타', '베이스', '피아노', '건반·신스', '말렛·벨', '줄', '드럼',
 ];
 
 export interface InstrumentDefinition {

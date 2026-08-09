@@ -243,12 +243,12 @@ const ACOUSTIC_GUITAR: InstrumentDefinition = {
  * 파라미터가 줄 정의와 **섞이지 않는다** — 상속으로 층을 얹는 구조라
  * 어쿠스틱 악기는 이 정의를 거치지 않는다.
  */
-const AMPED_STRING: InstrumentDefinition = {
-  id: 'amped-string',
-  schemaVersion: 1,
-  name: '앰프 줄 (기준)',
-  extends: 'string-base',
-  paramSpecs: {
+/**
+ * 앰프 체인 선언. **줄 계열 전용이 아니다** — 로즈처럼 픽업으로 받아 앰프를 거치는
+ * 건반도 쓴다. `AMPED_STRING` 안에 두면 그 상속 줄기 밖에서는 못 쓴다
+ * (실제로 로즈를 넣다가 걸렸다).
+ */
+const AMP_SPECS: Record<string, ParamSpec> = {
     ampCharacter: {
       type: 'enum', default: 1, min: 0, max: 3,
       label: '앰프 성격', group: '앰프',
@@ -267,7 +267,14 @@ const AMPED_STRING: InstrumentDefinition = {
       type: 'float', min: 0, max: 1, default: 0.15,
       label: '픽업 위치', group: '앰프',
     },
-  },
+};
+
+const AMPED_STRING: InstrumentDefinition = {
+  id: 'amped-string',
+  schemaVersion: 1,
+  name: '앰프 줄 (기준)',
+  extends: 'string-base',
+  paramSpecs: { ...AMP_SPECS },
   params: {
     ampEnabled: 1,
     // **자석 픽업은 한 방향 움직임에 주로 반응한다.** 폴피스에 수직인 편광이
@@ -503,6 +510,158 @@ const SYNTH_BASS: InstrumentDefinition = {
   range: { low: 24, high: 60 },
 };
 
+// --- 피아노 계열 (`ROADMAP.md` S5) ------------------------------------------
+//
+// **엔진을 한 줄도 안 고치고 정의만으로 만든다** — `sound.md` 9-1 의 판정 기준
+// 그 자체다. 재료는 이미 다 있다:
+//   때리는 줄 = 웨이브가이드 + 높은 강성(비조화도) + 단단한 타격
+//   사운드보드 = 바디 공명 (`body.rs`)
+//   댐퍼 뗀 현 = 공명현 (`sympathetic.rs`)
+//   두 방향 진동 = 2편광 (`voice.rs`)
+//
+// Pianoteq 급은 아니다. 해머-현 상호작용의 비선형과 88건반 개별 특성이 빠져 있고,
+// 그건 `sound.md` 가 Tier 2 로 분류하며 "큰 공수"라고 한 부분이다.
+// 다만 **"피아노가 아예 없다"와 "쓸 만한 피아노가 있다"의 차이**는 여기서 난다.
+
+const ACOUSTIC_PIANO: InstrumentDefinition = {
+  id: 'acoustic-piano',
+  schemaVersion: 1,
+  name: '어쿠스틱 피아노',
+  category: '피아노',
+  extends: 'string-base',
+  params: {
+    // 피아노 줄은 굵고 팽팽해 **비조화도가 크다** — 배음이 정수배보다 위로 밀린다.
+    // 이게 기타와 피아노를 가르는 가장 큰 차이다.
+    //
+    // 실제 피아노는 이보다 더 크지만, 강성을 더 올리면 **분산 보정이 따라가지 못해
+    // 기본음이 밀린다** (0.032 에서 1.6센트, 클라비넷 0.024 에서 3.2센트 — ±1센트
+    // 회귀 테스트가 잡았다). 더 밀어붙이려면 분산 단의 위상 보정을 고차로 푸는
+    // 엔진 작업이 필요하고, 그건 `sound.md` 가 Tier 2 "큰 공수"라 한 부분이다
+    stiffness: 0.019,
+    scaleLengthMm: 1200,
+    damping: 0.03,
+    sustainSec: 8,
+    // 해머는 뜯는 게 아니라 때린다 — 단단하고, 줄 길이의 1/8 지점을 친다
+    pluckHardness: 0.72,
+    pluckPosition: 0.12,
+    // 사운드보드. 통이 아니라 큰 판이라 공진이 낮다.
+    // 60Hz 로 두면 최저음(A0 27.5Hz)의 2배음과 겹쳐 기본음 측정이 밀린다 —
+    // 실측 1.6센트. 판의 첫 모드를 조금 위로 잡아 피한다
+    bodyAmount: 0.3,
+    bodyHelmholtzHz: 110,
+    // 댐퍼를 뗀 현들이 함께 우는 것은 피아노 울림의 큰 부분이지만, **기본값은 0 이다** —
+    // 공명현은 다른 음정을 더해서 노트오프 계약과 ±1센트 회귀 테스트를 깬다
+    // (다른 악기에서 이미 같은 이유로 0 이다). 얼마나 울릴지는 S4 에서 귀로 정한다
+    sympatheticAmount: 0,
+    sympatheticBaseHz: 55,
+    polarizationMix: 0.3,
+    polarizationDetuneCents: 1.0,
+    polarizationDecayRatio: 0.25,
+    velocityBrightness: 0.5, // 세게 치면 확 밝아지는 것이 피아노의 성격이다
+    playNoiseAmount: 0.2,    // 해머 소리
+    variationAmount: 0.35,
+    stereoWidth: 0.35,       // 낮은 음이 왼쪽, 높은 음이 오른쪽
+    legatoMs: 0,             // 건반은 잇지 않는다 — 각 음이 따로 때려진다
+    releaseMs: 90,
+  },
+  range: { low: 21, high: 108 }, // A0 ~ C8
+  tones: {
+    default: {},
+    밝은: { pluckHardness: 0.9, bodyAmount: 0.4, damping: 0.02 },
+    부드러운: { pluckHardness: 0.5, pluckPosition: 0.18, damping: 0.05 },
+  },
+};
+
+const UPRIGHT_PIANO: InstrumentDefinition = {
+  id: 'upright-piano',
+  schemaVersion: 1,
+  name: '업라이트 피아노',
+  category: '피아노',
+  extends: 'acoustic-piano',
+  params: {
+    // 줄이 짧고 판이 작다 — 그래서 배음이 더 밀리고 통이 위로 간다
+    scaleLengthMm: 900,
+    // 줄이 짧을수록 비조화도가 크지만, 위와 같은 이유로 상한이 있다
+    stiffness: 0.016,
+    sustainSec: 5.5,
+    bodyHelmholtzHz: 95,
+    stereoWidth: 0.2,
+  },
+};
+
+const RHODES: InstrumentDefinition = {
+  id: 'electric-piano-rhodes',
+  schemaVersion: 1,
+  name: '일렉 피아노 (로즈)',
+  category: '피아노',
+  extends: 'modal-base',
+  // 픽업 → 앰프를 거치는 건반이라 앰프 선언이 필요하다 (모달 기준에는 없다)
+  paramSpecs: { ...AMP_SPECS },
+  params: {
+    // 로즈는 줄이 아니라 **금속 타인(tine)** 을 때린다 — 모달 합성이 맞는 기법이다
+    modalMaterial: 1, // 비브라폰과 같은 금속 계열
+    modalDecaySec: 2.4,
+    strikePosition: 0.18,
+    pluckHardness: 0.6,
+    // 픽업으로 받아 앰프를 거친다. 그 살짝의 배음이 로즈의 "벨 같은" 소리다
+    ampEnabled: 1,
+    ampCharacter: 0,
+    ampDrive: 0.18,
+    ampToneLow: 0.55, ampToneMid: 0.45, ampToneHigh: 0.5,
+    ampLevel: 0.7, ampCabinet: 0, pickupPosition: 0.25,
+    velocityBrightness: 0.55, // 세게 치면 "짜앙" 하고 갈라지는 것이 로즈다
+    variationAmount: 0.3,
+    stereoWidth: 0.3,
+    letRing: 0,
+    releaseMs: 120,
+  },
+  range: { low: 28, high: 100 },
+  tones: {
+    default: {},
+    벨: { ampDrive: 0.1, pluckHardness: 0.85, modalDecaySec: 3.2 },
+    거친: { ampDrive: 0.45, ampCharacter: 1, pluckHardness: 0.8 },
+  },
+};
+
+const WURLITZER: InstrumentDefinition = {
+  id: 'electric-piano-wurlitzer',
+  schemaVersion: 1,
+  name: '일렉 피아노 (윌리처)',
+  category: '피아노',
+  extends: 'electric-piano-rhodes',
+  params: {
+    // 윌리처는 리드(reed)라 더 짧고 거칠다
+    modalDecaySec: 1.5,
+    ampDrive: 0.32,
+    ampToneMid: 0.6,
+    strikePosition: 0.25,
+  },
+};
+
+const CLAVINET: InstrumentDefinition = {
+  id: 'clavinet',
+  schemaVersion: 1,
+  name: '클라비넷',
+  category: '피아노',
+  extends: 'amped-string',
+  params: {
+    // 클라비넷은 줄을 **때려서 누르는** 악기다 — 짧고 팽팽하고 아주 밝다
+    scaleLengthMm: 320,
+    stiffness: 0.011,
+    damping: 0.02,
+    sustainSec: 1.1,
+    pluckHardness: 0.95,
+    pluckPosition: 0.06,
+    ampCharacter: 1, ampDrive: 0.3, ampToneHigh: 0.75,
+    velocityBrightness: 0.45,
+    playNoiseAmount: 0.3,
+    variationAmount: 0.3,
+    releaseMs: 45, // 건반을 떼면 댐퍼가 바로 문다
+  },
+  // 호너 클라비넷 D6 의 실제 음역 (F1~E6)
+  range: { low: 29, high: 88 },
+};
+
 // --- 모달 (Tier 2) ---------------------------------------------------------
 
 const MODAL_BASE: InstrumentDefinition = {
@@ -723,6 +882,11 @@ export const BUILT_IN_INSTRUMENTS: readonly InstrumentDefinition[] = [
   SYNTH_PAD,
   SYNTH_BASS,
   MODAL_BASE,
+  ACOUSTIC_PIANO,
+  UPRIGHT_PIANO,
+  RHODES,
+  WURLITZER,
+  CLAVINET,
   MARIMBA,
   VIBRAPHONE,
   TUBULAR_BELL,
