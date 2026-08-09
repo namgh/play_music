@@ -17,16 +17,17 @@ import type { ProjectEditor } from '../editor/useProjectEditor.ts';
  *
  * 우리는 MIDI 를 쓰지 않고 `{midi, cents}` 를 저장 형식으로 쓰기 때문에 그 제약이 없다.
  *
- * ## 왜 자유곡선을 그리게 하지 않나
+ * ## 두 가지 모드
  *
- * 엔진의 `PitchCurve` 는 글라이드·비브라토 5개 값만 받는다 (`curve.rs`).
- * 자유곡선(`points`)은 wasm 에 점 배열을 넘기는 **새 버퍼 ABI** 가 필요하고 그건 별도
- * 작업이다. 지원하는 척하면 화면에는 그려지고 소리에는 없는 상태가 되고, 그게 예전에
- * 실제로 났던 버그다.
+ * **파라미터** — 글라이드·비브라토를 슬라이더로. 대부분의 경우 이걸로 충분하고,
+ * 값이 숫자로 남아 나중에 다시 이해할 수 있다.
  *
- * 대신 **글라이드·비브라토를 그래프로 보면서** 조정한다. 사용자가 얻는 것은 같다 —
- * "도에서 래까지 어떤 모양으로 올라갈지"를 눈으로 확인하며 만든다. 글라이드 폭은
- * 온음(200센트)을 넘어도 되므로 도→래가 지금 바로 된다.
+ * **자유곡선** — 그래프를 직접 그린다 (`ROADMAP.md` S1-4). 엔진이 점 배열을 받는
+ * 버퍼 ABI 를 갖게 되면서 가능해졌다. 점이 있으면 **글라이드·비브라토를 대신한다**
+ * (`plan.md` 5-4) — 섞으면 그린 모양과 들리는 음정이 달라진다.
+ *
+ * 그래프와 소리가 어긋나지 않는 것은 `audio/pitchCurve.test.ts` 가 **실제 렌더한
+ * 파형의 음정**과 화면 예측을 대조해 지킨다.
  */
 
 const LANE_HEIGHT = 116;
@@ -86,7 +87,34 @@ export function PitchCurveLane({ editor, clip, onAudition }: PitchCurveLaneProps
     [curve, durationSec, note],
   );
 
-  const rangeCents = Math.max(MIN_RANGE_CENTS, curveMaxDeviationCents(curve) * 1.15);
+  const rangeCents = Math.max(
+    MIN_RANGE_CENTS, curveMaxDeviationCents(curve, durationSec) * 1.15,
+  );
+  const drawing = (curve?.points?.length ?? 0) > 0;
+
+  /** 그래프를 눌러 점을 찍는다. 같은 자리를 다시 누르면 그 점을 지운다 */
+  const onDraw = (event: React.PointerEvent<SVGSVGElement>) => {
+    if (!note) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+    const tNorm = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width));
+    const cents = ((rect.height / 2 - (event.clientY - rect.top)) / (rect.height / 2)) * rangeCents;
+
+    const existing = curve?.points ?? [];
+    // 가까운 점을 누르면 지운다 — 지우는 수단이 없으면 실수를 되돌릴 방법이 없다
+    const near = existing.findIndex((p) => Math.abs(p.tNorm - tNorm) < 0.03);
+    const points = near >= 0
+      ? existing.filter((_, i) => i !== near)
+      : [...existing, { tNorm, cents: Math.round(cents * 10) / 10 }]
+        .sort((a, b) => a.tNorm - b.tNorm);
+
+    editor.commit(setPitchCurve(project, [note.id], {
+      glide: curve?.glide ?? null,
+      vibrato: curve?.vibrato ?? null,
+      points: points.length > 0 ? points : null,
+    }));
+    onAudition(note.pitch.midi, note.pitch.cents);
+  };
 
   const apply = (patch: {
     glideCents?: number; glideMs?: number;
@@ -140,8 +168,9 @@ export function PitchCurveLane({ editor, clip, onAudition }: PitchCurveLaneProps
               <svg
                 viewBox="0 -50 100 100"
                 preserveAspectRatio="none"
-                className="h-full w-full"
-                aria-label="음정 곡선"
+                className="h-full w-full cursor-crosshair"
+                aria-label="음정 곡선 — 눌러서 점을 찍고, 점을 다시 누르면 지웁니다"
+                onPointerDown={onDraw}
               >
                 {/* 0센트 기준선 — 목표 음정 */}
                 <line x1="0" y1="0" x2="100" y2="0" stroke="currentColor"
@@ -160,14 +189,39 @@ export function PitchCurveLane({ editor, clip, onAudition }: PitchCurveLaneProps
                   d={path}
                   fill="none"
                   stroke="currentColor"
-                  className="text-teal-300"
+                  className={drawing ? 'text-amber-300' : 'text-teal-300'}
                   strokeWidth="1.5"
                   vectorEffect="non-scaling-stroke"
                 />
+                {/* 찍은 점. 다시 누르면 지워진다 */}
+                {(curve?.points ?? []).map((point) => (
+                  <circle
+                    key={`${point.tNorm}:${point.cents}`}
+                    cx={point.tNorm * 100}
+                    cy={-(point.cents / rangeCents) * 50}
+                    r="1.4"
+                    className="fill-amber-200"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                ))}
               </svg>
               <span className="pointer-events-none absolute left-2 top-1 font-mono text-[9px] text-neutral-500">
                 ±{Math.round(rangeCents)}¢ · {durationSec.toFixed(2)}s
+                {drawing && ' · 자유곡선'}
               </span>
+              {drawing && (
+                <button
+                  type="button"
+                  onClick={() => note && editor.commit(setPitchCurve(project, [note.id], {
+                    glide: curve?.glide ?? null,
+                    vibrato: curve?.vibrato ?? null,
+                    points: null,
+                  }))}
+                  className="absolute right-2 top-1 rounded border border-neutral-700 px-2 py-0.5 text-[10px] text-neutral-300"
+                >
+                  자유곡선 지우기
+                </button>
+              )}
             </>
           )}
         </div>
@@ -176,6 +230,11 @@ export function PitchCurveLane({ editor, clip, onAudition }: PitchCurveLaneProps
       {note !== null && (
         <div className="grid gap-1.5 border-t border-neutral-800 p-3 sm:grid-cols-2">
           {/* 글라이드 범위를 ±400센트로 둔다 — 온음(200)을 넘어야 "도에서 래까지"가 된다 */}
+          {drawing && (
+            <p className="mb-1 text-[10px] text-amber-300">
+              자유곡선이 켜져 있어 아래 값은 소리에 반영되지 않습니다 — 그린 곡선이 우선입니다
+            </p>
+          )}
           <Dial
             label="시작 오프셋" value={Math.round(glideCents)} min={-400} max={400} step={1} unit="¢"
             onChange={(v) => apply({ glideCents: v })}
