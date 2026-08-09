@@ -16,10 +16,7 @@ import { isPitchEdited } from '../model/project.ts';
 import type { Project } from '../model/project.ts';
 import { History } from './history.ts';
 import {
-  addClip, addNote, addTrack, copyNotes, deleteClip, deleteNotes, deleteTrack, duplicateNotes,
-  EditError, findNote, moveNotes, nudgeCents, pasteNotes, quantizeNotes, resizeClip, resizeNotes,
-  setCents, setKey, setLengthBars, setLoop, setLoopEnabled, setPitchCurve, setTempo, setVelocity,
-  updateTrack,
+  addClip, addNote, addTrack, copyNotes, deleteClip, deleteNotes, deleteTrack, duplicateClip, duplicateNotes, EditError, findNote, moveClip, moveNotes, nudgeCents, pasteNotes, quantizeNotes, resizeClip, resizeNotes, setCents, setKey, setLengthBars, setLoop, setLoopEnabled, setPitchCurve, setTempo, setVelocity, updateTrack,
 } from './edits.ts';
 
 function base(): Project {
@@ -430,4 +427,92 @@ test('조성을 넣고 지울 수 있다', () => {
   const p = setKey(base(), { tonic: 'D', mode: 'minor' });
   assert.deepEqual(p.key, { tonic: 'D', mode: 'minor' });
   assert.equal(setKey(p, null).key, null);
+});
+
+// --- 클립 이동·복제 (ROADMAP.md P1) ----------------------------------------
+
+function twoClipProject(): Project {
+  let project = createEmptyProject('클립');
+  const added = addTrack(project, { name: '기타', instrumentId: 'acoustic-guitar' });
+  project = added.project;
+  const first = addClip(project, {
+    trackId: added.trackId, startTick: 0, lengthTick: 4 * PPQ, label: 'A',
+  });
+  project = first.project;
+  const withNote = addNote(project, {
+    clipId: first.clipId, startTick: PPQ, lengthTick: PPQ, midi: 60,
+  });
+  return withNote.project;
+}
+
+test('클립을 옮기면 그 자리에 간다', () => {
+  const project = twoClipProject();
+  const clip = project.tracks[0]!.clips[0]!;
+  const moved = moveClip(project, clip.id, { startTick: 8 * PPQ });
+  assert.equal(moved.tracks[0]!.clips[0]!.startTick, 8 * PPQ);
+  // 안에 있는 음은 클립 기준 좌표라 그대로여야 한다
+  assert.equal(moved.tracks[0]!.clips[0]!.notes[0]!.startTick, PPQ);
+});
+
+test('클립을 다른 트랙으로 옮길 수 있다', () => {
+  let project = twoClipProject();
+  const added = addTrack(project, { name: '베이스', instrumentId: 'electric-bass' });
+  project = added.project;
+  const clip = project.tracks[0]!.clips[0]!;
+
+  const moved = moveClip(project, clip.id, { trackId: added.trackId });
+  assert.equal(moved.tracks[0]!.clips.length, 0, '원래 트랙에서 안 빠졌다');
+  assert.equal(moved.tracks[1]!.clips.length, 1, '새 트랙에 안 들어갔다');
+  assert.equal(moved.tracks[1]!.clips[0]!.notes.length, 1, '음이 따라오지 않았다');
+});
+
+test('겹치는 자리로는 못 옮긴다 — 조용히 밀지 않는다', () => {
+  let project = twoClipProject();
+  const trackId = project.tracks[0]!.id;
+  project = addClip(project, { trackId, startTick: 8 * PPQ, lengthTick: 4 * PPQ }).project;
+  const first = project.tracks[0]!.clips[0]!;
+  // 조용히 밀어 주면 사용자가 놓은 자리와 다른 곳에 붙는다
+  assert.throws(() => moveClip(project, first.id, { startTick: 10 * PPQ }), /겹친다/);
+});
+
+test('복제본은 바로 뒤에 놓이고 id 가 전부 새것이다', () => {
+  const project = twoClipProject();
+  const clip = project.tracks[0]!.clips[0]!;
+  const { project: next, clipId } = duplicateClip(project, clip.id);
+
+  const copy = next.tracks[0]!.clips.find((c) => c.id === clipId)!;
+  assert.equal(copy.startTick, clip.startTick + clip.lengthTick);
+  assert.notEqual(copy.id, clip.id);
+  assert.equal(copy.notes.length, clip.notes.length);
+  assert.notEqual(copy.notes[0]!.id, clip.notes[0]!.id, '음 id 를 재사용했다');
+});
+
+test('복제본의 곡선을 고쳐도 원본이 안 바뀐다', () => {
+  // 얕은 복사면 한쪽을 고칠 때 원본도 바뀐다 (HANDOFF 16번)
+  let project = twoClipProject();
+  const clip = project.tracks[0]!.clips[0]!;
+  const noteId = clip.notes[0]!.id;
+  project = setPitchCurve(project, [noteId], {
+    glide: { cents: -30, ms: 50 },
+    vibrato: null,
+    points: [{ tNorm: 0.5, cents: 20 }],
+  });
+
+  const { project: next, clipId } = duplicateClip(project, project.tracks[0]!.clips[0]!.id);
+  const copy = next.tracks[0]!.clips.find((c) => c.id === clipId)!;
+  const copyCurve = copy.notes[0]!.pitchCurve!;
+  copyCurve.glide!.cents = 999;
+  copyCurve.points![0]!.cents = 999;
+
+  const original = next.tracks[0]!.clips.find((c) => c.id !== clipId)!.notes[0]!.pitchCurve!;
+  assert.equal(original.glide!.cents, -30, '곡선이 공유되고 있다');
+  assert.equal(original.points![0]!.cents, 20, '점 배열이 공유되고 있다');
+});
+
+test('뒤에 자리가 없으면 복제하지 않는다', () => {
+  let project = twoClipProject();
+  const trackId = project.tracks[0]!.id;
+  project = addClip(project, { trackId, startTick: 4 * PPQ, lengthTick: 4 * PPQ }).project;
+  const first = project.tracks[0]!.clips[0]!;
+  assert.throws(() => duplicateClip(project, first.id), /자리가 없다/);
 });

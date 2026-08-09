@@ -324,6 +324,103 @@ export function addClip(
   };
 }
 
+/**
+ * 클립을 옮긴다 (`ROADMAP.md` P1).
+ *
+ * 이게 없어서 **곡 구조를 못 짰다** — A-B-A 를 만들려면 클립을 옮기고 복제하는 것이
+ * 기본인데, 지금까지는 음을 하나하나 복사해 붙이는 수밖에 없었다.
+ *
+ * 같은 트랙 안에서도, 다른 트랙으로도 옮긴다. 겹치면 실패시킨다 — 조용히 밀어 주면
+ * 사용자가 놓은 자리와 다른 곳에 붙는다.
+ */
+export function moveClip(
+  project: Project,
+  clipId: ClipId,
+  target: { startTick?: Ticks; trackId?: TrackId },
+): Project {
+  const found = findClip(project, clipId);
+  if (!found) throw new EditError(`클립 ${clipId} 없음`);
+
+  const startTick = Math.max(0, Math.round(target.startTick ?? found.clip.startTick));
+  const trackId = target.trackId ?? found.track.id;
+  const destination = project.tracks.find((t) => t.id === trackId);
+  if (!destination) throw new EditError(`트랙 ${trackId} 없음`);
+
+  const collides = destination.clips.some(
+    (c) => c.id !== clipId
+      && startTick < c.startTick + c.lengthTick
+      && c.startTick < startTick + found.clip.lengthTick,
+  );
+  if (collides) throw new EditError('클립이 겹친다');
+
+  const moved: Clip = { ...found.clip, startTick };
+  return mapTracks(project, (track) => {
+    // 원래 트랙에서 빼고
+    const without = track.clips.filter((c) => c.id !== clipId);
+    // 목적지에 넣는다. 같은 트랙이면 위 두 줄이 그대로 제자리 이동이 된다
+    if (track.id === trackId) return { ...track, clips: [...without, moved] };
+    if (track.clips.length !== without.length) return { ...track, clips: without };
+    return track;
+  });
+}
+
+/**
+ * 클립을 복제해 **바로 뒤에** 놓는다. 후렴 반복을 만드는 기본 동작이다.
+ *
+ * 음 id 를 전부 새로 발급하고 곡선을 깊이 복사한다 — 얕은 복사면 한쪽을 고칠 때
+ * 원본도 바뀐다 (`HANDOFF.md` 16번, 붙여넣기에서 실제로 났던 버그).
+ */
+export function duplicateClip(
+  project: Project,
+  clipId: ClipId,
+): { project: Project; clipId: ClipId } {
+  const found = findClip(project, clipId);
+  if (!found) throw new EditError(`클립 ${clipId} 없음`);
+  const { track, clip } = found;
+
+  const startTick = clip.startTick + clip.lengthTick;
+  const collides = track.clips.some(
+    (c) => startTick < c.startTick + c.lengthTick && c.startTick < startTick + clip.lengthTick,
+  );
+  if (collides) throw new EditError('뒤에 놓을 자리가 없다');
+
+  const copy = createClip({
+    startTick,
+    lengthTick: clip.lengthTick,
+    label: clip.label,
+  });
+  const duplicated: Clip = {
+    ...copy,
+    locked: clip.locked,
+    origin: clip.origin,
+    notes: clip.notes.map((note) => ({
+      ...createNote({
+        startTick: note.startTick,
+        lengthTick: note.lengthTick,
+        midi: note.pitch.midi,
+        cents: note.pitch.cents,
+      }),
+      velocity: note.velocity,
+      origin: note.origin,
+      // **깊이 복사한다.** 얕게 두면 복제본의 곡선을 고칠 때 원본도 바뀐다
+      pitchCurve: note.pitchCurve === null ? null : {
+        glide: note.pitchCurve.glide === null ? null : { ...note.pitchCurve.glide },
+        vibrato: note.pitchCurve.vibrato === null ? null : { ...note.pitchCurve.vibrato },
+        points: note.pitchCurve.points === null
+          ? null
+          : note.pitchCurve.points.map((point) => ({ ...point })),
+      },
+    })),
+  };
+
+  return {
+    project: mapTracks(project, (t) => (
+      t.id === track.id ? { ...t, clips: [...t.clips, duplicated] } : t
+    )),
+    clipId: duplicated.id,
+  };
+}
+
 export function deleteClip(project: Project, clipId: ClipId): Project {
   return mapTracks(project, (track) => ({ ...track, clips: track.clips.filter((c) => c.id !== clipId) }));
 }

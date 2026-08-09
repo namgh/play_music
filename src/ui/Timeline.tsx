@@ -1,7 +1,9 @@
-import type { ClipId, TrackId } from '../model/project.ts';
+import { useState } from 'react';
+
+import type { ClipId, Project, TrackId } from '../model/project.ts';
 import { countEditedNotes } from '../model/project.ts';
 import { ticksPerBar } from '../model/time.ts';
-import { addClip, deleteClip, resizeClip } from '../editor/edits.ts';
+import { addClip, deleteClip, duplicateClip, moveClip, resizeClip } from '../editor/edits.ts';
 import type { ProjectEditor } from '../editor/useProjectEditor.ts';
 
 /**
@@ -36,6 +38,53 @@ export function Timeline({
   const barTicks = ticksPerBar(project.timeSignature);
   const totalTicks = project.lengthBars * barTicks;
   const pct = (ticks: number) => `${(ticks / totalTicks) * 100}%`;
+
+  /**
+   * 클립 끌기 (`ROADMAP.md` P1). **마디 단위로 스냅한다** — 곡 구조를 짜는
+   * 단위가 마디이고, 자유 위치로 두면 몇 틱씩 어긋난 클립이 쌓인다.
+   *
+   * 드래그 시작 시점의 프로젝트에서 계산한다. 매 프레임 누적하면 오차가 쌓인다.
+   */
+  const [clipDrag, setClipDrag] = useState<{
+    clipId: ClipId; trackId: TrackId; startX: number; originTick: number; origin: Project;
+  } | null>(null);
+
+  const beginClipDrag = (
+    event: React.PointerEvent<HTMLElement>,
+    trackId: TrackId,
+    clipId: ClipId,
+    startTick: number,
+  ) => {
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setClipDrag({ clipId, trackId, startX: event.clientX, originTick: startTick, origin: project });
+  };
+
+  const onClipDragMove = (event: React.PointerEvent<HTMLElement>) => {
+    if (!clipDrag) return;
+    const lane = (event.currentTarget as HTMLElement).closest('[data-lane]');
+    if (!lane) return;
+    const width = lane.getBoundingClientRect().width;
+    if (width <= 0) return;
+
+    const deltaTicks = ((event.clientX - clipDrag.startX) / width) * totalTicks;
+    const snapped = Math.round((clipDrag.originTick + deltaTicks) / barTicks) * barTicks;
+    if (snapped === clipDrag.originTick) {
+      editor.preview(clipDrag.origin);
+      return;
+    }
+    try {
+      editor.preview(moveClip(clipDrag.origin, clipDrag.clipId, { startTick: snapped }));
+    } catch {
+      // 겹치는 자리면 그냥 안 움직인다. 조용히 밀어 주면 놓은 자리와 달라진다
+    }
+  };
+
+  const endClipDrag = () => {
+    if (!clipDrag) return;
+    setClipDrag(null);
+    // 드래그 전체를 언두 한 단계로 만든다
+    editor.commitCurrent();
+  };
 
   /** 빈 곳을 누르면 그 마디에서 시작하는 클립을 만든다 */
   const onLaneClick = (trackId: TrackId, event: React.MouseEvent<HTMLDivElement>) => {
@@ -105,6 +154,7 @@ export function Timeline({
             </button>
 
             <div
+              data-lane
               onClick={(event) => onLaneClick(track.id, event)}
               style={{ height: LANE_HEIGHT }}
               className="relative flex-1 cursor-copy bg-neutral-950"
@@ -124,13 +174,36 @@ export function Timeline({
                     <button
                       type="button"
                       onClick={() => onSelect(track.id, clip.id)}
-                      className="min-w-0 flex-1 truncate text-left font-medium text-black/80"
+                      onPointerDown={(event) => beginClipDrag(event, track.id, clip.id, clip.startTick)}
+                      onPointerMove={onClipDragMove}
+                      onPointerUp={endClipDrag}
+                      onPointerCancel={endClipDrag}
+                      title="끌어서 옮깁니다"
+                      className="min-w-0 flex-1 cursor-grab truncate text-left font-medium text-black/80"
                     >
                       {clip.label || '클립'}
                       <span className="ml-1 opacity-70">
                         {clip.notes.length}음{edited > 0 ? ` · ${edited} 수정` : ''}
                       </span>
                       {clip.locked && <span className="ml-1">🔒</span>}
+                    </button>
+                    <button
+                      type="button"
+                      aria-label="클립 복제"
+                      title="바로 뒤에 복제"
+                      onClick={() => {
+                        try {
+                          const next = duplicateClip(project, clip.id);
+                          editor.commit(next.project);
+                          onSelect(track.id, next.clipId);
+                        } catch {
+                          // 뒤에 자리가 없으면 아무 일도 하지 않는다 — 조용히 밀면
+                          // 사용자가 의도하지 않은 곳에 붙는다
+                        }
+                      }}
+                      className="px-1 text-black/60 hover:text-black"
+                    >
+                      ⧉
                     </button>
                     <button
                       type="button"
