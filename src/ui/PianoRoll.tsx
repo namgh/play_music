@@ -44,6 +44,11 @@ export interface PianoRollProps {
    */
   instrumentRange: { low: number; high: number };
   gridTicks: number;
+  /**
+   * 새로 찍는 음의 길이. **격자와 분리한다** — 16분 격자로 정확히 찍으면서
+   * 4분음표를 넣고 싶은 건 흔한 요구인데, 묶여 있으면 매번 늘려야 했다
+   */
+  noteLengthTicks: number;
   /** 재생 위치 (틱). null 이면 표시하지 않는다 */
   playheadTick: number | null;
   /** 편집 커서 (클립 기준 틱). 재생·붙여넣기의 기준점 */
@@ -92,9 +97,19 @@ interface MarqueeState {
 
 const isBlackKey = (midi: number) => NOTE_NAMES[((midi % 12) + 12) % 12]!.includes('#');
 
+/**
+ * 격자에 맞출지 정한다. **Alt 를 누르고 있으면 맞추지 않는다.**
+ *
+ * 음정은 0.1센트까지 조절되는데 타이밍만 격자에 못 박혀 있는 것은 비대칭이다.
+ * 그루브를 만들려면 "이 음만 살짝 앞으로"가 돼야 한다. Alt 는 대부분의 DAW 가
+ * 같은 뜻으로 쓰는 키다.
+ */
+const snap = (ticks: number, gridTicks: number, free: boolean): number =>
+  (free ? Math.max(0, Math.round(ticks)) : quantize(ticks, gridTicks));
+
 export function PianoRoll({
-  editor, clip, range, instrumentRange, gridTicks, playheadTick, cursorTick, onMoveCursor,
-  musicalKey, fold, ghosts, onAudition,
+  editor, clip, range, instrumentRange, gridTicks, noteLengthTicks, playheadTick, cursorTick,
+  onMoveCursor, musicalKey, fold, ghosts, onAudition,
 }: PianoRollProps) {
   const { project, selection } = editor;
   const gridRef = useRef<HTMLDivElement | null>(null);
@@ -145,14 +160,14 @@ export function PianoRoll({
 
   /** 격자 위 클릭 좌표 → 틱·음 */
   const pointToCell = useCallback(
-    (clientX: number, clientY: number) => {
+    (clientX: number, clientY: number, free = false) => {
       const rect = gridRef.current?.getBoundingClientRect();
       if (!rect) return null;
       const x = clientX - rect.left;
       const y = clientY - rect.top;
       const index = Math.max(0, Math.min(rows.length - 1, Math.floor(y / ROW_HEIGHT)));
       return {
-        tick: Math.max(0, quantize(x / pxPerTick, gridTicks)),
+        tick: Math.max(0, snap(x / pxPerTick, gridTicks, free)),
         midi: rows[index] ?? range.low,
       };
     },
@@ -227,12 +242,13 @@ export function PianoRoll({
     if (wasDrag) return;
 
     // 끌지 않았다 → 음 추가. 커서도 그 자리로 옮긴다
-    const cell = pointToCell(event.clientX, event.clientY);
+    const cell = pointToCell(event.clientX, event.clientY, event.altKey);
     if (!cell) return;
     const { project: next, noteId } = addNote(project, {
       clipId: clip.id,
       startTick: cell.tick,
-      lengthTick: gridTicks,
+      // 격자가 아니라 **지정한 음 길이**로 찍는다
+      lengthTick: noteLengthTicks,
       midi: cell.midi,
     });
     editor.commit(next);
@@ -273,7 +289,9 @@ export function PianoRoll({
     const dy = event.clientY - drag.startY;
 
     if (drag.mode === 'move') {
-      const dTicks = quantize(dx / pxPerTick, gridTicks);
+      const dTicks = event.altKey
+        ? Math.round(dx / pxPerTick)
+        : quantize(dx / pxPerTick, gridTicks);
       // **줄 단위로 옮긴 뒤 반음 차로 환산한다.** 접히면 한 줄이 한 반음이 아니라
       // 반음으로 바로 계산하면 안 보이는 줄로 음이 사라진다
       const rowDelta = Math.round(dy / ROW_HEIGHT);
@@ -284,7 +302,9 @@ export function PianoRoll({
       }
       editor.preview(moveNotes(drag.origin, drag.ids, { ticks: dTicks, semitones: dSemis }));
     } else {
-      const dTicks = quantize(dx / pxPerTick, gridTicks);
+      const dTicks = event.altKey
+        ? Math.round(dx / pxPerTick)
+        : quantize(dx / pxPerTick, gridTicks);
       editor.preview(resizeNotes(drag.origin, drag.ids, dTicks, MIN_NOTE_TICKS));
     }
   };
@@ -305,7 +325,7 @@ export function PianoRoll({
   /** 눈금을 클릭해 커서를 옮긴다 (여기부터 재생 · 여기에 붙여넣기) */
   const onRulerPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
-    const tick = Math.max(0, quantize((event.clientX - rect.left) / pxPerTick, gridTicks));
+    const tick = snap((event.clientX - rect.left) / pxPerTick, gridTicks, event.altKey);
     onMoveCursor(tick);
   };
 

@@ -77,6 +77,11 @@ export function App() {
     project.tracks[0]?.clips[0]?.id ?? null,
   );
   const [gridTicks, setGridTicks] = useState(PPQ / 4);
+  /**
+   * 새로 찍는 음의 길이. **격자와 분리한다** — 16분 격자에 정확히 맞추면서
+   * 4분음표를 넣고 싶은 건 흔한 요구인데, 묶여 있으면 매번 늘려야 했다
+   */
+  const [noteLengthTicks, setNoteLengthTicks] = useState(PPQ / 4);
   const [view, setView] = useState<View>('editor');
   const [notice, setNotice] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement | null>(null);
@@ -469,6 +474,20 @@ export function App() {
             ))}
           </select>
 
+          {/* 음 길이 — **격자와 다른 축이다.** 16분 격자에 4분음표를 찍을 수 있어야 한다 */}
+          <label className="ml-2 text-xs text-neutral-500" htmlFor="notelen">음 길이</label>
+          <select
+            id="notelen"
+            value={noteLengthTicks}
+            onChange={(e) => setNoteLengthTicks(Number(e.target.value))}
+            className="rounded border border-neutral-700 bg-neutral-900 px-2 py-1 text-sm"
+            title="새로 찍는 음의 길이 (Alt 를 누르면 격자에 안 맞춥니다)"
+          >
+            {GRID_OPTIONS.map((option) => (
+              <option key={option.label} value={option.ticks}>{option.label}</option>
+            ))}
+          </select>
+
           {/* 조성 — 피아노롤 스케일 표시용. 렌더에는 영향이 없다 */}
           <label className="ml-2 text-xs text-neutral-500" htmlFor="key">조성</label>
           <select
@@ -619,6 +638,7 @@ export function App() {
                     fold={fold}
                     ghosts={ghosts}
                     gridTicks={gridTicks}
+            noteLengthTicks={noteLengthTicks}
                     playheadTick={engine.playheadTick}
                     cursorTick={cursorTick}
                     onMoveCursor={setCursorTick}
