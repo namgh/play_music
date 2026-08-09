@@ -172,10 +172,10 @@ pub fn compute_loop(freq_hz: f64, params: &StringParams, sample_rate: f64) -> Lo
 
 /// 결정론적 여진용 LCG. 오디오 스레드에서 OS 난수를 부를 수 없고,
 /// 테스트가 같은 결과를 재현할 수 있어야 한다
-struct Lcg(u32);
+pub struct Lcg(pub u32);
 
 impl Lcg {
-    fn next_bipolar(&mut self) -> f64 {
+    pub fn next_bipolar(&mut self) -> f64 {
         self.0 = self.0.wrapping_mul(1664525).wrapping_add(1013904223);
         (self.0 as f64 / 4294967296.0) * 2.0 - 1.0
     }

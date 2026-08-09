@@ -81,6 +81,11 @@ const STRING_EXPRESSION_SPECS: Record<string, ParamSpec> = {
     type: 'float', min: 0, max: 20, default: 0.3,
     unit: '¢', label: '편광 디튠', curve: 'linear', group: '진동체',
   },
+  playNoiseAmount: {
+    // 픽이 줄을 긁는 소리. 지금까지 0 이었고 "진짜 같음"의 지분이 크다
+    type: 'float', min: 0, max: 1, default: 0,
+    label: '연주 노이즈', curve: 'linear', group: '연주',
+  },
   polarizationDecayRatio: {
     // 세로 편광은 브리지에 더 잘 붙어 먼저 죽는다 → "빠른 초기 감쇠 + 느린 꼬리"
     type: 'float', min: 0.05, max: 1, default: 0.25,
@@ -157,6 +162,8 @@ const STRING_BASE: InstrumentDefinition = {
     polarizationMix: 0.55,
     polarizationDetuneCents: 1.8,
     polarizationDecayRatio: 0.3,
+    // 픽·손톱이 줄을 긁는 소리
+    playNoiseAmount: 0.35,
     // 좌우 퍼짐은 악기마다 다르므로 기준에서는 끈다.
     // **선언만 하고 값을 안 두면 해석된 파라미터에서 아예 빠진다** — 그러면
     // 튜닝 화면에 나오지 않고 "이 악기엔 없는 값"처럼 보인다

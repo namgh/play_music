@@ -308,6 +308,10 @@ fn read_velocity_brightness(velocity: f64) -> f64 {
     velocity_brightness(velocity, engine().param_in[36] as f64)
 }
 
+fn read_play_noise_amount() -> f64 {
+    (engine().param_in[40] as f64).clamp(0.0, 1.0)
+}
+
 fn read_variation_amount() -> f64 {
     (engine().param_in[42] as f64).clamp(0.0, 1.0)
 }
@@ -503,6 +507,9 @@ pub extern "C" fn note_on(freq_hz: f32, velocity: f32, gain: f32, variation_seed
     // 좌우 배치는 **발음 시점에 정한다.** 울리는 도중 바뀌면 음이 화면을 가로지른다
     e.pan_l[index] = pan_l;
     e.pan_r[index] = pan_r;
+
+    // 픽·프렛 노이즈. 음정이 없어야 하므로 보이스 밖에서 더한다 (`ROADMAP.md` S2-2)
+    engine().voices[index].trigger_play_noise(read_play_noise_amount(), velocity as f64);
 
     // 보이스 타입에 따라 라우팅한다. **여기가 유일한 분기점**이다 (`sound.md` 9-4)
     match read_voice_kind() {

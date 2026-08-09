@@ -56,6 +56,67 @@ pub fn effective_detune_cents(detune_cents: f64, freq_hz: f64) -> f64 {
     detune_cents * (DETUNE_REF_HZ / freq_hz).clamp(DETUNE_MIN_SCALE, 1.0)
 }
 
+/// 연주 노이즈의 감쇠 시간. 픽이 줄을 긁고 지나가는 시간에 해당한다
+const PLAY_NOISE_MS: f64 = 7.0;
+/// 연주 노이즈의 기본 크기. `play_noise_amount = 1` 일 때의 진폭
+const PLAY_NOISE_LEVEL: f64 = 0.18;
+
+/// 픽·프렛 노이즈 (`ROADMAP.md` S2-2).
+///
+/// 실제 연주에는 줄이 울리기 전에 **픽이 줄을 긁는 소리**가 있고, 손을 옮길 때
+/// 감긴 줄에서 프렛 소리가 난다. 지금까지 이게 0 이었고, "진짜 같음"에서 차지하는
+/// 지분이 생각보다 크다.
+///
+/// 줄 모델 **밖에** 둔다. 여진에 섞으면 딜레이 라인을 돌며 음정이 생겨 버리는데,
+/// 픽 소리는 음정이 없어야 한다.
+struct PlayNoise {
+    rng: crate::string_voice::Lcg,
+    env: f64,
+    decay: f64,
+    /// 고역만 남기는 일차 고역통과 상태. 저역이 남으면 픽이 아니라 퍽 소리가 된다
+    hp_state: f64,
+}
+
+impl PlayNoise {
+    fn new(sample_rate: f64, seed: u32) -> Self {
+        Self {
+            rng: crate::string_voice::Lcg(seed | 1),
+            env: 0.0,
+            decay: (-1.0 / (PLAY_NOISE_MS * 0.001 * sample_rate)).exp(),
+            hp_state: 0.0,
+        }
+    }
+
+    fn trigger(&mut self, amount: f64, velocity: f64) {
+        // 세게 뜯을수록 픽 소리도 커진다
+        self.env = amount.clamp(0.0, 1.0) * velocity.clamp(0.0, 1.0) * PLAY_NOISE_LEVEL;
+        self.hp_state = 0.0;
+    }
+
+    fn reset(&mut self) {
+        self.env = 0.0;
+        self.hp_state = 0.0;
+    }
+
+    fn is_active(&self) -> bool {
+        self.env > 1e-6
+    }
+
+    /// `out` 에 더한다
+    fn process(&mut self, out: &mut [f32]) {
+        if !self.is_active() {
+            return;
+        }
+        for sample in out.iter_mut() {
+            let x = self.rng.next_bipolar();
+            let y = x - self.hp_state;
+            self.hp_state = x;
+            *sample += (y * self.env) as f32;
+            self.env *= self.decay;
+        }
+    }
+}
+
 /// 페이드아웃이 끝났다고 보는 진폭 (-80dB). 여기서 보이스를 반환한다
 const FADE_END: f64 = 1e-4;
 
@@ -75,6 +136,8 @@ pub struct AnyVoice {
     string_b: StringVoice,
     /// 두 번째 편광을 섞는 양. 0 이면 아예 돌리지 않는다 (예전과 같은 소리·CPU)
     polarization_mix: f64,
+    /// 픽·프렛 노이즈 (`ROADMAP.md` S2-2)
+    play_noise: PlayNoise,
     modal: ModalVoice,
     synth: SynthVoice,
     sampler: SamplerVoice,
@@ -104,6 +167,7 @@ impl AnyVoice {
             // 음정은 그대로면서 "빠른 초기 감쇠 + 느린 꼬리"만 남는다
             string_b: StringVoice::new(sample_rate, seed),
             polarization_mix: 0.0,
+            play_noise: PlayNoise::new(sample_rate, seed ^ 0x1234_5678),
             modal: ModalVoice::new(sample_rate),
             synth: SynthVoice::new(sample_rate),
             sampler: SamplerVoice::new(sample_rate),
@@ -115,13 +179,20 @@ impl AnyVoice {
         }
     }
 
+    /// 픽·프렛 노이즈를 낸다. **발음 직후에 부른다** — 보이스 타입과 무관하다
+    pub fn trigger_play_noise(&mut self, amount: f64, velocity: f64) {
+        self.play_noise.trigger(amount, velocity);
+    }
+
     pub fn kind(&self) -> VoiceKind {
         self.kind
     }
 
     pub fn is_active(&self) -> bool {
         match self.kind {
-            VoiceKind::WaveguideString => self.string.is_active() || self.string_b.is_active(),
+            VoiceKind::WaveguideString => {
+                self.string.is_active() || self.string_b.is_active() || self.play_noise.is_active()
+            }
             VoiceKind::Modal => self.modal.is_active(),
             VoiceKind::VirtualAnalog => self.synth.is_active(),
             VoiceKind::Sampler => self.sampler.is_active(),
@@ -287,6 +358,7 @@ impl AnyVoice {
     pub fn reset(&mut self) {
         self.string.reset();
         self.string_b.reset();
+        self.play_noise.reset();
         self.modal.reset();
         self.synth.reset();
         self.sampler.reset();
@@ -313,6 +385,10 @@ impl AnyVoice {
             VoiceKind::Sampler => self.sampler.process(out, sample),
             VoiceKind::Percussion => self.drum.process(out),
         }
+
+        // 픽·프렛 노이즈는 보이스 타입과 무관하게 얹힌다. 페이드 **앞**에 두어야
+        // 보이스를 뺏길 때 노이즈도 같이 사라진다
+        self.play_noise.process(out);
 
         if self.fade_rate >= 1.0 {
             return;
@@ -373,6 +449,42 @@ mod polarization_tests {
             polarization_decay_ratio: 0.3,
             ..single()
         }
+    }
+
+    #[test]
+    fn play_noise_only_at_the_attack() {
+        // 픽 소리는 어택에만 있어야 한다. 계속 남으면 잡음이 낀 악기가 된다
+        let mut voice = AnyVoice::new(FS, 0xabcd);
+        voice.note_on_string(220.0, 1.0, &single(), &PitchCurve::default());
+        voice.trigger_play_noise(1.0, 1.0);
+        let mut out = vec![0.0f32; (FS * 0.2) as usize];
+        for chunk in out.chunks_mut(512) {
+            voice.process(chunk, &SampleData::empty());
+        }
+        let window = (FS * 0.005) as usize;
+        let early = rms(&out[..window]);
+        let later = rms(&out[(FS * 0.1) as usize..(FS * 0.1) as usize + window]);
+        assert!(early > later, "어택이 더 크지 않다");
+    }
+
+    #[test]
+    fn play_noise_is_off_by_default() {
+        // 켜지 않은 악기는 예전과 같은 소리여야 한다
+        let mut a = AnyVoice::new(FS, 0xabcd);
+        a.note_on_string(220.0, 1.0, &single(), &PitchCurve::default());
+        a.trigger_play_noise(0.0, 1.0);
+        let mut b = AnyVoice::new(FS, 0xabcd);
+        b.note_on_string(220.0, 1.0, &single(), &PitchCurve::default());
+
+        let mut x = vec![0.0f32; 4096];
+        let mut y = vec![0.0f32; 4096];
+        for c in x.chunks_mut(512) {
+            a.process(c, &SampleData::empty());
+        }
+        for c in y.chunks_mut(512) {
+            b.process(c, &SampleData::empty());
+        }
+        assert_eq!(x, y, "연주 노이즈를 껐는데 소리가 달라졌다");
     }
 
     #[test]
