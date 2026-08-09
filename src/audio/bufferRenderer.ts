@@ -120,6 +120,9 @@ export class BufferRenderer implements AudioRenderer {
     this.scheduler = new LookaheadScheduler({
       now: () => this.ctx.currentTime,
       scheduleNote: (event, atTime, durationSec) => this.emit(event, atTime, durationSec),
+      // 악기 정의를 아는 것은 렌더러다 — 스케줄러는 층이 달라 몰라야 한다
+      // (`plan.md` 5-2). 레가토는 앞 음을 알아야 하므로 스케줄러가 계산한다
+      legatoMsFor: (trackId) => Number(this.tracks.get(trackId)?.params.legatoMs) || 0,
       scheduleClick: (click, atTime) => {
         const osc = scheduleClick(this.ctx, this.ctx.destination, click, atTime);
         this.clickNodes.add(osc);

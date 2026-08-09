@@ -17,7 +17,7 @@ import type { Project, Track } from '../model/project.ts';
 import { ticksToSeconds } from '../model/time.ts';
 import { projectLengthTicks } from '../model/factory.ts';
 import { pitchToHz } from '../model/pitch.ts';
-import { collectNoteEvents } from './scheduler.ts';
+import { applyLegato, collectNoteEvents, legatoLookup } from './scheduler.ts';
 import type { InstrumentDefinition } from '../instruments/types.ts';
 import { instrumentParams, resolveInstrument } from '../instruments/resolve.ts';
 import {
@@ -56,7 +56,13 @@ export async function renderOfflineWithWorklet(
   master.output.connect(masterGain).connect(offline.destination);
 
   const subset: Project = { ...project, tracks };
-  const events = collectNoteEvents(subset, 0, projectLengthTicks(project));
+  const events = applyLegato(
+    collectNoteEvents(subset, 0, projectLengthTicks(project)),
+    legatoLookup(subset, (id) => Number(
+      instrumentParams(resolveInstrument(id, registry), null, null).legatoMs,
+    ) || 0),
+    project.tuning,
+  );
 
   const ready: Promise<void>[] = [];
 

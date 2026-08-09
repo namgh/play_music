@@ -18,6 +18,7 @@ pub mod percussion;
 pub mod sampler;
 pub mod smooth;
 pub mod string_voice;
+pub mod sympathetic;
 pub mod synth;
 pub mod voice;
 
@@ -27,6 +28,8 @@ use modal::{ModalMaterial, ModalParams};
 use percussion::{DrumKind, DrumParams};
 use sampler::{SampleData, SamplerParams};
 use string_voice::StringParams;
+use symp::SympatheticStrings;
+use sympathetic as symp;
 use synth::{SynthParams, Waveform};
 use voice::{AnyVoice, VoiceKind};
 
@@ -65,14 +68,14 @@ pub const MAX_BLOCK: usize = 2048;
 /// | 29 | 샘플러 |
 /// | 30~33 | 드럼 |
 /// | 34~36 | 연주 표현 (스테레오 · 픽업 · 벨로시티 밝기) |
-/// | 37~42 | 표현력 (2편광 3개 · 연주 노이즈 · 공명현 · 타건 변주) |
+/// | 37~43 | 표현력 (2편광 3개 · 연주 노이즈 · 공명현 2개 · 타건 변주) |
 ///
 /// **층을 분리한다** (`sound.md` 5절·8절): "줄 길이"와 "왜곡"은 서로 다른 층이다.
 ///
 /// 34~36 은 `ROADMAP.md` S1, 37~41 은 S2 에서 **각각 한 번에** 추가했다.
 /// 슬롯을 늘리면 Rust·TS·워크렛 세 곳을 같이 고쳐야 하므로 나눠서 늘리지 않는다
 /// (로드맵 원칙 1).
-pub const PARAM_COUNT: usize = 43;
+pub const PARAM_COUNT: usize = 44;
 
 /// 벨로시티 밝기의 기준점. 이 세기로 쳤을 때 악기 정의의 값이 그대로 쓰인다.
 /// 0.7 은 mf(보통 세기)에 해당한다 — 위면 밝아지고 아래면 어두워진다.
@@ -124,6 +127,10 @@ struct Engine {
     amp: AmpChain,
     amp_r: AmpChain,
     amp_enabled: bool,
+    /// 공명현 (`ROADMAP.md` S2-5). 앰프와 같은 층 — 보이스 합에 걸린다.
+    /// 좌우를 따로 두는 이유도 앰프와 같다 (스테레오 배치를 지우지 않기 위해)
+    sympathetic: SympatheticStrings,
+    sympathetic_r: SympatheticStrings,
     /// 샘플러 보이스가 쓰는 데이터. JS 가 load_sample 로 채운다
     sample: SampleData,
     /// JS 가 샘플을 써 넣는 곳
@@ -173,6 +180,8 @@ pub extern "C" fn init(sample_rate: f32) {
         amp: AmpChain::new(sr),
         amp_r: AmpChain::new(sr),
         amp_enabled: false,
+        sympathetic: SympatheticStrings::new(sr),
+        sympathetic_r: SympatheticStrings::new(sr),
         voices: (0..MAX_VOICES)
             .map(|i| AnyVoice::new(sr, 0x2f6e2b1u32.wrapping_add(i as u32 * 2654435761)))
             .collect(),
@@ -306,6 +315,11 @@ fn read_stereo_width() -> f64 {
 
 fn read_velocity_brightness(velocity: f64) -> f64 {
     velocity_brightness(velocity, engine().param_in[36] as f64)
+}
+
+fn read_sympathetic() -> (f64, f64) {
+    let p = &engine().param_in;
+    (p[41] as f64, p[43] as f64)
 }
 
 fn read_play_noise_amount() -> f64 {
@@ -553,6 +567,12 @@ pub extern "C" fn note_on(freq_hz: f32, velocity: f32, gain: f32, variation_seed
         e.amp.set_params(&amp_params, freq_hz as f64);
         e.amp_r.set_params(&amp_params, freq_hz as f64);
     }
+
+    let (symp_amount, symp_base) = read_sympathetic();
+    let e = engine();
+    e.sympathetic.set(symp_amount, symp_base);
+    e.sympathetic_r.set(symp_amount, symp_base);
+
     index as u32
 }
 
@@ -616,6 +636,8 @@ pub extern "C" fn all_off() {
     }
     e.amp.reset();
     e.amp_r.reset();
+    e.sympathetic.reset();
+    e.sympathetic_r.reset();
 }
 
 /// 한 블록 렌더. `output_buffer()` 에 결과가 들어간다.
@@ -657,6 +679,17 @@ pub extern "C" fn process(frames: u32) -> u32 {
             *dst += *src * gain_r;
         }
         e.scratch = scratch;
+    }
+
+    // 공명현은 **앰프 앞**이다. 실제 악기에서도 줄이 먼저 울고 그 소리가 픽업에
+    // 잡힌다 — 뒤에 두면 앰프 왜곡이 공명까지 밀어붙여 지저분해진다
+    if e.sympathetic.is_enabled() {
+        let mut out = core::mem::take(&mut e.out);
+        e.sympathetic.process(&mut out[..n]);
+        e.out = out;
+        let mut out_r = core::mem::take(&mut e.out_r);
+        e.sympathetic_r.process(&mut out_r[..n]);
+        e.out_r = out_r;
     }
 
     // 앰프 체인은 보이스 합에 걸린다 (`sound.md` 5절의 신호 체인 순서).

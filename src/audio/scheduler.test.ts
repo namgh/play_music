@@ -11,7 +11,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { collectBeatEvents, collectNoteEvents, LookaheadScheduler } from './scheduler.ts';
+import { DEFAULT_TUNING } from '../model/pitch.ts';
+import { applyLegato, collectBeatEvents, collectNoteEvents, LookaheadScheduler } from './scheduler.ts';
 import type { ScheduledClick, ScheduledNote, SchedulerHost } from './scheduler.ts';
 import { createClip, createEmptyProject, createNote, createTrack } from '../model/factory.ts';
 import { PPQ } from '../model/time.ts';
@@ -315,4 +316,85 @@ test('메트로놈도 루프에서 중복되지 않는다', () => {
   assert.equal(host.clicks.length, 6, `클릭 ${host.clicks.length}개 (2박 × 3회차 = 6)`);
   const times = host.clicks.map((c) => Number(c.atTime.toFixed(6)));
   assert.deepEqual(times, [0, 0.5, 1, 1.5, 2, 2.5]);
+});
+
+// --- 레가토 (ROADMAP.md S2-3) ----------------------------------------------
+
+function legatoProject(gapTicks: number, midis: number[]): Project {
+  const project = createEmptyProject('레가토');
+  project.tempo.bpm = 120;
+  project.lengthBars = 4;
+  const track = createTrack({ name: '기타', instrumentId: 'acoustic-guitar' });
+  const clip = createClip({ startTick: 0, lengthTick: 8 * PPQ });
+  let at = 0;
+  for (const midi of midis) {
+    clip.notes.push(createNote({ startTick: at, lengthTick: PPQ / 2, midi }));
+    at += PPQ / 2 + gapTicks;
+  }
+  track.clips.push(clip);
+  project.tracks.push(track);
+  return project;
+}
+
+const legatoAlways = () => 90;
+
+test('이어 친 음은 앞 음정에서 미끄러져 들어온다', () => {
+  const project = legatoProject(0, [60, 64]);
+  const events = applyLegato(
+    collectNoteEvents(project, 0, 8 * PPQ), legatoAlways, DEFAULT_TUNING,
+  );
+  assert.equal(events[0]!.pitchCurve, null, '첫 음에는 이어올 것이 없다');
+
+  const glide = events[1]!.pitchCurve!.glide!;
+  // 60 → 64 이므로 4반음 아래에서 올라온다
+  assert.ok(Math.abs(glide.cents - -400) < 1, `글라이드가 ${glide.cents.toFixed(1)} 센트`);
+  assert.equal(glide.ms, 90);
+});
+
+test('멀리 떨어진 음은 잇지 않는다', () => {
+  // 쉬었다 치는 것은 새로 뜯는 것이다
+  const project = legatoProject(PPQ, [60, 64]);
+  const events = applyLegato(
+    collectNoteEvents(project, 0, 8 * PPQ), legatoAlways, DEFAULT_TUNING,
+  );
+  assert.equal(events[1]!.pitchCurve, null);
+});
+
+test('같은 음을 다시 치면 잇지 않는다', () => {
+  const project = legatoProject(0, [60, 60]);
+  const events = applyLegato(
+    collectNoteEvents(project, 0, 8 * PPQ), legatoAlways, DEFAULT_TUNING,
+  );
+  assert.equal(events[1]!.pitchCurve, null, '이을 것이 없는데 글라이드를 걸었다');
+});
+
+test('사용자가 그린 곡선을 덮지 않는다', () => {
+  // 자동 레가토가 사용자 곡선을 덮으면 화면과 소리가 달라진다
+  const project = legatoProject(0, [60, 64]);
+  const note = project.tracks[0]!.clips[0]!.notes[1]!;
+  note.pitchCurve = { glide: { cents: 25, ms: 10 }, vibrato: null, points: null };
+
+  const events = applyLegato(
+    collectNoteEvents(project, 0, 8 * PPQ), legatoAlways, DEFAULT_TUNING,
+  );
+  assert.equal(events[1]!.pitchCurve!.glide!.cents, 25, '사용자 곡선이 덮였다');
+});
+
+test('레가토가 0이면 아무것도 바뀌지 않는다', () => {
+  const project = legatoProject(0, [60, 64, 67]);
+  const raw = collectNoteEvents(project, 0, 8 * PPQ);
+  const events = applyLegato(raw, () => 0, DEFAULT_TUNING);
+  assert.deepEqual(events, raw);
+});
+
+test('비브라토는 남기고 글라이드만 얹는다', () => {
+  const project = legatoProject(0, [60, 64]);
+  const note = project.tracks[0]!.clips[0]!.notes[1]!;
+  note.pitchCurve = { glide: null, vibrato: { cents: 20, hz: 5, delayMs: 100 }, points: null };
+
+  const events = applyLegato(
+    collectNoteEvents(project, 0, 8 * PPQ), legatoAlways, DEFAULT_TUNING,
+  );
+  assert.ok(events[1]!.pitchCurve!.glide, '글라이드가 안 얹혔다');
+  assert.equal(events[1]!.pitchCurve!.vibrato!.cents, 20, '비브라토가 사라졌다');
 });

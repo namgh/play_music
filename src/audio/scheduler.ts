@@ -14,7 +14,9 @@ import type {
 } from '../model/project.ts';
 import { audibleTracks } from '../model/project.ts';
 import type { Ticks } from '../model/time.ts';
-import { secondsToTicks, ticksPerBar, ticksPerBeat, ticksToSeconds } from '../model/time.ts';
+import { PPQ, secondsToTicks, ticksPerBar, ticksPerBeat, ticksToSeconds } from '../model/time.ts';
+import type { Tuning } from '../model/pitch.ts';
+import { pitchToHz } from '../model/pitch.ts';
 
 /** 스케줄러가 렌더러에게 넘기는 발음 요청 */
 export interface ScheduledNote {
@@ -70,6 +72,84 @@ export function collectNoteEvents(project: Project, fromTick: Ticks, toTick: Tic
 }
 
 /**
+ * 트랙별 레가토 시간을 만드는 헬퍼. 렌더러 세 곳이 같은 값을 써야 한다 —
+ * 갈라지면 "들은 것과 파일이 다르다"가 된다
+ */
+export function legatoLookup(
+  project: Project,
+  legatoMsOf: (instrumentId: string) => number,
+): (trackId: TrackId) => number {
+  const byTrack = new Map<TrackId, number>();
+  for (const track of project.tracks) byTrack.set(track.id, legatoMsOf(track.instrumentId));
+  return (trackId) => byTrack.get(trackId) ?? 0;
+}
+
+/** 레가토로 이어졌다고 보는 최대 간격 (틱). 32분음표쯤 */
+const LEGATO_GAP_TICKS = PPQ / 8;
+
+/**
+ * 레가토 — 이어지는 음의 **시작 음정을 앞 음에서 끌어온다** (`ROADMAP.md` S2-3).
+ *
+ * 지금까지 모든 음이 완전히 독립 발음이었다. 실제 연주는 이어 치면 줄을 다시 뜯지
+ * 않고 손가락만 옮긴다(해머온·풀오프). 그래서 음이 새로 시작하지 않고 **앞 음에서
+ * 미끄러져 들어온다.** `sound.md` 가 "자연스러움의 실제 레버" **2순위**로 꼽은 항목이
+ * 통째로 비어 있었다.
+ *
+ * **엔진을 확장하지 않는다.** 검증된 글라이드 경로(`curve.rs`)를 그대로 쓴다 —
+ * 앞 음과의 음정 차이를 시작 오프셋으로 넣으면 그게 곧 레가토다. 새 DSP 를 만들면
+ * 음정 정확도를 다시 증명해야 하는데, 이 방법은 그럴 필요가 없다.
+ *
+ * 순수 함수라 브라우저 없이 테스트된다.
+ *
+ * @param legatoMsFor 트랙별 레가토 시간. 0 이면 그 트랙은 건드리지 않는다
+ */
+export function applyLegato(
+  events: readonly ScheduledNote[],
+  legatoMsFor: (trackId: TrackId) => number,
+  tuning: Tuning,
+  /**
+   * 트랙별 직전 음. **재생 경로가 넘긴다** — 룩어헤드 스케줄러는 구간을 쪼개
+   * 예약하므로 앞 음이 이전 구간에 있을 수 있고, 매번 새 표를 만들면 구간 경계에서
+   * 레가토가 끊긴다. 넘기지 않으면 이 호출 안에서만 유효한 표를 쓴다
+   */
+  previous: Map<TrackId, ScheduledNote> = new Map(),
+): ScheduledNote[] {
+
+  return events.map((event) => {
+    const legatoMs = legatoMsFor(event.trackId);
+    const last = previous.get(event.trackId);
+    previous.set(event.trackId, event);
+
+    if (legatoMs <= 0 || !last) return event;
+
+    // 앞 음이 끝나기 전이거나 바로 뒤여야 이어 친 것이다
+    const gap = event.startTick - (last.startTick + last.lengthTick);
+    if (gap > LEGATO_GAP_TICKS) return event;
+    // 같은 음이면 이을 것이 없다
+    if (last.note.pitch.midi === event.note.pitch.midi
+      && last.note.pitch.cents === event.note.pitch.cents) return event;
+
+    // **사용자가 그린 곡선이 우선이다.** 자동 레가토가 그것을 덮으면 화면의 곡선과
+    // 들리는 음정이 달라진다 — 이 제품에서 가장 하면 안 되는 일이다
+    if (event.pitchCurve?.glide || event.pitchCurve?.points?.length) return event;
+
+    const fromHz = pitchToHz(last.note.pitch, tuning);
+    const toHz = pitchToHz(event.note.pitch, tuning);
+    if (!(fromHz > 0) || !(toHz > 0)) return event;
+    const cents = 1200 * Math.log2(fromHz / toHz);
+
+    return {
+      ...event,
+      pitchCurve: {
+        glide: { cents, ms: legatoMs },
+        vibrato: event.pitchCurve?.vibrato ?? null,
+        points: null,
+      },
+    };
+  });
+}
+
+/**
  * 메트로놈 한 번. 강세는 마디 첫 박이다.
  * 소리는 렌더러가 만든다 — 스케줄러는 "언제 울릴지"만 정한다
  */
@@ -90,6 +170,12 @@ export interface SchedulerHost {
   scheduleNote(event: ScheduledNote, atTime: number, durationSec: number): void;
   /** 메트로놈. 없으면 스케줄러가 비트를 계산하지 않는다 */
   scheduleClick?(click: ScheduledClick, atTime: number): void;
+  /**
+   * 트랙별 레가토 시간 (`ROADMAP.md` S2-3). 없으면 레가토를 걸지 않는다.
+   *
+   * 스케줄러가 악기 정의를 몰라야 하므로(`plan.md` 5-2 의 층 분리) 호스트가 준다
+   */
+  legatoMsFor?(trackId: TrackId): number;
 }
 
 export interface SchedulerOptions {
@@ -147,6 +233,8 @@ export class LookaheadScheduler {
   private startTick: Ticks = 0;
   /** 여기까지 예약을 마쳤다 (**원시 틱**, 미포함 상한) */
   private scheduledUpToRaw: Ticks = 0;
+  /** 트랙별 직전 음. 구간을 넘어서도 레가토가 이어지려면 상태가 필요하다 */
+  private readonly legatoPrevious = new Map<TrackId, ScheduledNote>();
   private running = false;
   private metronome = false;
 
@@ -162,6 +250,9 @@ export class LookaheadScheduler {
     this.startTime = this.host.now();
     this.startTick = fromTick;
     this.scheduledUpToRaw = fromTick;
+    // 되감으면 "직전 음"도 없던 것이 된다. 안 지우면 재생을 다시 시작한 첫 음이
+    // 멈추기 전 마지막 음에서 미끄러져 들어온다
+    this.legatoPrevious.clear();
     this.running = true;
     this.pump();
   }
@@ -239,7 +330,13 @@ export class LookaheadScheduler {
       const toSong = fromSong + (toRaw - fromRaw);
       const offset = fromRaw - fromSong;
 
-      for (const event of collectNoteEvents(this.project, fromSong, toSong)) {
+      const collected = collectNoteEvents(this.project, fromSong, toSong);
+      const legatoMsFor = this.host.legatoMsFor?.bind(this.host);
+      const events = legatoMsFor
+        ? applyLegato(collected, legatoMsFor, this.project.tuning, this.legatoPrevious)
+        : collected;
+
+      for (const event of events) {
         const atTime = this.startTime
           + this.ticksToSeconds(event.startTick + offset - this.startTick);
         this.host.scheduleNote(event, atTime, this.ticksToSeconds(event.lengthTick));

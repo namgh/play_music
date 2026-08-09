@@ -81,6 +81,23 @@ const STRING_EXPRESSION_SPECS: Record<string, ParamSpec> = {
     type: 'float', min: 0, max: 20, default: 0.3,
     unit: '¢', label: '편광 디튠', curve: 'linear', group: '진동체',
   },
+  sympatheticAmount: {
+    // 누르지 않은 줄이 같이 운다. "몸통이 있는 악기"라는 인상의 큰 부분이다
+    type: 'float', min: 0, max: 1, default: 0,
+    label: '공명현', curve: 'linear', group: '진동체',
+  },
+  sympatheticBaseHz: {
+    // 가장 낮은 공명현의 음정. 기본값은 기타 6번줄 E2
+    type: 'float', min: 20, max: 500, default: 82.41,
+    unit: 'Hz', label: '공명현 기준음', curve: 'log', group: '진동체',
+  },
+  legatoMs: {
+    // 이어 친 음이 앞 음정에서 미끄러져 들어오는 시간. 0 이면 안 잇는다.
+    // **wasm 파라미터가 아니다** — 스케줄러가 앞 음을 알아야 계산할 수 있고,
+    // 그건 엔진이 볼 수 없는 정보다 (`ROADMAP.md` S2-3)
+    type: 'float', min: 0, max: 300, default: 0,
+    unit: 'ms', label: '레가토', curve: 'linear', group: '연주',
+  },
   playNoiseAmount: {
     // 픽이 줄을 긁는 소리. 지금까지 0 이었고 "진짜 같음"의 지분이 크다
     type: 'float', min: 0, max: 1, default: 0,
@@ -164,6 +181,16 @@ const STRING_BASE: InstrumentDefinition = {
     polarizationDecayRatio: 0.3,
     // 픽·손톱이 줄을 긁는 소리
     playNoiseAmount: 0.35,
+    // 이어 치면 손가락만 옮긴다 (해머온·풀오프). 실측 60~110ms
+    legatoMs: 80,
+    // 공명현은 **구조만 넣고 기본값은 0 이다** (`ROADMAP.md` S2-5).
+    //
+    // 켜면 노트오프 뒤에도 울림이 남는다 — 실제 악기가 그렇고 물리적으로 맞지만,
+    // 지금 노트오프 계약은 "꼬리가 조용하다"를 요구하고 음정 회귀 테스트는 단일
+    // 기본음을 잰다. 둘 다 공명현이 더한 다른 음정과 부딪힌다.
+    // 얼마나 울릴지는 **귀로 정할 값**이라 S4 로 넘긴다 (로드맵 원칙 2).
+    sympatheticAmount: 0,
+    sympatheticBaseHz: 82.41,
     // 좌우 퍼짐은 악기마다 다르므로 기준에서는 끈다.
     // **선언만 하고 값을 안 두면 해석된 파라미터에서 아예 빠진다** — 그러면
     // 튜닝 화면에 나오지 않고 "이 악기엔 없는 값"처럼 보인다
@@ -286,6 +313,8 @@ const ELECTRIC_BASS: InstrumentDefinition = {
   extends: 'amped-string',
   params: {
     scaleLengthMm: 864, stiffness: 0.02, damping: 0.06, sustainSec: 4,
+    // 베이스 4번줄 E1
+    sympatheticBaseHz: 41.2,
     // 베이스는 캐비닛 성격이 달라 기본을 클린 쪽으로 둔다
     ampCharacter: 0, ampDrive: 0.2, ampToneLow: 0.65,
   },
@@ -298,7 +327,11 @@ const UKULELE: InstrumentDefinition = {
   name: '우쿨렐레 (소프라노)',
   category: '줄',
   extends: 'acoustic-guitar',
-  params: { scaleLengthMm: 347, stiffness: 0.016, damping: 0.07, sustainSec: 1.6 },
+  params: {
+    scaleLengthMm: 347, stiffness: 0.016, damping: 0.07, sustainSec: 1.6,
+    // 우쿨렐레는 G4 부터 시작하는 재진입 조율이다
+    sympatheticBaseHz: 392.0,
+  },
   range: { low: 60, high: 93 }, // C4 ~ A6
 };
 
