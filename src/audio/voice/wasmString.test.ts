@@ -188,9 +188,18 @@ test('Rust 코어에 DC 가 남지 않는다', async () => {
 
 test('TS 구현과 Rust 구현의 음정이 일치한다', async () => {
   // 포팅 검증. 파형이 비트 단위로 같을 필요는 없다 (여진 난수원이 다르다).
-  // 음정이 어긋나면 포팅에서 무언가를 빠뜨린 것이다
+  // 음정이 어긋나면 포팅에서 무언가를 빠뜨린 것이다.
+  //
+  // **줄 모델만 비교한다.** TS 구현은 워크렛을 못 쓰는 환경의 폴백이라 줄만 있고
+  // 몸통·2편광·연주 노이즈가 없다. 그것들을 켠 채로 비교하면 "포팅이 틀렸다"가
+  // 아니라 "층이 다르다"를 재게 된다
   const wasm = await engine();
-  const params = instrumentParams(resolveInstrument('acoustic-guitar', registry), 'default', null);
+  const params = {
+    ...instrumentParams(resolveInstrument('acoustic-guitar', registry), 'default', null),
+    bodyAmount: 0,
+    polarizationMix: 0,
+    playNoiseAmount: 0,
+  };
 
   for (const midi of [40, 57, 76, 88]) {
     const hz = midiToHz(midi);

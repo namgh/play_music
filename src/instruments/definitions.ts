@@ -81,6 +81,17 @@ const STRING_EXPRESSION_SPECS: Record<string, ParamSpec> = {
     type: 'float', min: 0, max: 20, default: 0.3,
     unit: '¢', label: '편광 디튠', curve: 'linear', group: '진동체',
   },
+  bodyAmount: {
+    // 어쿠스틱 몸통. 0 이면 줄 소리만 난다 — 지금까지가 그 상태였다.
+    // IR 이 확보되면 이 층을 컨볼루션으로 교체한다 (`ROADMAP.md` S3)
+    type: 'float', min: 0, max: 1, default: 0,
+    label: '몸통 울림', curve: 'linear', group: '진동체',
+  },
+  bodyHelmholtzHz: {
+    // 통 안 공기의 공명. **이 값 하나가 몸통 크기다** — 작을수록 높다
+    type: 'float', min: 40, max: 600, default: 100,
+    unit: 'Hz', label: '몸통 크기', curve: 'log', group: '진동체',
+  },
   sympatheticAmount: {
     // 누르지 않은 줄이 같이 운다. "몸통이 있는 악기"라는 인상의 큰 부분이다
     type: 'float', min: 0, max: 1, default: 0,
@@ -218,6 +229,10 @@ const ACOUSTIC_GUITAR: InstrumentDefinition = {
     scaleLengthMm: 650, stiffness: 0.01, damping: 0.045, sustainSec: 4,
     // 어쿠스틱은 몸통이 공기를 울려 소리가 한 점에서 나오지 않는다
     stereoWidth: 0.2,
+    // **몸통을 켠다.** 지금까지 줄만 울려서 "기타 소리"가 아니라 "줄 소리"였다.
+    // 드레드노트의 헬름홀츠 공명이 대략 100Hz 다
+    bodyAmount: 0.55,
+    bodyHelmholtzHz: 100,
   },
   range: { low: 40, high: 88 }, // E2 ~ E6
 };
@@ -331,6 +346,8 @@ const UKULELE: InstrumentDefinition = {
     scaleLengthMm: 347, stiffness: 0.016, damping: 0.07, sustainSec: 1.6,
     // 우쿨렐레는 G4 부터 시작하는 재진입 조율이다
     sympatheticBaseHz: 392.0,
+    // 통이 작아 공진이 훨씬 위에 있다 — 이게 우쿨렐레 특유의 "통통" 소리다
+    bodyAmount: 0.5, bodyHelmholtzHz: 260,
   },
   range: { low: 60, high: 93 }, // C4 ~ A6
 };
@@ -341,7 +358,10 @@ const MANDOLIN: InstrumentDefinition = {
   name: '만돌린',
   category: '줄',
   extends: 'acoustic-guitar',
-  params: { scaleLengthMm: 350, stiffness: 0.022, damping: 0.06, sustainSec: 1.2, pluckHardness: 0.75 },
+  params: {
+    scaleLengthMm: 350, stiffness: 0.022, damping: 0.06, sustainSec: 1.2, pluckHardness: 0.75,
+    bodyAmount: 0.45, bodyHelmholtzHz: 230,
+  },
   range: { low: 55, high: 91 },
 };
 
@@ -357,6 +377,8 @@ const HARP: InstrumentDefinition = {
     letRing: 1,
     // 줄이 47개나 늘어서 있어 낮은 음과 높은 음의 위치가 실제로 멀다
     stereoWidth: 0.45,
+    // 하프는 통이 아니라 큰 사운드보드라 공진이 낮고 넓다
+    bodyAmount: 0.35, bodyHelmholtzHz: 75,
   },
   range: { low: 24, high: 96 },
 };

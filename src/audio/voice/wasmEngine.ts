@@ -74,6 +74,8 @@ export const WASM_PARAM_ORDER = [
   'sympatheticAmount',
   'variationAmount',
   'sympatheticBaseHz',
+  'bodyAmount',
+  'bodyHelmholtzHz',
 ] as const;
 
 /**
@@ -169,7 +171,7 @@ export function noteOffFields(
 const MAX_BLOCK = 2048;
 
 /** Rust 쪽 PARAM_COUNT 와 같아야 한다 */
-export const WASM_PARAM_COUNT = 44;
+export const WASM_PARAM_COUNT = 46;
 
 interface WasmExports {
   memory: WebAssembly.Memory;

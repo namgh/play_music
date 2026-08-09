@@ -8,6 +8,7 @@
 //! 들고 있는다. 할당자를 오디오 경로에 두면 지연이 튄다.
 
 pub mod amp;
+pub mod body;
 pub mod curve;
 pub mod denormal;
 pub mod filters;
@@ -23,6 +24,7 @@ pub mod synth;
 pub mod voice;
 
 use amp::{AmpChain, AmpCharacter, AmpParams};
+use body::BodyResonance;
 use curve::{CurvePoint, PitchCurve, MAX_CURVE_POINTS};
 use modal::{ModalMaterial, ModalParams};
 use percussion::{DrumKind, DrumParams};
@@ -68,14 +70,14 @@ pub const MAX_BLOCK: usize = 2048;
 /// | 29 | 샘플러 |
 /// | 30~33 | 드럼 |
 /// | 34~36 | 연주 표현 (스테레오 · 픽업 · 벨로시티 밝기) |
-/// | 37~43 | 표현력 (2편광 3개 · 연주 노이즈 · 공명현 2개 · 타건 변주) |
+/// | 37~45 | 표현력 (2편광 3개 · 연주 노이즈 · 공명현 2개 · 타건 변주 · 바디 2개) |
 ///
 /// **층을 분리한다** (`sound.md` 5절·8절): "줄 길이"와 "왜곡"은 서로 다른 층이다.
 ///
 /// 34~36 은 `ROADMAP.md` S1, 37~41 은 S2 에서 **각각 한 번에** 추가했다.
 /// 슬롯을 늘리면 Rust·TS·워크렛 세 곳을 같이 고쳐야 하므로 나눠서 늘리지 않는다
 /// (로드맵 원칙 1).
-pub const PARAM_COUNT: usize = 44;
+pub const PARAM_COUNT: usize = 46;
 
 /// 벨로시티 밝기의 기준점. 이 세기로 쳤을 때 악기 정의의 값이 그대로 쓰인다.
 /// 0.7 은 mf(보통 세기)에 해당한다 — 위면 밝아지고 아래면 어두워진다.
@@ -131,6 +133,9 @@ struct Engine {
     /// 좌우를 따로 두는 이유도 앰프와 같다 (스테레오 배치를 지우지 않기 위해)
     sympathetic: SympatheticStrings,
     sympathetic_r: SympatheticStrings,
+    /// 어쿠스틱 몸통. IR 이 확보되면 이 층을 컨볼루션으로 **교체**한다
+    body: BodyResonance,
+    body_r: BodyResonance,
     /// 샘플러 보이스가 쓰는 데이터. JS 가 load_sample 로 채운다
     sample: SampleData,
     /// JS 가 샘플을 써 넣는 곳
@@ -182,6 +187,8 @@ pub extern "C" fn init(sample_rate: f32) {
         amp_enabled: false,
         sympathetic: SympatheticStrings::new(sr),
         sympathetic_r: SympatheticStrings::new(sr),
+        body: BodyResonance::new(sr),
+        body_r: BodyResonance::new(sr),
         voices: (0..MAX_VOICES)
             .map(|i| AnyVoice::new(sr, 0x2f6e2b1u32.wrapping_add(i as u32 * 2654435761)))
             .collect(),
@@ -315,6 +322,11 @@ fn read_stereo_width() -> f64 {
 
 fn read_velocity_brightness(velocity: f64) -> f64 {
     velocity_brightness(velocity, engine().param_in[36] as f64)
+}
+
+fn read_body() -> (f64, f64) {
+    let p = &engine().param_in;
+    (p[44] as f64, p[45] as f64)
 }
 
 fn read_sympathetic() -> (f64, f64) {
@@ -569,9 +581,12 @@ pub extern "C" fn note_on(freq_hz: f32, velocity: f32, gain: f32, variation_seed
     }
 
     let (symp_amount, symp_base) = read_sympathetic();
+    let (body_amount, body_hz) = read_body();
     let e = engine();
     e.sympathetic.set(symp_amount, symp_base);
     e.sympathetic_r.set(symp_amount, symp_base);
+    e.body.set(body_amount, body_hz);
+    e.body_r.set(body_amount, body_hz);
 
     index as u32
 }
@@ -638,6 +653,8 @@ pub extern "C" fn all_off() {
     e.amp_r.reset();
     e.sympathetic.reset();
     e.sympathetic_r.reset();
+    e.body.reset();
+    e.body_r.reset();
 }
 
 /// 한 블록 렌더. `output_buffer()` 에 결과가 들어간다.
@@ -689,6 +706,16 @@ pub extern "C" fn process(frames: u32) -> u32 {
         e.out = out;
         let mut out_r = core::mem::take(&mut e.out_r);
         e.sympathetic_r.process(&mut out_r[..n]);
+        e.out_r = out_r;
+    }
+
+    // 몸통은 공명현 **뒤, 앰프 앞**이다. 실제 신호 경로가 줄 → 몸통 → (픽업) 이다
+    if e.body.is_enabled() {
+        let mut out = core::mem::take(&mut e.out);
+        e.body.process(&mut out[..n]);
+        e.out = out;
+        let mut out_r = core::mem::take(&mut e.out_r);
+        e.body_r.process(&mut out_r[..n]);
         e.out_r = out_r;
     }
 
