@@ -2,11 +2,21 @@ import type { TrackId } from '../model/project.ts';
 import { addClip, addTrack, deleteTrack, updateTrack } from '../editor/edits.ts';
 import { ticksPerBar } from '../model/time.ts';
 import type { ProjectEditor } from '../editor/useProjectEditor.ts';
-import { createRegistry, playableInstrumentIds } from '../instruments/definitions.ts';
+import {
+  createRegistry, instrumentsByCategory, playableInstrumentIds,
+} from '../instruments/definitions.ts';
 import { resolveInstrument } from '../instruments/resolve.ts';
 
 const registry = createRegistry();
 const INSTRUMENT_IDS = playableInstrumentIds();
+/**
+ * 분류별로 묶은 목록. 평면으로 20개를 늘어놓으면 "기타 중에 뭐가 있나"를 볼 수 없다 —
+ * 기타 셋이 하프와 킥 사이에 흩어진다.
+ *
+ * `<optgroup>` 은 네이티브라 키보드·스크린리더가 그대로 동작한다. 직접 만든 드롭다운은
+ * 그걸 전부 다시 구현해야 하고, 여기서 이길 것이 없다.
+ */
+const INSTRUMENT_GROUPS = instrumentsByCategory();
 const instrumentName = (id: string) => resolveInstrument(id, registry).name;
 
 // 켜짐/꺼짐 스타일을 문자열 하나에 섞지 않는다. 색 배경일 때는 어두운 같은 계열 글자,
@@ -85,8 +95,12 @@ export function TrackList({ editor, selectedTrackId, onSelectTrack }: TrackListP
                 }}
                 className="min-w-0 flex-1 rounded border border-neutral-700 bg-neutral-900 px-2 py-1 text-sm"
               >
-                {INSTRUMENT_IDS.map((id) => (
-                  <option key={id} value={id}>{instrumentName(id)}</option>
+                {INSTRUMENT_GROUPS.map((group) => (
+                  <optgroup key={group.category} label={group.category}>
+                    {group.instruments.map((instrument) => (
+                      <option key={instrument.id} value={instrument.id}>{instrument.name}</option>
+                    ))}
+                  </optgroup>
                 ))}
               </select>
 

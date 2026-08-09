@@ -66,6 +66,12 @@ export interface AudioRenderer {
   /** 편집 중 즉시 들려주기 (피아노롤에서 음을 찍었을 때) */
   auditionNote(trackId: TrackId, note: Note): void;
 
+  /**
+   * 메트로놈. **프로젝트에 저장하지 않는다** — 곡의 일부가 아니라 듣는 사람의
+   * 취향이고, 내보내기에는 절대 섞이면 안 된다 (`exportAudio` 는 이걸 보지 않는다).
+   */
+  setMetronome(on: boolean): void;
+
   capabilitiesOf(instrumentId: string): InstrumentCapabilities;
 
   /**

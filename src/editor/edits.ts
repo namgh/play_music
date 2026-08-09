@@ -8,8 +8,10 @@
  *  - 순수 함수라 브라우저 없이 테스트된다
  */
 
-import type { Clip, ClipId, Note, NoteId, Project, Track, TrackId } from '../model/project.ts';
-import { createClip, createNote, createTrack } from '../model/factory.ts';
+import type {
+  Clip, ClipId, LoopRegion, MusicalKey, Note, NoteId, Project, Track, TrackId,
+} from '../model/project.ts';
+import { createClip, createNote, createTrack, newNoteId } from '../model/factory.ts';
 import type { Pitch } from '../model/pitch.ts';
 import { detune, normalizePitch, transpose } from '../model/pitch.ts';
 import type { Ticks } from '../model/time.ts';
@@ -168,6 +170,99 @@ export function setPitchCurve(project: Project, ids: readonly NoteId[], curve: N
   return mapNotes(project, ids, (note) => ({ ...note, pitchCurve: curve }));
 }
 
+// --- 복사 · 붙여넣기 · 복제 ---------------------------------------------------
+//
+// 작곡의 대부분은 반복과 변형이다. 4마디를 만들어 복사해서 조금 바꾸는 게 기본
+// 흐름이고, 이게 없으면 3분짜리 곡을 전부 손으로 그려야 한다.
+//
+// OS 클립보드를 쓰지 않는다 — 권한·비동기·형식 협상이 붙고, 그 대가로 얻는 것은
+// 탭 사이 붙여넣기뿐이다. 앱 안 클립보드로 시작하고 필요하면 나중에 확장한다.
+
+/**
+ * 복사할 음들을 떼어 낸다. `startTick` 을 **가장 이른 음 기준 상대값**으로 바꾼다 —
+ * 절대 위치로 들고 있으면 어디에 붙여도 원래 자리로 돌아간다.
+ */
+export function copyNotes(project: Project, ids: readonly NoteId[]): Note[] {
+  const set = new Set(ids);
+  const picked: Note[] = [];
+  for (const track of project.tracks) {
+    for (const clip of track.clips) {
+      for (const note of clip.notes) if (set.has(note.id)) picked.push(note);
+    }
+  }
+  if (picked.length === 0) return [];
+
+  const origin = Math.min(...picked.map((n) => n.startTick));
+  return picked
+    .map((note) => ({ ...note, startTick: note.startTick - origin }))
+    .sort((a, b) => a.startTick - b.startTick);
+}
+
+/**
+ * 클립보드의 음들을 `atTick` 에 붙인다. **id 를 새로 발급한다** —
+ * 같은 id 가 두 개면 언두·선택·AI 지시가 어느 쪽을 가리키는지 알 수 없다.
+ *
+ * 붙여넣은 음의 id 도 돌려준다. 붙인 직후 선택 상태로 만들려면 필요하다.
+ */
+export function pasteNotes(
+  project: Project,
+  clipId: ClipId,
+  notes: readonly Note[],
+  atTick: Ticks,
+): { project: Project; noteIds: NoteId[] } {
+  if (notes.length === 0) return { project, noteIds: [] };
+  const found = findClip(project, clipId);
+  if (!found) throw new EditError(`클립 ${clipId} 없음`);
+
+  const fresh = notes.map((note) => ({
+    ...note,
+    id: newNoteId(),
+    startTick: Math.max(0, atTick + note.startTick),
+    // 곡선은 값 객체라 얕은 복사로 공유된다. 한쪽을 고치면 다른 쪽도 바뀌므로 떼어 낸다
+    pitchCurve: note.pitchCurve === null ? null : structuredCloneCurve(note.pitchCurve),
+    pitch: { ...note.pitch },
+  }));
+
+  return {
+    project: mapClip(project, clipId, (clip) => ({ ...clip, notes: [...clip.notes, ...fresh] })),
+    noteIds: fresh.map((n) => n.id),
+  };
+}
+
+/** 곡선을 깊이 복사한다. `structuredClone` 은 Node 타입 스트리핑 환경에서 쓰지 않는다 */
+function structuredCloneCurve(curve: NonNullable<Note['pitchCurve']>): NonNullable<Note['pitchCurve']> {
+  return {
+    glide: curve.glide === null ? null : { ...curve.glide },
+    vibrato: curve.vibrato === null ? null : { ...curve.vibrato },
+    points: curve.points === null ? null : curve.points.map((p) => ({ ...p })),
+  };
+}
+
+/**
+ * 선택한 음을 바로 뒤에 복제한다 (⌘D). 붙여넣기와 달리 위치를 고르지 않는다 —
+ * 선택 구간의 길이만큼 밀어 놓는다. 리듬을 반복할 때 가장 빠른 조작이다.
+ */
+export function duplicateNotes(
+  project: Project,
+  ids: readonly NoteId[],
+): { project: Project; noteIds: NoteId[] } {
+  // 선택이 여러 클립에 걸쳐 있으면 **첫 음의 클립만** 다룬다. 클립마다 시간 원점이
+  // 달라서 한 번에 옮기면 상대 위치가 깨진다 (피아노롤은 한 클립만 편집한다)
+  const located = ids.map((id) => findNote(project, id)).filter((at) => at !== null);
+  if (located.length === 0) return { project, noteIds: [] };
+
+  const clipId = located[0]!.clip.id;
+  const same = located.filter((at) => at.clip.id === clipId);
+
+  const first = Math.min(...same.map((at) => at.note.startTick));
+  // 선택 구간의 끝 = 가장 늦게 끝나는 음. 겹치지 않게 그 뒤에 놓는다
+  const end = Math.max(...same.map((at) => at.note.startTick + at.note.lengthTick));
+  const span = Math.max(1, end - first);
+
+  const copied = copyNotes(project, same.map((at) => at.note.id));
+  return pasteNotes(project, clipId, copied, first + span);
+}
+
 // --- 퀀타이즈 ---------------------------------------------------------------
 
 /** 시작 위치만 그리드에 맞춘다. 길이는 건드리지 않는다 */
@@ -252,4 +347,34 @@ export function setProjectName(project: Project, name: string): Project {
 
 export function setLengthBars(project: Project, bars: number): Project {
   return { ...project, lengthBars: Math.max(1, Math.round(bars)) };
+}
+
+// --- 루프 · 조성 -------------------------------------------------------------
+
+/**
+ * 반복 구간을 정한다. `null` 이면 루프를 없앤다.
+ *
+ * 두 틱을 **정렬해서** 담는다 — 사용자가 오른쪽에서 왼쪽으로 드래그해도 유효한
+ * 구간이어야 한다. 길이가 0 이면 루프를 버린다: 길이 0 구간을 반복하면
+ * 재생이 멈춘 것처럼 보이고 원인을 찾기 어렵다.
+ */
+export function setLoop(project: Project, loop: LoopRegion | null): Project {
+  if (loop === null) return { ...project, loop: null };
+
+  const startTick = Math.max(0, Math.min(loop.startTick, loop.endTick));
+  const endTick = Math.max(0, Math.max(loop.startTick, loop.endTick));
+  if (endTick <= startTick) return { ...project, loop: null };
+
+  return { ...project, loop: { startTick, endTick, enabled: loop.enabled } };
+}
+
+/** 루프 구간은 그대로 두고 켜고 끈다 — 껐다고 구간을 버리면 다시 잡아야 한다 */
+export function setLoopEnabled(project: Project, enabled: boolean): Project {
+  if (project.loop === null) return project;
+  return { ...project, loop: { ...project.loop, enabled } };
+}
+
+/** 조성. 렌더에는 영향이 없고 피아노롤 스케일 표시와 AI 힌트에 쓰인다 */
+export function setKey(project: Project, key: MusicalKey | null): Project {
+  return { ...project, key };
 }

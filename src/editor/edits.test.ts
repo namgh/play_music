@@ -16,9 +16,10 @@ import { isPitchEdited } from '../model/project.ts';
 import type { Project } from '../model/project.ts';
 import { History } from './history.ts';
 import {
-  addClip, addNote, addTrack, deleteClip, deleteNotes, deleteTrack, EditError, findNote,
-  moveNotes, nudgeCents, quantizeNotes, resizeClip, resizeNotes, setCents, setLengthBars,
-  setPitchCurve, setTempo, setVelocity, updateTrack,
+  addClip, addNote, addTrack, copyNotes, deleteClip, deleteNotes, deleteTrack, duplicateNotes,
+  EditError, findNote, moveNotes, nudgeCents, pasteNotes, quantizeNotes, resizeClip, resizeNotes,
+  setCents, setKey, setLengthBars, setLoop, setLoopEnabled, setPitchCurve, setTempo, setVelocity,
+  updateTrack,
 } from './edits.ts';
 
 function base(): Project {
@@ -291,4 +292,142 @@ test('생성자에 넘긴 객체를 변형해도 초기 스냅샷이 안전하�
   history.undo();
   assert.equal(history.state.tempo.bpm, originalBpm, '초기 상태가 오염됐다');
   assert.equal(history.state.tracks.length, 1);
+});
+
+// ---------------------------------------------------------------------------
+// 복사 · 붙여넣기 · 복제 (`WORKPLAN.md` Tier 0)
+//
+// 작곡의 대부분이 반복과 변형이다. 이게 없으면 곡을 끝낼 수 없다.
+// ---------------------------------------------------------------------------
+
+test('복사는 시작 틱을 가장 이른 음 기준 상대값으로 바꾼다', () => {
+  // 절대 위치로 들고 있으면 어디에 붙여도 원래 자리로 돌아간다
+  const p = base();
+  const [a, b] = p.tracks[0]!.clips[0]!.notes;
+  const copied = copyNotes(p, [a!.id, b!.id]);
+
+  assert.equal(copied.length, 2);
+  assert.equal(copied[0]!.startTick, 0, '첫 음이 0 이 아니다');
+  assert.equal(copied[1]!.startTick, PPQ, '상대 간격이 보존되지 않았다');
+});
+
+test('복사는 선택 안 한 음을 가져오지 않는다', () => {
+  const p = base();
+  const only = p.tracks[0]!.clips[0]!.notes[1]!;
+  const copied = copyNotes(p, [only.id]);
+  assert.equal(copied.length, 1);
+  assert.equal(copied[0]!.pitch.midi, 64);
+  assert.equal(copied[0]!.startTick, 0, '혼자 복사하면 원점이 0 이어야 한다');
+});
+
+test('붙여넣기는 id 를 새로 발급한다', () => {
+  // 같은 id 가 두 개면 언두·선택·AI 지시가 어느 쪽을 가리키는지 알 수 없다
+  const p = base();
+  const clipId = p.tracks[0]!.clips[0]!.id;
+  const copied = copyNotes(p, p.tracks[0]!.clips[0]!.notes.map((n) => n.id));
+
+  const { project: next, noteIds } = pasteNotes(p, clipId, copied, 2 * PPQ);
+  const all = next.tracks[0]!.clips[0]!.notes;
+
+  assert.equal(all.length, 4, '2개를 붙였는데 개수가 안 맞는다');
+  assert.equal(new Set(all.map((n) => n.id)).size, 4, 'id 가 중복됐다');
+  for (const id of noteIds) assert.ok(findNote(next, id), '돌려준 id 로 음을 찾을 수 없다');
+});
+
+test('붙여넣기는 지정한 위치를 원점으로 삼는다', () => {
+  const p = base();
+  const clipId = p.tracks[0]!.clips[0]!.id;
+  const copied = copyNotes(p, p.tracks[0]!.clips[0]!.notes.map((n) => n.id));
+
+  const { project: next, noteIds } = pasteNotes(p, clipId, copied, 2 * PPQ);
+  const pasted = noteIds.map((id) => findNote(next, id)!.note).sort((a, b) => a.startTick - b.startTick);
+
+  assert.equal(pasted[0]!.startTick, 2 * PPQ);
+  assert.equal(pasted[1]!.startTick, 3 * PPQ, '상대 간격이 안 지켜졌다');
+});
+
+test('붙여넣은 음의 곡선은 원본과 따로 움직인다', () => {
+  // 얕은 복사로 공유되면 한쪽을 고칠 때 다른 쪽도 바뀐다
+  const p0 = base();
+  const source = p0.tracks[0]!.clips[0]!.notes[0]!;
+  const p = setPitchCurve(p0, [source.id], {
+    glide: { cents: -200, ms: 90 }, vibrato: null, points: null,
+  });
+  const clipId = p.tracks[0]!.clips[0]!.id;
+
+  const copied = copyNotes(p, [source.id]);
+  const { project: next, noteIds } = pasteNotes(p, clipId, copied, 2 * PPQ);
+
+  const pastedNote = findNote(next, noteIds[0]!)!.note;
+  const originalNote = findNote(next, source.id)!.note;
+  assert.notEqual(pastedNote.pitchCurve, originalNote.pitchCurve, '곡선 객체가 공유됐다');
+  assert.equal(pastedNote.pitchCurve!.glide!.cents, -200, '곡선 값이 안 따라왔다');
+});
+
+test('붙여넣기는 음수 위치로 밀리지 않는다', () => {
+  const p = base();
+  const clipId = p.tracks[0]!.clips[0]!.id;
+  const copied = copyNotes(p, p.tracks[0]!.clips[0]!.notes.map((n) => n.id));
+  const { project: next, noteIds } = pasteNotes(p, clipId, copied, -5 * PPQ);
+  for (const id of noteIds) {
+    assert.ok(findNote(next, id)!.note.startTick >= 0, '음이 클립 앞으로 나갔다');
+  }
+});
+
+test('복제는 선택 구간 바로 뒤에 놓아 겹치지 않는다', () => {
+  const p = base(); // 0~PPQ, PPQ~2PPQ → 구간 길이 2PPQ
+  const ids = p.tracks[0]!.clips[0]!.notes.map((n) => n.id);
+
+  const { project: next, noteIds } = duplicateNotes(p, ids);
+  const made = noteIds.map((id) => findNote(next, id)!.note).sort((a, b) => a.startTick - b.startTick);
+
+  assert.equal(made.length, 2);
+  assert.equal(made[0]!.startTick, 2 * PPQ, '원본 구간과 겹친다');
+  assert.equal(made[1]!.startTick, 3 * PPQ);
+  assert.equal(next.tracks[0]!.clips[0]!.notes.length, 4);
+});
+
+test('빈 선택으로 복사·복제하면 아무 일도 없다', () => {
+  const p = base();
+  assert.deepEqual(copyNotes(p, []), []);
+  const dup = duplicateNotes(p, []);
+  assert.equal(dup.project, p, '프로젝트를 새로 만들었다');
+  assert.deepEqual(dup.noteIds, []);
+});
+
+test('없는 클립에 붙이면 명시적으로 실패한다', () => {
+  const p = base();
+  const copied = copyNotes(p, [p.tracks[0]!.clips[0]!.notes[0]!.id]);
+  assert.throws(() => pasteNotes(p, 'clp_없음' as never, copied, 0), EditError);
+});
+
+// ---------------------------------------------------------------------------
+// 루프 · 조성
+// ---------------------------------------------------------------------------
+
+test('루프 구간은 정렬해서 담는다 — 거꾸로 드래그해도 유효해야 한다', () => {
+  const p = base();
+  const next = setLoop(p, { startTick: 4 * PPQ, endTick: PPQ, enabled: true });
+  assert.equal(next.loop!.startTick, PPQ);
+  assert.equal(next.loop!.endTick, 4 * PPQ);
+});
+
+test('길이 0 루프는 버린다', () => {
+  // 길이 0 구간을 반복하면 재생이 멈춘 것처럼 보이고 원인을 찾기 어렵다
+  const p = base();
+  assert.equal(setLoop(p, { startTick: PPQ, endTick: PPQ, enabled: true }).loop, null);
+});
+
+test('루프를 껐다 켜도 구간이 남는다', () => {
+  const p = setLoop(base(), { startTick: 0, endTick: 2 * PPQ, enabled: true });
+  const off = setLoopEnabled(p, false);
+  assert.equal(off.loop!.enabled, false);
+  assert.equal(off.loop!.endTick, 2 * PPQ, '껐더니 구간이 사라졌다');
+  assert.equal(setLoopEnabled(off, true).loop!.enabled, true);
+});
+
+test('조성을 넣고 지울 수 있다', () => {
+  const p = setKey(base(), { tonic: 'D', mode: 'minor' });
+  assert.deepEqual(p.key, { tonic: 'D', mode: 'minor' });
+  assert.equal(setKey(p, null).key, null);
 });

@@ -43,10 +43,26 @@ export interface ParamSpec {
 
 export type ParamValue = number | string;
 
+/**
+ * 악기 분류. **화면이 이걸 보고 목록을 묶는다** (`plan.md` 원칙: 확장은 데이터로).
+ *
+ * 보이스 타입(합성 기법)과 **다른 축**이다 — 일렉기타와 우쿨렐레는 둘 다
+ * 웨이브가이드지만 사용자에게는 다른 분류다. 기법 차이는 감춘다는 원칙과도 맞다.
+ */
+export type InstrumentCategory =
+  | '기타' | '베이스' | '줄' | '건반·신스' | '말렛·벨' | '드럼';
+
+/** 목록에 나올 순서. 자주 쓰는 것부터 */
+export const CATEGORY_ORDER: readonly InstrumentCategory[] = [
+  '기타', '베이스', '건반·신스', '말렛·벨', '줄', '드럼',
+];
+
 export interface InstrumentDefinition {
   id: string;
   schemaVersion: number;
   name: string;
+  /** 목록에서 묶이는 분류. 상속된다 — 파생 악기는 대개 부모와 같다 */
+  category?: InstrumentCategory;
   /** 상속. 파생 악기의 한계비용을 0에 가깝게 만드는 장치 (`sound.md` 9-3) */
   extends?: string;
   voice?: VoiceType;
@@ -62,6 +78,7 @@ export interface InstrumentDefinition {
 export interface ResolvedInstrument {
   id: string;
   name: string;
+  category: InstrumentCategory;
   voice: VoiceType;
   params: Record<string, ParamValue>;
   paramSpecs: Record<string, ParamSpec>;

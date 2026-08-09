@@ -5,7 +5,9 @@
  * 파생 악기(우쿨렐레·만돌린·밴조…)가 20줄이면 끝난다.
  */
 
-import type { InstrumentDefinition, ParamSpec, ParamValue, ResolvedInstrument, VoiceType } from './types.ts';
+import type {
+  InstrumentCategory, InstrumentDefinition, ParamSpec, ParamValue, ResolvedInstrument, VoiceType,
+} from './types.ts';
 
 export class InstrumentResolveError extends Error {}
 
@@ -43,6 +45,7 @@ export function resolveInstrument(
   const ordered = [...chain].reverse();
 
   let voice: VoiceType | undefined;
+  let category: InstrumentCategory | undefined;
   let range: { low: number; high: number } | undefined;
   const params: Record<string, ParamValue> = {};
   const paramSpecs: Record<string, ParamSpec> = {};
@@ -50,6 +53,7 @@ export function resolveInstrument(
 
   for (const def of ordered) {
     if (def.voice !== undefined) voice = def.voice;
+    if (def.category !== undefined) category = def.category;
     if (def.range !== undefined) range = def.range;
     Object.assign(params, def.params);
     Object.assign(paramSpecs, def.paramSpecs);
@@ -62,6 +66,11 @@ export function resolveInstrument(
   if (voice === undefined) {
     throw new InstrumentResolveError(`악기 "${id}" 의 상속 체인에 voice 가 없다`);
   }
+  // 조용히 기본값으로 떨어뜨리지 않는다 — 분류가 틀리면 목록에서 엉뚱한 곳에 나오는데
+  // 그건 화면만 보고는 "원래 그런가 보다" 로 지나간다
+  if (category === undefined) {
+    throw new InstrumentResolveError(`악기 "${id}" 의 상속 체인에 category 가 없다`);
+  }
 
   // 선언되지 않은 파라미터는 UI 를 만들 수 없다 — 조용히 무시하면 나중에 원인을 못 찾는다
   for (const key of Object.keys(params)) {
@@ -73,6 +82,7 @@ export function resolveInstrument(
   return {
     id: self.id,
     name: self.name,
+    category,
     voice,
     params,
     paramSpecs,

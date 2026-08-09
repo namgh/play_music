@@ -8,7 +8,31 @@
  * 타입 검사를 받으면서 형태를 확정하는 게 먼저이기 때문.
  */
 
-import type { InstrumentDefinition } from './types.ts';
+import type { InstrumentCategory, InstrumentDefinition, ParamSpec } from './types.ts';
+import { CATEGORY_ORDER } from './types.ts';
+import { resolveInstrument } from './resolve.ts';
+
+/**
+ * 노트오프 관련 파라미터. **보이스 타입과 무관하게 모든 악기가 갖는다.**
+ *
+ * wasm 파라미터 슬롯이 아니라 워크렛 메시지로 간다 (`WORKPLAN.md` 2-2) — 발음마다
+ * 바뀌는 값이 아니라 노트오프 시점에만 필요해서다.
+ *
+ * `letRing` 이 진짜 선택지인 이유: 실제 기타는 손을 떼면 줄이 죽지만 아르페지오는
+ * 일부러 울린다. 기타 VST 가 전부 "Let Ring" 이라는 이름으로 갖고 있는 기능이다.
+ */
+const NOTE_OFF_SPECS: Record<string, ParamSpec> = {
+  releaseMs: {
+    // 하한 5ms — 0 이면 파형이 뚝 끊겨 그게 클릭이다.
+    // 기본 120ms 는 손으로 줄을 짚어 죽이는 데 실제로 걸리는 시간이다
+    type: 'float', min: 5, max: 2000, default: 120,
+    unit: 'ms', label: '뮤트 속도', curve: 'log', group: '연주',
+  },
+  letRing: {
+    type: 'int', min: 0, max: 1, default: 0,
+    label: '울림 유지', group: '연주',
+  },
+};
 
 /**
  * 웨이브가이드 줄의 기준 정의. 파생 악기들은 여기서 숫자만 덮어쓴다.
@@ -18,6 +42,7 @@ const STRING_BASE: InstrumentDefinition = {
   id: 'string-base',
   schemaVersion: 1,
   name: '줄 (기준)',
+  category: '줄',
   voice: 'waveguide-string',
   range: { low: 28, high: 96 },
   paramSpecs: {
@@ -52,6 +77,7 @@ const STRING_BASE: InstrumentDefinition = {
       type: 'int', min: 0, max: 1, default: 0,
       label: '앰프', group: '앰프',
     },
+    ...NOTE_OFF_SPECS,
   },
   params: {
     scaleLengthMm: 648,
@@ -62,6 +88,9 @@ const STRING_BASE: InstrumentDefinition = {
     pluckHardness: 0.4,
     // 앰프는 기본적으로 꺼져 있다 — 어쿠스틱 악기가 다수다
     ampEnabled: 0,
+    // 손을 떼면 줄이 죽는다. 아르페지오처럼 일부러 울리려면 letRing 을 켠다
+    releaseMs: 120,
+    letRing: 0,
   },
   tones: {
     default: {},
@@ -76,6 +105,7 @@ const ACOUSTIC_GUITAR: InstrumentDefinition = {
   id: 'acoustic-guitar',
   schemaVersion: 1,
   name: '어쿠스틱 기타',
+  category: '기타',
   extends: 'string-base',
   params: { scaleLengthMm: 650, stiffness: 0.01, damping: 0.045, sustainSec: 4 },
   range: { low: 40, high: 88 }, // E2 ~ E6
@@ -135,6 +165,7 @@ const ELECTRIC_GUITAR: InstrumentDefinition = {
   id: 'electric-guitar',
   schemaVersion: 1,
   name: '일렉 기타 (스트랫)',
+  category: '기타',
   extends: 'amped-string',
   params: { scaleLengthMm: 648, stiffness: 0.012, damping: 0.04, sustainSec: 5 },
   range: { low: 40, high: 88 },
@@ -144,6 +175,7 @@ const LES_PAUL: InstrumentDefinition = {
   id: 'electric-guitar-lp',
   schemaVersion: 1,
   name: '일렉 기타 (레스폴)',
+  category: '기타',
   extends: 'electric-guitar',
   params: { scaleLengthMm: 628 }, // 스트랫 648 과의 차이가 이 한 줄
 };
@@ -152,6 +184,7 @@ const ELECTRIC_BASS: InstrumentDefinition = {
   id: 'electric-bass',
   schemaVersion: 1,
   name: '일렉 베이스',
+  category: '베이스',
   extends: 'amped-string',
   params: {
     scaleLengthMm: 864, stiffness: 0.02, damping: 0.06, sustainSec: 4,
@@ -165,6 +198,7 @@ const UKULELE: InstrumentDefinition = {
   id: 'ukulele-soprano',
   schemaVersion: 1,
   name: '우쿨렐레 (소프라노)',
+  category: '줄',
   extends: 'acoustic-guitar',
   params: { scaleLengthMm: 347, stiffness: 0.016, damping: 0.07, sustainSec: 1.6 },
   range: { low: 60, high: 93 }, // C4 ~ A6
@@ -174,6 +208,7 @@ const MANDOLIN: InstrumentDefinition = {
   id: 'mandolin',
   schemaVersion: 1,
   name: '만돌린',
+  category: '줄',
   extends: 'acoustic-guitar',
   params: { scaleLengthMm: 350, stiffness: 0.022, damping: 0.06, sustainSec: 1.2, pluckHardness: 0.75 },
   range: { low: 55, high: 91 },
@@ -183,8 +218,13 @@ const HARP: InstrumentDefinition = {
   id: 'harp',
   schemaVersion: 1,
   name: '하프',
+  category: '줄',
   extends: 'string-base',
-  params: { scaleLengthMm: 700, stiffness: 0.006, damping: 0.03, sustainSec: 6, pluckHardness: 0.15 },
+  params: {
+    scaleLengthMm: 700, stiffness: 0.006, damping: 0.03, sustainSec: 6, pluckHardness: 0.15,
+    // 하프는 뜯고 손을 떼도 울린다 — 줄을 짚어 죽이는 연주가 예외다
+    letRing: 1,
+  },
   range: { low: 24, high: 96 },
 };
 
@@ -197,6 +237,7 @@ const SYNTH_BASE: InstrumentDefinition = {
   id: 'synth-base',
   schemaVersion: 1,
   name: '신스 (기준)',
+  category: '건반·신스',
   voice: 'virtual-analog',
   range: { low: 24, high: 108 },
   paramSpecs: {
@@ -240,6 +281,7 @@ const SYNTH_BASE: InstrumentDefinition = {
     },
     ampEnabled: { type: 'int', min: 0, max: 1, default: 0, label: '앰프', group: '앰프' },
     ampDrive: { type: 'float', min: 0, max: 1, default: 0, label: '드라이브', group: '앰프' },
+    ...NOTE_OFF_SPECS,
   },
   params: {
     synthWaveform: 0,
@@ -253,6 +295,10 @@ const SYNTH_BASE: InstrumentDefinition = {
     sustainSec: 250,
     ampEnabled: 0,
     ampDrive: 0,
+    // 신스는 **반드시** 노트오프를 받아야 한다. 안 받으면 ADSR 이 Sustain 단계에서
+    // 멈춰 영원히 울린다 (거기서 나올 길이 노트오프뿐이다).
+    // 뮤트는 자기 릴리즈(`sustainSec` 슬롯)가 하므로 `releaseMs` 는 쓰이지 않는다
+    letRing: 0,
   },
   tones: {
     default: {},
@@ -287,6 +333,7 @@ const SYNTH_BASS: InstrumentDefinition = {
   id: 'synth-bass',
   schemaVersion: 1,
   name: '신스 베이스',
+  category: '베이스',
   extends: 'synth-base',
   params: {
     synthWaveform: 1, synthCutoffHz: 900, synthDetuneCents: 0,
@@ -301,6 +348,7 @@ const MODAL_BASE: InstrumentDefinition = {
   id: 'modal-base',
   schemaVersion: 1,
   name: '모달 (기준)',
+  category: '말렛·벨',
   voice: 'modal',
   range: { low: 36, high: 100 },
   paramSpecs: {
@@ -323,6 +371,7 @@ const MODAL_BASE: InstrumentDefinition = {
       label: '때리는 세기', group: '연주',
     },
     ampEnabled: { type: 'int', min: 0, max: 1, default: 0, label: '앰프', group: '앰프' },
+    ...NOTE_OFF_SPECS,
   },
   params: {
     modalMaterial: 0,
@@ -330,6 +379,10 @@ const MODAL_BASE: InstrumentDefinition = {
     strikePosition: 0.25,
     pluckHardness: 0.5,
     ampEnabled: 0,
+    // 때린 금속·나무는 손을 떼도 계속 울린다. 그게 이 악기들의 성질이다 —
+    // 감쇠는 `modalDecaySec` 이 정한다
+    letRing: 1,
+    releaseMs: 150,
   },
   tones: { default: {}, 부드럽게: { pluckHardness: 0.2 }, 세게: { pluckHardness: 0.95 } },
 };
@@ -384,6 +437,7 @@ const DRUM_BASE: InstrumentDefinition = {
   id: 'drum-base',
   schemaVersion: 1,
   name: '드럼 (기준)',
+  category: '드럼',
   voice: 'percussion',
   range: { low: 24, high: 84 },
   paramSpecs: {
@@ -409,6 +463,7 @@ const DRUM_BASE: InstrumentDefinition = {
       label: '밝기', group: '드럼',
     },
     ampEnabled: { type: 'int', min: 0, max: 1, default: 0, label: '앰프', group: '앰프' },
+    ...NOTE_OFF_SPECS,
   },
   params: {
     drumKind: 0,
@@ -417,6 +472,10 @@ const DRUM_BASE: InstrumentDefinition = {
     drumNoiseAmount: 0,
     strikePosition: 0.5,
     ampEnabled: 0,
+    // 원샷이다. 킥을 짧게 눌렀다고 짧아지면 안 된다 — 길이는 `drumDecaySec` 이 정한다.
+    // Rust 쪽도 타악기의 노트오프를 무시하지만(`voice.rs`), 여기서 명시해 두면
+    // 애초에 노트오프를 보내지 않아 헛일이 줄고 의도가 드러난다
+    letRing: 1,
   },
   tones: { default: {}, 짧게: { drumDecaySec: 0.12 }, 길게: { drumDecaySec: 1.0 } },
 };
@@ -523,4 +582,31 @@ export function playableInstrumentIds(
   defs: readonly InstrumentDefinition[] = BUILT_IN_INSTRUMENTS,
 ): string[] {
   return defs.filter((d) => !ABSTRACT_IDS.has(d.id)).map((d) => d.id);
+}
+
+/**
+ * 분류별로 묶은 악기 목록. **화면은 이걸 그대로 그린다** (`plan.md` 원칙 5 —
+ * 악기가 늘어나도 화면을 새로 만들지 않는다).
+ *
+ * 평면 목록이 20개를 넘어가면 고르기가 힘들어진다. 기타만 셋인데 하프·킥 사이에
+ * 흩어져 있으면 "기타 중에 뭐가 있나"를 볼 수 없다.
+ *
+ * 빈 분류는 나오지 않는다 — 악기를 지웠을 때 빈 그룹 헤더가 남으면 안 된다.
+ */
+export function instrumentsByCategory(
+  defs: readonly InstrumentDefinition[] = BUILT_IN_INSTRUMENTS,
+): { category: InstrumentCategory; instruments: { id: string; name: string }[] }[] {
+  const registry = createRegistry(defs);
+  const groups = new Map<InstrumentCategory, { id: string; name: string }[]>();
+
+  for (const id of playableInstrumentIds(defs)) {
+    const resolved = resolveInstrument(id, registry);
+    const list = groups.get(resolved.category) ?? [];
+    list.push({ id, name: resolved.name });
+    groups.set(resolved.category, list);
+  }
+
+  return CATEGORY_ORDER
+    .filter((category) => (groups.get(category)?.length ?? 0) > 0)
+    .map((category) => ({ category, instruments: groups.get(category)! }));
 }

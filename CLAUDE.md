@@ -12,6 +12,7 @@
 | 파일 | 내용 | 언제 읽나 |
 |---|---|---|
 | **`HANDOFF.md`** | **지금까지 무엇을 왜 그렇게 만들었는지 + 잡았던 버그 목록** | **새 세션 시작 시 먼저** |
+| `WORKPLAN.md` | Tier 0·1 작업(노트오프·루프·복사·레인)의 기획과 설계 근거 | 그 기능들을 건드리기 전 |
 | `plan.md` | 제품 기획 — 타겟, 차별점, Phase 구분, 아키텍처, 수익모델 | 제품/범위 관련 작업 전 |
 | `sound.md` | 사운드 엔진 개발 문서 — 악기별 기법, 신호 품질 기준, 확장성 설계, 마일스톤 | 오디오 엔진 작업 전 **필수** |
 | `mockup/studio-v2.html` | **화면 시안 기준본** (동작하는 프로토타입). 참고용이지 프로덕션 코드 아님. `studio.html`은 이전 버전 | UI 작업 전 |
@@ -25,7 +26,7 @@
 |---|---|
 | `npm run dev` | 앱 개발 서버 — **5173** |
 | `npm run m0` | M0 스파이크 (버릴 코드) — **5175** |
-| `npm test` | Rust 빌드 + 전체 테스트 (TS 143 · Rust 79) |
+| `npm test` | Rust 빌드 + 전체 테스트 (TS 232 · Rust 90) |
 | `npm run check` | **CI 와 같은 것 전부** (fmt·clippy·Rust 테스트·타입·테스트·빌드) |
 | `npm run build:dsp` | Rust → wasm 빌드 후 `src/generated/` 로 복사 |
 | `npm run typecheck` | `tsc --noEmit` |

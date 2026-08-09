@@ -9,7 +9,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  centsBetween, detune, formatPitch, hzToPitch, normalizePitch, pitch, pitchName, pitchToHz, transpose,
+  centsBetween, detune, formatPitch, hzToPitch, isInScale, isTonic, normalizePitch, pitch,
+  pitchName, pitchToHz, tonicSemitone, transpose,
 } from './pitch.ts';
 
 const TOL_CENTS = 1e-9;
@@ -79,4 +80,60 @@ test('음 이름 표기', () => {
   assert.equal(pitchName(pitch(108)), 'C8');
   assert.equal(formatPitch(pitch(69)), 'A4 · 440.00 Hz');
   assert.equal(formatPitch(detune(pitch(69), -14)), 'A4 -14.0¢ · 436.46 Hz');
+});
+
+// ---------------------------------------------------------------------------
+// 스케일 표시 (피아노롤 조성 하이라이트)
+// ---------------------------------------------------------------------------
+
+test('C 메이저는 흰 건반만 스케일에 든다', () => {
+  const key = { tonic: 'C', mode: 'major' } as const;
+  const white = [60, 62, 64, 65, 67, 69, 71]; // C D E F G A B
+  const black = [61, 63, 66, 68, 70];
+  for (const midi of white) assert.ok(isInScale(midi, key), `${midi} 가 빠졌다`);
+  for (const midi of black) assert.ok(!isInScale(midi, key), `${midi} 가 들어왔다`);
+});
+
+test('A 마이너는 C 메이저와 같은 음 집합이다', () => {
+  for (let midi = 48; midi < 72; midi++) {
+    assert.equal(
+      isInScale(midi, { tonic: 'A', mode: 'minor' }),
+      isInScale(midi, { tonic: 'C', mode: 'major' }),
+      `${midi} 에서 갈렸다`,
+    );
+  }
+});
+
+test('조성이 없으면 전부 스케일 안 — 표시를 하지 않는다', () => {
+  for (let midi = 0; midi < 128; midi += 7) assert.ok(isInScale(midi, null));
+  assert.equal(isTonic(60, null), false);
+});
+
+test('플랫 표기와 대소문자를 받아 준다', () => {
+  // 사용자가 Bb 로 쓸 수 있다. 못 읽으면 조용히 C 로 취급돼 엉뚱하게 표시된다
+  assert.equal(tonicSemitone('Bb'), 10);
+  assert.equal(tonicSemitone('bb'), 10);
+  assert.equal(tonicSemitone('A#'), 10);
+  assert.equal(tonicSemitone('f#'), 6);
+  assert.equal(tonicSemitone('H'), null, '없는 음이름을 받아들였다');
+});
+
+test('읽을 수 없는 으뜸음은 표시를 끈다 (조용히 C 로 취급하지 않는다)', () => {
+  const bogus = { tonic: '???', mode: 'major' } as const;
+  assert.ok(isInScale(61, bogus), 'C 메이저로 취급해 C# 를 밖으로 밀어냈다');
+  assert.equal(isTonic(60, bogus), false);
+});
+
+test('으뜸음은 옥타브와 무관하게 판정한다', () => {
+  const key = { tonic: 'D', mode: 'minor' } as const;
+  for (const midi of [50, 62, 74]) assert.ok(isTonic(midi, key), `${midi} 가 D 가 아니라고 한다`);
+  assert.ok(!isTonic(64, key));
+});
+
+test('센트 미세조정은 스케일 판정에 영향을 주지 않는다', () => {
+  // 조성 표시는 건반 줄 단위다. 섞으면 -30센트 맞춰 둔 음이 갑자기 스케일 밖이 된다
+  const key = { tonic: 'C', mode: 'major' } as const;
+  const p = pitch(64, -30);
+  assert.equal(p.midi, 64);
+  assert.ok(isInScale(p.midi, key));
 });

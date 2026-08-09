@@ -26,20 +26,23 @@ import { ticksToSeconds } from '../model/time.ts';
 import { projectLengthTicks } from '../model/factory.ts';
 import { pitchToHz } from '../model/pitch.ts';
 import { collectNoteEvents, LookaheadScheduler } from './scheduler.ts';
-import type { ScheduledNote } from './scheduler.ts';
+import type { ScheduledClick, ScheduledNote } from './scheduler.ts';
 import type { InstrumentDefinition, ParamValue } from '../instruments/types.ts';
 import { instrumentParams, resolveInstrument } from '../instruments/resolve.ts';
 import type { ResolvedInstrument } from '../instruments/types.ts';
-import { curveToParams, WASM_PARAM_ORDER } from './voice/wasmEngine.ts';
+import { curveToParams, noteOffFields, WASM_PARAM_ORDER } from './voice/wasmEngine.ts';
 import { VOICE_KIND_INDEX } from '../instruments/types.ts';
 import { buildEffectChain } from './effectGraph.ts';
 import type { EffectChain } from './effectGraph.ts';
+import { scheduleClick } from './metronome.ts';
 import { renderOfflineWithWorklet } from './offlineExport.ts';
 
 const PUMP_INTERVAL_MS = 25;
 const WORKLET_URL = '/ks-worklet.js';
 /** 곡 끝 뒤에 남길 여운 — 마지막 음과 리버브 꼬리가 잘리지 않게 */
 const EXPORT_TAIL_SEC = 4;
+/** 미리듣기(건반 클릭·인스펙터) 한 음의 길이 */
+const AUDITION_SEC = 0.6;
 
 interface TrackRuntime {
   node: AudioWorkletNode;
@@ -69,6 +72,8 @@ export class WorkletRenderer implements AudioRenderer {
   private masterGain: GainNode;
   private masterEffects: EffectChain;
   private masterEffectsKey = '';
+  /** 예약된 메트로놈 오실레이터. 정지할 때 끊어야 한다 */
+  private readonly clickNodes = new Set<OscillatorNode>();
 
   private constructor(
     ctx: AudioContext,
@@ -86,7 +91,8 @@ export class WorkletRenderer implements AudioRenderer {
 
     this.scheduler = new LookaheadScheduler({
       now: () => this.ctx.currentTime,
-      scheduleNote: (event, atTime) => this.emit(event, atTime),
+      scheduleNote: (event, atTime, durationSec) => this.emit(event, atTime, durationSec),
+      scheduleClick: (click, atTime) => this.emitClick(click, atTime),
     });
   }
 
@@ -109,8 +115,15 @@ export class WorkletRenderer implements AudioRenderer {
     return new WorkletRenderer(ctx, registry, wasmBytes);
   }
 
+  setMetronome(on: boolean): void {
+    this.scheduler.setMetronome(on);
+  }
+
   setProject(project: Project): void {
     this.project = project;
+    // 재생 중 루프 구간·템포 변경이 즉시 반영되게 한다. 예약 진행도는 건드리지 않으므로
+    // 이미 예약된 음은 그대로 울린다
+    this.scheduler.setProject(project);
     this.masterGain.gain.value = project.master.gain;
 
     const masterKey = JSON.stringify(project.master.effects);
@@ -193,6 +206,7 @@ export class WorkletRenderer implements AudioRenderer {
 
   stop(): void {
     this.scheduler.stop();
+    this.stopClicks();
     if (this.pumpTimer !== null) {
       clearInterval(this.pumpTimer);
       this.pumpTimer = null;
@@ -225,6 +239,9 @@ export class WorkletRenderer implements AudioRenderer {
       velocity: note.velocity,
       params: this.encodeParams(runtime.params, note.pitchCurve, runtime.voiceKind),
       gain: 1,
+      // 미리듣기에도 길이를 준다. 없으면 **신스가 영원히 울린다** —
+      // ADSR 이 Sustain 단계에서 멈춰 있고 거기서 나올 길이 노트오프뿐이다
+      ...noteOffFields(runtime.params, AUDITION_SEC, this.ctx.sampleRate),
     });
   }
 
@@ -298,7 +315,7 @@ export class WorkletRenderer implements AudioRenderer {
     });
   }
 
-  private emit(event: ScheduledNote, atTime: number): void {
+  private emit(event: ScheduledNote, atTime: number, durationSec: number): void {
     const runtime = this.tracks.get(event.trackId);
     if (!runtime || !this.project) return;
     runtime.node.port.postMessage({
@@ -309,7 +326,26 @@ export class WorkletRenderer implements AudioRenderer {
       velocity: event.note.velocity,
       params: this.encodeParams(runtime.params, event.pitchCurve, runtime.voiceKind),
       gain: 1,
+      ...noteOffFields(runtime.params, durationSec, this.ctx.sampleRate),
     });
+  }
+
+  private emitClick(click: ScheduledClick, atTime: number): void {
+    const osc = scheduleClick(this.ctx, this.ctx.destination, click, atTime);
+    this.clickNodes.add(osc);
+    osc.addEventListener('ended', () => this.clickNodes.delete(osc));
+  }
+
+  /** 예약해 둔 클릭을 즉시 끊는다. 안 하면 정지 뒤에도 룩어헤드만큼 딸깍거린다 */
+  private stopClicks(): void {
+    for (const osc of this.clickNodes) {
+      try {
+        osc.stop();
+      } catch {
+        /* 이미 끝났다 */
+      }
+    }
+    this.clickNodes.clear();
   }
 
   private rebuildMasterEffects(specs: readonly EffectSpec[], key: string): void {

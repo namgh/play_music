@@ -20,7 +20,7 @@ import { pitchToHz } from '../model/pitch.ts';
 import { collectNoteEvents } from './scheduler.ts';
 import type { InstrumentDefinition } from '../instruments/types.ts';
 import { instrumentParams, resolveInstrument } from '../instruments/resolve.ts';
-import { curveToParams, WASM_PARAM_ORDER } from './voice/wasmEngine.ts';
+import { curveToParams, noteOffFields, WASM_PARAM_ORDER } from './voice/wasmEngine.ts';
 import { VOICE_KIND_INDEX } from '../instruments/types.ts';
 import { buildEffectChain } from './effectGraph.ts';
 
@@ -99,6 +99,12 @@ export async function renderOfflineWithWorklet(
           return typeof value === 'number' && Number.isFinite(value) ? value : 0;
         }),
         gain: 1,
+        // 재생과 **같은 함수**로 계산한다. 갈라지면 "들은 것과 파일이 다르다"가 된다
+        ...noteOffFields(
+          params,
+          ticksToSeconds(event.lengthTick, project.tempo),
+          sampleRate,
+        ),
       });
     }
   }

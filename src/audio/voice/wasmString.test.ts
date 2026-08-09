@@ -222,17 +222,90 @@ test('극단 파라미터에서 NaN·발산이 없다', async () => {
   }
 });
 
-test('보이스 스틸링이 동작하고 동시 발음이 합산된다', async () => {
+test('보이스 스틸링이 폴리포니 상한을 지키고 동시 발음이 합산된다', async () => {
   const wasm = await engine();
   const params = instrumentParams(resolveInstrument('harp', registry), 'default', null);
 
   wasm.allOff();
-  for (let i = 0; i < 40; i++) wasm.noteOn(midiToHz(48 + (i % 24)), 0.8, params);
+  for (let i = 0; i < 100; i++) wasm.noteOn(midiToHz(48 + (i % 24)), 0.8, params);
 
   const out = new Float32Array(BLOCK);
   const active = wasm.process(out, BLOCK);
-  assert.ok(active > 0 && active <= 32, `울리는 보이스 ${active} 개 (상한 32)`);
+
+  // `active` 에는 **페이드아웃 중인 것도 들어간다.** 폴리포니 상한은 살아 있는
+  // 보이스에만 걸리므로 그 둘을 나눠서 봐야 한다 (`WORKPLAN.md` 2-4)
+  assert.ok(active > 0, '아무 소리도 안 난다');
+  assert.ok(active <= wasm.maxVoices, `울리는 보이스 ${active} 개 > 슬롯 ${wasm.maxVoices}`);
+  assert.ok(
+    wasm.liveVoices <= 32,
+    `살아 있는 보이스 ${wasm.liveVoices} 개 (폴리포니 상한 32)`,
+  );
+  assert.ok(wasm.maxVoices > 32, '페이드아웃 전용 여유 슬롯이 없다 — 훔칠 때 클릭이 난다');
   assert.ok(out.every(Number.isFinite));
+});
+
+test('보이스를 뺏을 때 파형이 튀지 않는다 (클릭 없음)', async () => {
+  // 즉시 리셋하면 울리던 파형이 한 샘플에 0 으로 점프하고 그게 클릭이다.
+  // 페이드가 걸리면 인접 샘플 차가 파형 자체의 변화폭을 넘지 않는다
+  const wasm = await engine();
+  const params = instrumentParams(resolveInstrument('harp', registry), 'default', null);
+
+  wasm.allOff();
+  // 상한까지 채우고 잠깐 울린다
+  for (let i = 0; i < 32; i++) wasm.noteOn(midiToHz(48 + (i % 24)), 0.8, params);
+  const warm = new Float32Array(BLOCK);
+  wasm.process(warm, BLOCK);
+
+  let baseStep = 0;
+  for (let i = 1; i < BLOCK; i++) baseStep = Math.max(baseStep, Math.abs(warm[i]! - warm[i - 1]!));
+
+  // 이제 상한을 넘겨 뺏게 만든다
+  for (let i = 0; i < 8; i++) wasm.noteOn(midiToHz(72 + i), 0.8, params);
+
+  const after = new Float32Array(BLOCK);
+  wasm.process(after, BLOCK);
+
+  const boundary = Math.abs(after[0]! - warm[BLOCK - 1]!);
+  let step = boundary;
+  for (let i = 1; i < BLOCK; i++) step = Math.max(step, Math.abs(after[i]! - after[i - 1]!));
+
+  // 새 음 8개가 들어와 파형이 바뀌므로 여유를 준다. 즉시 리셋이면 이 값이
+  // 전체 진폭만큼(수 배) 튀었다
+  assert.ok(
+    step < baseStep * 6 + 0.05,
+    `뺏는 순간 ${step.toFixed(4)} 만큼 튀었다 (평상시 ${baseStep.toFixed(4)})`,
+  );
+  assert.ok(after.every(Number.isFinite));
+});
+
+test('노트오프가 줄을 실제로 죽이고 보이스를 반환한다', async () => {
+  // 이게 배선되기 전에는 노트 길이가 소리에 전혀 반영되지 않았다
+  const wasm = await engine();
+  const params = instrumentParams(resolveInstrument('acoustic-guitar', registry), 'default', null);
+
+  wasm.allOff();
+  const voice = wasm.noteOn(midiToHz(57), 1, params);
+
+  const warm = new Float32Array(BLOCK);
+  wasm.process(warm, BLOCK);
+  assert.ok(warm.some((v) => Math.abs(v) > 1e-3), '발음 자체가 안 됐다');
+
+  const releaseMs = 50;
+  wasm.noteOff(voice, releaseMs);
+
+  // 릴리즈 뒤 충분히 지난 지점을 본다 — **앞쪽은 페이드 램프 자체라 소리가 있다.**
+  // 블록 수를 상수로 박으면 BLOCK 이 바뀔 때 조용히 짧아진다 (한 번 헛짚었다)
+  const blocks = Math.ceil(((releaseMs / 1000) * FS * 3) / BLOCK);
+  const scratch = new Float32Array(BLOCK);
+  for (let i = 0; i < blocks; i++) {
+    scratch.fill(0);
+    wasm.process(scratch, BLOCK);
+  }
+  let peak = 0;
+  for (const v of scratch) peak = Math.max(peak, Math.abs(v));
+
+  assert.ok(peak < 1e-3, `노트오프 뒤에도 ${peak.toFixed(5)} 만큼 울린다`);
+  assert.equal(wasm.liveVoices, 0, '보이스를 반환하지 않았다 — 풀이 차면 소리가 끊긴다');
 });
 
 test('발음 중 파라미터를 바꿔도 음정이 유지된다 (M1.5 실시간 반영)', async () => {

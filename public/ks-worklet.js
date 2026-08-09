@@ -10,6 +10,15 @@
  *
  * 발음 시각은 **샘플 단위로 정확하다.** 블록 경계로 반올림하면 최대 2.7ms 씩
  * 밀리므로, 이벤트가 블록 중간에 있으면 블록을 쪼개서 처리한다.
+ *
+ * ## 노트오프를 여기서 예약한다 (`WORKPLAN.md` 2-1)
+ *
+ * `noteOff` 메시지를 따로 받지 않고 `noteOn` 에 `durationFrames` 를 실어 받는다.
+ * 보이스 번호는 `note_on()` 의 **반환값**이라 워크렛 안에서만 알 수 있고, 노트 id ↔
+ * 보이스 번호 대응표를 메시지 경계 너머로 유지하면 상태가 두 곳에 생긴다.
+ *
+ * 덕분에 노트오프도 같은 블록 쪼개기 루프를 타서 **샘플 단위로 정확**하고,
+ * 오프라인 내보내기(이벤트를 미리 전부 post 하는 방식)가 수정 없이 그대로 동작한다.
  */
 
 const MAX_BLOCK = 2048;
@@ -29,8 +38,19 @@ class KsProcessor extends AudioWorkletProcessor {
     this.wasm = null;
     this.paramView = null;
     this.outputView = null;
-    /** { frame, freq, velocity, params, gain } — frame 순으로 정렬 */
+    /** { frame, freq, velocity, params, gain, durationFrames, releaseMs } — frame 순 정렬 */
     this.pending = [];
+    /** { frame, voice, serial, releaseMs } — frame 순 정렬 */
+    this.pendingOff = [];
+    /**
+     * 슬롯마다 "지금 누구 것인가". 발음할 때 새 일련번호를 찍고, 노트오프는 번호가
+     * 그대로일 때만 적용한다.
+     *
+     * **이게 없으면 보이스를 뺏긴 뒤 도착한 노트오프가 엉뚱한 음을 자른다.**
+     * 32음을 넘겨 연주하면 실제로 일어난다.
+     */
+    this.voiceOwner = null;
+    this.serial = 0;
 
     this.port.onmessage = (event) => this.handle(event.data);
   }
@@ -50,6 +70,9 @@ class KsProcessor extends AudioWorkletProcessor {
           velocity: message.velocity,
           params: message.params,
           gain: message.gain ?? 1,
+          // 0 이면 노트오프를 예약하지 않는다 (= 울림 유지, letRing)
+          durationFrames: message.durationFrames ?? 0,
+          releaseMs: message.releaseMs ?? 120,
         });
         this.pending.sort((a, b) => a.frame - b.frame);
         break;
@@ -61,6 +84,7 @@ class KsProcessor extends AudioWorkletProcessor {
         break;
       case 'allOff':
         this.pending.length = 0;
+        this.pendingOff.length = 0;
         if (this.wasm) this.wasm.all_off();
         break;
       default:
@@ -74,8 +98,11 @@ class KsProcessor extends AudioWorkletProcessor {
     exports.init(sampleRate);
     this.wasm = exports;
     this.refreshViews();
+    // 소유권 표는 wasm 의 슬롯 수에 맞춘다 — 상수를 양쪽에 두면 어긋난다
+    this.voiceOwner = new Int32Array(exports.max_voices());
     // 준비되기 전에 쌓인 예약은 버린다 — 지금 내면 전부 한 지점에 몰린다
     this.pending.length = 0;
+    this.pendingOff.length = 0;
     this.port.postMessage({ type: 'ready', sampleRate });
   }
 
@@ -119,21 +146,49 @@ class KsProcessor extends AudioWorkletProcessor {
 
     let written = 0;
     while (written < frames) {
-      // 이 블록 안에서 다음 이벤트가 언제인가
-      const next = this.pending[0];
-      const untilEvent = next ? next.frame - (currentFrame + written) : Infinity;
+      const now = currentFrame + written;
+      // 노트온·노트오프 중 **먼저 오는 것**에서 블록을 쪼갠다
+      const nextOn = this.pending[0];
+      const nextOff = this.pendingOff[0];
+      const untilOn = nextOn ? nextOn.frame - now : Infinity;
+      const untilOff = nextOff ? nextOff.frame - now : Infinity;
 
-      if (untilEvent <= 0) {
-        this.pending.shift();
-        // 너무 오래 지난 예약은 버린다 (위 STALE_FRAMES 설명)
-        if (untilEvent < -STALE_FRAMES) continue;
-        // 지금 이 샘플에서 발음한다
-        this.writeParams(next.params);
-        this.wasm.note_on(next.freq, next.velocity, next.gain);
+      // 같은 샘플이면 노트오프를 먼저 처리한다 — 방금 잡은 보이스를 바로 끄지 않게
+      if (untilOff <= 0 && untilOff <= untilOn) {
+        this.pendingOff.shift();
+        // 뺏긴 뒤 도착한 노트오프는 버린다 (그 슬롯은 이미 남의 것이다)
+        if (this.voiceOwner[nextOff.voice] === nextOff.serial) {
+          this.wasm.note_off(nextOff.voice, nextOff.releaseMs);
+        }
         continue;
       }
 
-      const count = Math.min(frames - written, untilEvent);
+      if (untilOn <= 0) {
+        this.pending.shift();
+        // 너무 오래 지난 예약은 버린다 (위 STALE_FRAMES 설명)
+        if (untilOn < -STALE_FRAMES) continue;
+        this.writeParams(nextOn.params);
+        const voice = this.wasm.note_on(nextOn.freq, nextOn.velocity, nextOn.gain);
+        this.refreshViews(); // note_on 안에서 메모리가 자랐을 수 있다
+
+        const serial = ++this.serial;
+        if (voice < this.voiceOwner.length) this.voiceOwner[voice] = serial;
+
+        if (nextOn.durationFrames > 0) {
+          // **실제 발음 프레임** 기준으로 잡는다. 예약이 조금 늦었을 때 의도한
+          // 시각을 쓰면 길이가 그만큼 깎이고, 심하면 음이 나자마자 꺼진다
+          this.pendingOff.push({
+            frame: now + nextOn.durationFrames,
+            voice,
+            serial,
+            releaseMs: nextOn.releaseMs,
+          });
+          this.pendingOff.sort((a, b) => a.frame - b.frame);
+        }
+        continue;
+      }
+
+      const count = Math.min(frames - written, untilOn, untilOff);
       this.renderSegment(channels, written, count);
       written += count;
     }

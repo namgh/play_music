@@ -77,6 +77,37 @@ export function curveToParams(curve: {
   };
 }
 
+/** 악기가 값을 안 주면 쓰는 뮤트 속도. 손으로 줄을 짚어 죽이는 데 실제로 걸리는 시간 */
+export const DEFAULT_RELEASE_MS = 120;
+
+/**
+ * 노트오프를 워크렛에 어떻게 알릴지 정한다 (`WORKPLAN.md` 2-1·2-2).
+ *
+ * `durationFrames = 0` 은 "노트오프 없음" 이다 — `letRing` 악기(하프·치터처럼
+ * 떼도 울리는 것)와 원샷 타악기가 그 경로를 쓴다.
+ *
+ * **이 두 값이 파라미터 슬롯이 아닌 이유:** 발음마다 바뀌는 게 아니라 노트오프
+ * 시점에만 필요하다. 슬롯을 늘리면 Rust·TS·워크렛 세 곳의 `PARAM_COUNT` 를 같이
+ * 고쳐야 하고, 어긋나면 조용히 엉뚱한 소리가 난다 (`HANDOFF.md` 작업 규칙).
+ *
+ * 순수 함수로 두어 브라우저 없이 테스트한다.
+ */
+export function noteOffFields(
+  params: Readonly<Record<string, number | string>>,
+  durationSec: number,
+  sampleRate: number,
+): { durationFrames: number; releaseMs: number } {
+  const letRing = Number(params.letRing) === 1;
+  const raw = Number(params.releaseMs);
+  const releaseMs = Number.isFinite(raw) && raw >= 0 ? raw : DEFAULT_RELEASE_MS;
+
+  if (letRing || !(durationSec > 0) || !(sampleRate > 0)) {
+    return { durationFrames: 0, releaseMs };
+  }
+  // 최소 1프레임 — 0 은 "노트오프 없음"이라 아주 짧은 음이 영원히 울려 버린다
+  return { durationFrames: Math.max(1, Math.round(durationSec * sampleRate)), releaseMs };
+}
+
 const MAX_BLOCK = 2048;
 
 /** Rust 쪽 PARAM_COUNT 와 같아야 한다 */
@@ -89,13 +120,15 @@ interface WasmExports {
   output_buffer(): number;
   note_on(freqHz: number, velocity: number, gain: number): number;
   set_params_live(voice: number): void;
-  note_off(voice: number): void;
+  note_off(voice: number, releaseMs: number): void;
   all_off(): void;
   process(frames: number): number;
   param_count(): number;
   voice_line_delay(voice: number): number;
   voice_loop_gain(voice: number): number;
   sample_rate(): number;
+  max_voices(): number;
+  live_voices(): number;
 }
 
 export class WasmEngineError extends Error {}
@@ -184,12 +217,22 @@ export class WasmVoiceEngine {
     this.refreshViews();
   }
 
-  noteOff(voice: number): void {
-    this.exports.note_off(voice);
+  noteOff(voice: number, releaseMs = DEFAULT_RELEASE_MS): void {
+    this.exports.note_off(voice, releaseMs);
   }
 
   allOff(): void {
     this.exports.all_off();
+  }
+
+  /** 보이스 슬롯 수 (페이드용 여유 포함) */
+  get maxVoices(): number {
+    return this.exports.max_voices();
+  }
+
+  /** 살아 있는(페이드 중이 아닌) 보이스 수. 폴리포니 상한을 넘지 않아야 한다 */
+  get liveVoices(): number {
+    return this.exports.live_voices();
   }
 
   /**

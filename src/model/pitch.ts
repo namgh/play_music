@@ -20,6 +20,17 @@ export interface Tuning {
   a4Hz: number;
 }
 
+/**
+ * 조성. `project.ts` 가 재수출한다.
+ *
+ * 여기 두는 이유: 스케일 판정(`isInScale`)이 이 파일에 있고, `project.ts` 에 두면
+ * `pitch.ts` → `project.ts` → `pitch.ts` 로 순환 import 가 된다.
+ */
+export interface MusicalKey {
+  tonic: string;
+  mode: 'major' | 'minor';
+}
+
 export const DEFAULT_TUNING: Tuning = { a4Hz: 440 };
 
 export const A4_MIDI = 69;
@@ -64,6 +75,57 @@ export function transpose(p: Pitch, semitones: number): Pitch {
 /** 센트 미세조정만 변경 */
 export function detune(p: Pitch, cents: number): Pitch {
   return normalizePitch({ midi: p.midi, cents: p.cents + cents });
+}
+
+// ---------------------------------------------------------------------------
+// 스케일 — 피아노롤의 조성 표시용 (Cubase Scale Assistant · FL Studio 의 기본기)
+//
+// **렌더에는 영향이 없다.** 조성에 속한 음을 밝게 보여 주는 표시 기능이고,
+// 벗어난 음을 막지 않는다 — 막으면 블루스·재즈를 못 찍는다.
+// ---------------------------------------------------------------------------
+
+/** 으뜸음 기준 반음 오프셋 */
+const SCALE_STEPS: Record<'major' | 'minor', readonly number[]> = {
+  major: [0, 2, 4, 5, 7, 9, 11],
+  // 자연 단음계. 화성단·가락단은 곡 안에서 갈리므로 표시 기준으로는 자연단을 쓴다
+  minor: [0, 2, 3, 5, 7, 8, 10],
+};
+
+/** 음이름 → 반음 번호. 플랫 표기도 받는다 (사용자가 `Bb` 로 쓸 수 있다) */
+const TONIC_SEMITONE: Record<string, number> = {
+  C: 0, 'C#': 1, Db: 1, D: 2, 'D#': 3, Eb: 3, E: 4, F: 5, 'F#': 6, Gb: 6,
+  G: 7, 'G#': 8, Ab: 8, A: 9, 'A#': 10, Bb: 10, B: 11,
+};
+
+export function tonicSemitone(tonic: string): number | null {
+  const key = tonic.trim();
+  const direct = TONIC_SEMITONE[key];
+  if (direct !== undefined) return direct;
+  // 대소문자만 다른 경우를 받아 준다 ("bb" → "Bb")
+  const normalized = key.charAt(0).toUpperCase() + key.slice(1).toLowerCase();
+  return TONIC_SEMITONE[normalized] ?? null;
+}
+
+/**
+ * 이 MIDI 음이 조성에 속하는가. 조성을 모르면 `true` (전부 밝게 = 표시 없음).
+ *
+ * 센트 미세조정은 보지 않는다 — 조성 표시는 건반 줄 단위이고, 미세조정은 그 줄 안의
+ * 값이다. 둘을 섞으면 -30센트 맞춰 둔 음이 갑자기 스케일 밖으로 표시된다.
+ */
+export function isInScale(midi: number, key: MusicalKey | null): boolean {
+  if (key === null) return true;
+  const root = tonicSemitone(key.tonic);
+  if (root === null) return true;
+  const degree = (((midi - root) % 12) + 12) % 12;
+  return SCALE_STEPS[key.mode].includes(degree);
+}
+
+/** 이 MIDI 음이 으뜸음인가 (옥타브 무시). 피아노롤에서 더 진하게 표시한다 */
+export function isTonic(midi: number, key: MusicalKey | null): boolean {
+  if (key === null) return false;
+  const root = tonicSemitone(key.tonic);
+  if (root === null) return false;
+  return (((midi - root) % 12) + 12) % 12 === 0;
 }
 
 export function pitchName(p: Pitch): string {

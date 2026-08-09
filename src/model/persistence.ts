@@ -13,8 +13,8 @@
 
 import { SCHEMA_VERSION } from './project.ts';
 import type {
-  Clip, ClipId, EffectSpec, MusicalKey, Note, NoteId, Origin, PitchCurve, Project, ProjectId,
-  Track, TrackId,
+  Clip, ClipId, EffectSpec, LoopRegion, MusicalKey, Note, NoteId, Origin, PitchCurve, Project,
+  ProjectId, Track, TrackId,
 } from './project.ts';
 import { DEFAULT_TEMPO, DEFAULT_TIME_SIGNATURE, PPQ } from './time.ts';
 import { DEFAULT_TUNING, normalizePitch } from './pitch.ts';
@@ -209,6 +209,22 @@ function parseKey(value: unknown): MusicalKey | null {
   };
 }
 
+/**
+ * 루프 구간. **필드 추가라 마이그레이션이 필요 없다** (`sound.md` 9-8) —
+ * 예전 파일에는 이 키가 없고 그러면 `null` 이 된다.
+ *
+ * `end <= start` 인 구간은 버린다. 그대로 두면 스케줄러가 길이 0 구간을 무한 반복해
+ * **재생이 멈춘 것처럼 보인다.**
+ */
+function parseLoop(value: unknown): LoopRegion | null {
+  if (value == null) return null;
+  const raw = asRecord(value, '루프 구간');
+  const startTick = num(raw.startTick, 0, 0);
+  const endTick = num(raw.endTick, 0, 0);
+  if (!(endTick > startTick)) return null;
+  return { startTick, endTick, enabled: bool(raw.enabled, false) };
+}
+
 // ---------------------------------------------------------------------------
 // 불러오기
 // ---------------------------------------------------------------------------
@@ -262,6 +278,7 @@ export function deserializeProject(text: string): Project {
     },
     key: parseKey(raw.key),
     tuning: { a4Hz: num(asRecord(raw.tuning ?? {}, '조율').a4Hz, DEFAULT_TUNING.a4Hz, 380, 500) },
+    loop: parseLoop(raw.loop),
     lengthBars: Math.round(num(raw.lengthBars, 16, 1, 2000)),
     tracks: asArray(raw.tracks ?? [], '트랙 목록').map((track) => parseTrack(track, seen)),
     master: {

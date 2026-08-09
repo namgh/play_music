@@ -8,7 +8,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { BUILT_IN_INSTRUMENTS, createRegistry, playableInstrumentIds } from './definitions.ts';
+import {
+  BUILT_IN_INSTRUMENTS, createRegistry, instrumentsByCategory, playableInstrumentIds,
+} from './definitions.ts';
 import { clampParams, instrumentParams, InstrumentResolveError, resolveInstrument } from './resolve.ts';
 import type { InstrumentDefinition } from './types.ts';
 
@@ -165,4 +167,58 @@ test('악기 id 중복은 등록 시점에 막는다', () => {
 test('기준 정의는 연주용 악기 목록에 없다', () => {
   assert.ok(!playableInstrumentIds().includes('string-base'));
   assert.ok(playableInstrumentIds().includes('ukulele-soprano'));
+});
+
+// ---------------------------------------------------------------------------
+// 분류 — 목록을 묶는 기준 (화면은 이걸 그대로 그린다)
+// ---------------------------------------------------------------------------
+
+test('모든 연주 가능한 악기가 분류를 갖는다', () => {
+  // 없으면 목록에서 사라지거나 엉뚱한 그룹에 나온다
+  const registry = createRegistry();
+  for (const id of playableInstrumentIds()) {
+    assert.ok(resolveInstrument(id, registry).category, `${id} 에 분류가 없다`);
+  }
+});
+
+test('분류가 없으면 조용히 넘어가지 않고 실패한다', () => {
+  // 기본값으로 떨어뜨리면 화면만 보고는 "원래 그런가 보다" 로 지나간다
+  const registry = createRegistry([
+    { id: 'no-category', schemaVersion: 1, name: '분류 없음', voice: 'virtual-analog' },
+  ]);
+  assert.throws(() => resolveInstrument('no-category', registry), /category/);
+});
+
+test('분류는 상속되지만 자식이 덮어쓸 수 있다', () => {
+  const registry = createRegistry();
+  // 우쿨렐레는 어쿠스틱 기타를 상속하지만 기타가 아니다
+  assert.equal(resolveInstrument('acoustic-guitar', registry).category, '기타');
+  assert.equal(resolveInstrument('ukulele-soprano', registry).category, '줄');
+  // 레스폴은 스트랫을 상속받아 기타 그대로
+  assert.equal(resolveInstrument('electric-guitar-lp', registry).category, '기타');
+});
+
+test('묶은 목록에 모든 악기가 정확히 한 번씩 들어간다', () => {
+  const grouped = instrumentsByCategory();
+  const ids = grouped.flatMap((g) => g.instruments.map((i) => i.id));
+  assert.deepEqual(
+    [...ids].sort(),
+    [...playableInstrumentIds()].sort(),
+    '누락되거나 중복된 악기가 있다',
+  );
+  assert.equal(new Set(ids).size, ids.length, '같은 악기가 두 그룹에 있다');
+});
+
+test('빈 분류는 목록에 나오지 않는다', () => {
+  // 빈 그룹 헤더가 남으면 고를 것이 없는 칸이 생긴다
+  const grouped = instrumentsByCategory();
+  for (const group of grouped) {
+    assert.ok(group.instruments.length > 0, `${group.category} 가 비어 있다`);
+  }
+});
+
+test('기타를 한 곳에서 다 볼 수 있다', () => {
+  const guitars = instrumentsByCategory().find((g) => g.category === '기타');
+  assert.ok(guitars);
+  assert.ok(guitars.instruments.length >= 3, '기타가 흩어져 있다');
 });

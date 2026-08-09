@@ -11,7 +11,11 @@
  */
 
 import type { Tempo, Ticks, TimeSignature } from './time.ts';
-import type { Pitch, Tuning } from './pitch.ts';
+import type { MusicalKey, Pitch, Tuning } from './pitch.ts';
+
+// 조성은 음악 이론 개념이라 `pitch.ts` 가 소유한다 (스케일 판정이 거기 있다).
+// 프로젝트 스키마의 일부이므로 여기서 재수출해 기존 import 를 그대로 둔다
+export type { MusicalKey };
 
 // ---------------------------------------------------------------------------
 // ID — 안정적이어야 한다. 언두와 "이 음을 A→B로"가 여기 걸린다.
@@ -151,9 +155,20 @@ export interface Track {
 // 프로젝트
 // ---------------------------------------------------------------------------
 
-export interface MusicalKey {
-  tonic: string;
-  mode: 'major' | 'minor';
+/**
+ * 반복 재생 구간 (`WORKPLAN.md` 2-5).
+ *
+ * 전송(transport) 상태가 아니라 **프로젝트에 저장한다** — 실제 작업에서 "이 8마디를
+ * 돌린다"는 곡의 일부이고, 파일을 다시 열었을 때 남아 있어야 한다.
+ *
+ * `enabled` 를 따로 두는 이유: 구간을 지우지 않고 껐다 켜야 한다. 껐다고 구간을
+ * 버리면 다시 잡아야 하고, 그게 가장 자주 하는 조작이다.
+ */
+export interface LoopRegion {
+  startTick: Ticks;
+  /** 미포함 상한. `startTick` 보다 커야 한다 */
+  endTick: Ticks;
+  enabled: boolean;
 }
 
 export interface Project {
@@ -165,6 +180,8 @@ export interface Project {
   /** 표시·AI 힌트용. 렌더에는 영향이 없다 */
   key: MusicalKey | null;
   tuning: Tuning;
+  /** 반복 재생 구간. `null` 이면 처음부터 끝까지 한 번 */
+  loop: LoopRegion | null;
   lengthBars: number;
   tracks: Track[];
   master: {

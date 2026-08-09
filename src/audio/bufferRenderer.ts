@@ -36,6 +36,7 @@ import type { WasmVoiceEngine } from './voice/wasmEngine.ts';
 import { curveToParams } from './voice/wasmEngine.ts';
 import { VOICE_KIND_INDEX } from '../instruments/types.ts';
 import { buildEffectChain } from './effectGraph.ts';
+import { scheduleClick } from './metronome.ts';
 import type { EffectChain } from './effectGraph.ts';
 
 /** 타이머 주기. 룩어헤드보다 충분히 짧아야 한다 */
@@ -83,6 +84,8 @@ export class BufferRenderer implements AudioRenderer {
   private masterGain: GainNode;
   private masterEffects: EffectChain | null = null;
   private masterEffectsKey = '';
+  /** 예약된 메트로놈 오실레이터. 정지할 때 끊어야 한다 */
+  private readonly clickNodes = new Set<OscillatorNode>();
 
   /**
    * Rust DSP 코어. 있으면 이걸 쓴다 (`sound.md` M1).
@@ -117,6 +120,11 @@ export class BufferRenderer implements AudioRenderer {
     this.scheduler = new LookaheadScheduler({
       now: () => this.ctx.currentTime,
       scheduleNote: (event, atTime, durationSec) => this.emit(event, atTime, durationSec),
+      scheduleClick: (click, atTime) => {
+        const osc = scheduleClick(this.ctx, this.ctx.destination, click, atTime);
+        this.clickNodes.add(osc);
+        osc.addEventListener('ended', () => this.clickNodes.delete(osc));
+      },
     });
   }
 
@@ -200,9 +208,18 @@ export class BufferRenderer implements AudioRenderer {
     previous?.dispose();
   }
 
+  /**
+   * 메트로놈. 이 경로는 워크렛을 못 쓰는 환경의 **대체**이고, 루프·메트로놈은
+   * 스케줄러가 담당하므로 여기서도 그대로 동작한다. 소리만 여기서 만든다.
+   */
+  setMetronome(on: boolean): void {
+    this.scheduler.setMetronome(on);
+  }
+
   play(fromTick: Ticks = 0): void {
     if (!this.project) throw new Error('setProject 가 먼저 호출돼야 한다');
     this.stop();
+    this.scheduler.setProject(this.project);
     this.scheduler.start(this.project, fromTick);
     this.pumpTimer = setInterval(() => this.scheduler.pump(), PUMP_INTERVAL_MS);
   }
@@ -217,6 +234,10 @@ export class BufferRenderer implements AudioRenderer {
       try { source.stop(); } catch { /* 이미 끝난 소스 */ }
     }
     this.playing.clear();
+    for (const osc of this.clickNodes) {
+      try { osc.stop(); } catch { /* 이미 끝났다 */ }
+    }
+    this.clickNodes.clear();
   }
 
   seek(tick: Ticks): void {

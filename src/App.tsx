@@ -1,16 +1,27 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { BRAND } from './brand.ts';
-import { addClip, addTrack, deleteNotes, moveNotes, quantizeNotes, setTempo } from './editor/edits.ts';
+import {
+  addClip, addTrack, copyNotes, deleteNotes, duplicateNotes, moveNotes, pasteNotes,
+  quantizeNotes, setKey, setLoop, setLoopEnabled, setTempo,
+} from './editor/edits.ts';
 import { useProjectEditor } from './editor/useProjectEditor.ts';
 import { downloadProject, loadAutosave, readProjectFile, saveAutosave } from './editor/projectStorage.ts';
 import { createEmptyProject } from './model/factory.ts';
-import type { ClipId, Project, TrackId } from './model/project.ts';
+import type { ClipId, MusicalKey, Note, Project, TrackId } from './model/project.ts';
+import { NOTE_NAMES } from './model/pitch.ts';
 import { PPQ, ticksPerBar, ticksToBarBeat } from './model/time.ts';
 import { createRegistry, playableInstrumentIds } from './instruments/definitions.ts';
 import { resolveInstrument } from './instruments/resolve.ts';
 import { ENGINE_LABELS, useAudioEngine } from './audio/useAudioEngine.ts';
 import { PianoRoll } from './ui/PianoRoll.tsx';
+import { EditorToolbar } from './ui/EditorToolbar.tsx';
+import { collectGhosts } from './ui/ghostNotes.ts';
+import type { GhostMode } from './ui/ghostNotes.ts';
+import { clampRange, rangeOfNotes } from './ui/noteRange.ts';
+import type { FoldMode, NoteRange } from './ui/noteRange.ts';
+import { VelocityLane } from './ui/VelocityLane.tsx';
+import { PitchCurveLane } from './ui/PitchCurveLane.tsx';
 import { NoteInspector } from './ui/NoteInspector.tsx';
 import { TrackList } from './ui/TrackList.tsx';
 import { TuningLab } from './ui/TuningLab.tsx';
@@ -18,6 +29,9 @@ import { Timeline } from './ui/Timeline.tsx';
 import { Mixer } from './ui/Mixer.tsx';
 
 const registry = createRegistry();
+
+/** 트랙·악기가 없을 때 쓰는 음역. 화면이 비지 않게만 하면 된다 */
+const FALLBACK_RANGE = { low: 36, high: 84 };
 
 const GRID_OPTIONS: { label: string; ticks: number }[] = [
   { label: '1/4', ticks: PPQ },
@@ -67,6 +81,35 @@ export function App() {
   const [notice, setNotice] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement | null>(null);
 
+  /**
+   * 편집 커서 (클립 기준 틱). **두 기능이 이걸 공유한다** —
+   * "어디부터 재생하나"와 "어디에 붙여넣나"는 같은 개념이다 (`WORKPLAN.md` 2-6).
+   */
+  const [cursorTick, setCursorTick] = useState(0);
+  /** 앱 안 클립보드. OS 클립보드를 쓰지 않는다 (권한·형식 협상 대비 얻는 게 적다) */
+  const clipboard = useRef<Note[]>([]);
+  const [clipboardSize, setClipboardSize] = useState(0);
+  /** 메트로놈은 곡이 아니라 도구다 — 프로젝트에 저장하지 않고 내보내기에도 안 섞인다 */
+  const [metronome, setMetronome] = useState(false);
+  /**
+   * **클립별** 표시 음역. **곡이 아니라 보기 설정**이라 프로젝트에 저장하지 않는다
+   * (`plan.md` 5-4 — 프로젝트 데이터는 곡 자체다).
+   *
+   * 트랙이 아니라 클립으로 기억하는 이유: "1절은 저음, 2절은 고음" 이 같은 트랙의
+   * 다른 클립이다. 트랙으로 묶으면 2절을 고음으로 바꾼 순간 1절 화면도 같이 바뀐다
+   * (음 자체는 안 바뀌지만 매번 다시 맞춰야 한다).
+   */
+  const [rangeByClip, setRangeByClip] = useState<Record<string, NoteRange>>({});
+  /** 안 쓰는 줄 접기. 보기 설정이라 저장하지 않는다 */
+  const [fold, setFold] = useState<FoldMode>('off');
+  /**
+   * 트랙별 고스트 모드 (숨김 / 표시 / 편집).
+   *
+   * Cubase 13 Key Editor 처럼 **표시와 편집을 나눈다** — 멜로디를 보면서 베이스를
+   * 쓰는 게 기본 동작이고, 그때 멜로디를 실수로 건드리면 안 된다.
+   */
+  const [ghostModes, setGhostModes] = useState<Record<string, GhostMode>>({});
+
   const engine = useAudioEngine(project, registry);
 
   const track = project.tracks.find((t) => t.id === selectedTrackId) ?? project.tracks[0] ?? null;
@@ -94,6 +137,52 @@ export function App() {
     [engine, track],
   );
 
+  // 메트로놈 상태를 엔진에 반영한다. `engine` 전체가 아니라 setter 에만 의존한다 —
+  // `engine` 은 렌더마다 새 객체라 매 렌더 실행된다
+  const engineSetMetronome = engine.setMetronome;
+  useEffect(() => { engineSetMetronome(metronome); }, [engineSetMetronome, metronome]);
+
+  // --- 복사 · 붙여넣기 · 복제 -------------------------------------------------
+
+  const doCopy = useCallback(() => {
+    const picked = copyNotes(project, selection);
+    if (picked.length === 0) return;
+    clipboard.current = picked;
+    setClipboardSize(picked.length);
+    setNotice(`${picked.length}개 복사`);
+  }, [project, selection]);
+
+  const doPaste = useCallback(() => {
+    if (!clip || clipboard.current.length === 0) return;
+    try {
+      const { project: next, noteIds } = pasteNotes(project, clip.id, clipboard.current, cursorTick);
+      editor.commit(next);
+      editor.select(noteIds);
+      setNotice(`${noteIds.length}개 붙여넣기`);
+    } catch (err) {
+      setNotice(`붙여넣기 실패: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }, [clip, cursorTick, editor, project]);
+
+  const doDuplicate = useCallback(() => {
+    if (selection.length === 0) return;
+    const { project: next, noteIds } = duplicateNotes(project, selection);
+    if (noteIds.length === 0) return;
+    editor.commit(next);
+    editor.select(noteIds);
+  }, [editor, project, selection]);
+
+  /** 선택 구간을 루프로 잡는다. 선택이 없으면 클립 전체 */
+  const loopFromSelection = useCallback(() => {
+    if (!clip) return;
+    const notes = clip.notes.filter((n) => selection.includes(n.id));
+    const startTick = notes.length > 0 ? Math.min(...notes.map((n) => n.startTick)) : 0;
+    const endTick = notes.length > 0
+      ? Math.max(...notes.map((n) => n.startTick + n.lengthTick))
+      : clip.lengthTick;
+    editor.commit(setLoop(project, { startTick, endTick, enabled: true }));
+  }, [clip, editor, project, selection]);
+
   const onOpenFile = async (file: File | undefined) => {
     if (!file) return;
     try {
@@ -115,22 +204,54 @@ export function App() {
       if (target && /^(INPUT|SELECT|TEXTAREA)$/.test(target.tagName)) return;
 
       const meta = event.metaKey || event.ctrlKey;
-      if (meta && event.key.toLowerCase() === 's') {
-        event.preventDefault();
-        downloadProject(project);
-        setNotice('파일로 저장했습니다');
+      if (meta) {
+        switch (event.key.toLowerCase()) {
+          case 's':
+            event.preventDefault();
+            downloadProject(project);
+            setNotice('파일로 저장했습니다');
+            return;
+          case 'z':
+            event.preventDefault();
+            if (event.shiftKey) editor.redo();
+            else editor.undo();
+            return;
+          case 'c':
+            event.preventDefault();
+            doCopy();
+            return;
+          case 'v':
+            event.preventDefault();
+            doPaste();
+            return;
+          case 'd':
+            event.preventDefault();
+            doDuplicate();
+            return;
+          case 'a':
+            event.preventDefault();
+            if (clip) editor.select(clip.notes.map((n) => n.id));
+            return;
+          case 'l':
+            event.preventDefault();
+            loopFromSelection();
+            return;
+          default:
+            break;
+        }
         return;
       }
-      if (meta && event.key.toLowerCase() === 'z') {
-        event.preventDefault();
-        if (event.shiftKey) editor.redo();
-        else editor.undo();
-        return;
-      }
+
       if (event.code === 'Space') {
         event.preventDefault();
+        // **커서부터 재생한다.** 예전에는 항상 0 이라 8마디 곡의 7마디를 고치려면
+        // 매번 앞 6마디를 다 들어야 했다
         if (engine.state === 'playing') engine.stop();
-        else void engine.play(0);
+        else void engine.play(cursorTick + (clip?.startTick ?? 0));
+        return;
+      }
+      if (event.key === 'Escape') {
+        editor.select([]);
         return;
       }
       if (selection.length === 0) return;
@@ -164,7 +285,54 @@ export function App() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [editor, engine, gridTicks, project, selection]);
+  }, [
+    clip, cursorTick, doCopy, doDuplicate, doPaste, editor, engine, gridTicks,
+    loopFromSelection, project, selection,
+  ]);
+
+  // 재생 중에는 커서가 재생 위치를 따라간다 — 멈춘 자리에서 다시 시작하려면 필요하다
+  useEffect(() => {
+    if (engine.state !== 'playing' || engine.playheadTick === null || !clip) return;
+    setCursorTick(Math.max(0, engine.playheadTick - clip.startTick));
+  }, [clip, engine.playheadTick, engine.state]);
+
+  const instrumentRange = instrument ? clampRange(instrument.range) : FALLBACK_RANGE;
+
+  /** 지금 클립의 표시 음역. 기억된 게 없으면 악기 음역 */
+  const viewRange: NoteRange = (clip && rangeByClip[clip.id]) ?? instrumentRange;
+
+  const setViewRange = useCallback((next: NoteRange) => {
+    if (!clip) return;
+    setRangeByClip((prev) => ({ ...prev, [clip.id]: next }));
+  }, [clip]);
+
+  /**
+   * 처음 여는 클립은 **그 클립의 음에 맞춰** 시작한다. 악기 음역(5옥타브일 수 있다)으로
+   * 열면 매번 손으로 좁혀야 한다.
+   *
+   * `clip.id` 에만 의존한다 — 음 목록에 의존하면 편집할 때마다 화면이 튄다.
+   */
+  useEffect(() => {
+    if (!clip || rangeByClip[clip.id]) return;
+    const midis = clip.notes.map((n) => n.pitch.midi);
+    setRangeByClip((prev) => (
+      prev[clip.id] ? prev : { ...prev, [clip.id]: rangeOfNotes(midis, instrumentRange) }
+    ));
+    // eslint 규칙보다 의도가 우선이다: 음이 바뀔 때 다시 맞추면 안 된다
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clip?.id]);
+
+  /** 다른 트랙의 음을 이 클립의 좌표계로 옮겨 놓은 것 */
+  const ghosts = useMemo(
+    () => (clip ? collectGhosts(project, track?.id ?? null, clip, ghostModes) : []),
+    [clip, ghostModes, project, track?.id],
+  );
+
+  const setGhostMode = useCallback((trackId: string, mode: GhostMode) => {
+    setGhostModes((prev) => ({ ...prev, [trackId]: mode }));
+  }, []);
+
+  const barTicks = ticksPerBar(project.timeSignature);
 
   const position = engine.playheadTick === null
     ? '1.1.00'
@@ -215,12 +383,59 @@ export function App() {
         <section className="mt-6 flex flex-wrap items-center gap-2 rounded-lg border border-neutral-800 p-3">
           <button
             type="button"
-            onClick={() => (engine.state === 'playing' ? engine.stop() : void engine.play(0))}
+            onClick={() => (engine.state === 'playing'
+              ? engine.stop()
+              : void engine.play(cursorTick + (clip?.startTick ?? 0)))}
             className="rounded-md bg-teal-300 px-5 py-2 text-sm font-semibold text-teal-950 hover:bg-teal-200"
           >
             {engine.state === 'playing' ? '정지' : '재생'}
           </button>
+          <button
+            type="button"
+            onClick={() => { engine.stop(); setCursorTick(0); }}
+            title="맨 앞으로"
+            className="rounded border border-neutral-700 px-2.5 py-2 text-sm text-neutral-300"
+          >처음</button>
           <span className="w-20 text-center font-mono text-sm text-neutral-300">{position}</span>
+
+          <button
+            type="button"
+            onClick={() => setMetronome((on) => !on)}
+            aria-pressed={metronome}
+            title="메트로놈"
+            className={`rounded border px-2.5 py-1.5 text-sm ${
+              metronome
+                ? 'border-teal-600 bg-teal-950/60 text-teal-200'
+                : 'border-neutral-700 text-neutral-400'
+            }`}
+          >메트로놈</button>
+
+          <button
+            type="button"
+            onClick={() => {
+              if (project.loop === null) loopFromSelection();
+              else editor.commit(setLoopEnabled(project, !project.loop.enabled));
+            }}
+            aria-pressed={project.loop?.enabled ?? false}
+            title="반복 구간 (⌘L 로 선택 구간을 잡습니다)"
+            className={`rounded border px-2.5 py-1.5 text-sm ${
+              project.loop?.enabled
+                ? 'border-teal-600 bg-teal-950/60 text-teal-200'
+                : 'border-neutral-700 text-neutral-400'
+            }`}
+          >반복</button>
+          {project.loop && (
+            <span className="font-mono text-xs text-neutral-300">
+              {(project.loop.startTick / barTicks + 1).toFixed(2)}–
+              {(project.loop.endTick / barTicks + 1).toFixed(2)}
+              <button
+                type="button"
+                onClick={() => editor.commit(setLoop(project, null))}
+                className="ml-1.5 text-neutral-400 hover:text-neutral-100"
+                title="반복 구간 지우기"
+              >지우기</button>
+            </span>
+          )}
 
           <label className="ml-2 text-xs text-neutral-500" htmlFor="bpm">BPM</label>
           <input
@@ -254,7 +469,44 @@ export function App() {
             ))}
           </select>
 
+          {/* 조성 — 피아노롤 스케일 표시용. 렌더에는 영향이 없다 */}
+          <label className="ml-2 text-xs text-neutral-500" htmlFor="key">조성</label>
+          <select
+            id="key"
+            value={project.key === null ? '' : `${project.key.tonic}|${project.key.mode}`}
+            onChange={(e) => {
+              const raw = e.target.value;
+              if (raw === '') { editor.commit(setKey(project, null)); return; }
+              const [tonic, mode] = raw.split('|');
+              editor.commit(setKey(project, { tonic: tonic!, mode: mode as MusicalKey['mode'] }));
+            }}
+            className="rounded border border-neutral-700 bg-neutral-900 px-2 py-1 text-sm"
+          >
+            <option value="">없음</option>
+            {NOTE_NAMES.map((tonic) => (
+              <option key={`${tonic}-major`} value={`${tonic}|major`}>{tonic} 장조</option>
+            ))}
+            {NOTE_NAMES.map((tonic) => (
+              <option key={`${tonic}-minor`} value={`${tonic}|minor`}>{tonic} 단조</option>
+            ))}
+          </select>
+
           <span className="flex-1" />
+
+          <button
+            type="button"
+            disabled={selection.length === 0}
+            onClick={doCopy}
+            title="복사 (⌘C)"
+            className="rounded border border-neutral-700 px-3 py-1.5 text-sm disabled:opacity-40"
+          >복사</button>
+          <button
+            type="button"
+            disabled={clipboardSize === 0}
+            onClick={doPaste}
+            title="커서 위치에 붙여넣기 (⌘V)"
+            className="rounded border border-neutral-700 px-3 py-1.5 text-sm disabled:opacity-40"
+          >붙여넣기{clipboardSize > 0 ? ` (${clipboardSize})` : ''}</button>
 
           <button type="button" disabled={!editor.canUndo} onClick={editor.undo}
             className="rounded border border-neutral-700 px-3 py-1.5 text-sm disabled:opacity-40">되돌리기</button>
@@ -336,23 +588,55 @@ export function App() {
 
               {track && clip && instrument ? (
                 <section>
-                  <div className="mb-2 flex flex-wrap items-baseline gap-3">
+                  <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-2">
                     <h2 className="text-xs font-semibold uppercase tracking-wider text-neutral-500">
                       음 편집기
                     </h2>
                     <span className="text-xs text-neutral-500">
-                      {track.name} · {clip.label || '클립'} · {clip.notes.length}개 ·
-                      격자를 클릭해 추가, 드래그로 이동, 오른쪽 끝으로 길이, ↑↓ 반음, Delete 삭제
+                      {track.name} · {clip.label || '클립'} · {clip.notes.length}개
+                      {selection.length > 0 ? ` · ${selection.length}개 선택` : ''}
                     </span>
                   </div>
+                  <div className="mb-2">
+                    <EditorToolbar
+                      fold={fold}
+                      onFold={setFold}
+                      hasKey={project.key !== null}
+                      range={viewRange}
+                      instrumentRange={instrumentRange}
+                      noteMidis={clip.notes.map((n) => n.pitch.midi)}
+                      onRange={setViewRange}
+                      ghosts={ghosts}
+                      onGhostMode={setGhostMode}
+                    />
+                  </div>
+
                   <PianoRoll
                     editor={editor}
                     clip={clip}
-                    range={{ low: instrument.range.low, high: instrument.range.high }}
+                    range={viewRange}
+                    instrumentRange={instrumentRange}
+                    fold={fold}
+                    ghosts={ghosts}
                     gridTicks={gridTicks}
                     playheadTick={engine.playheadTick}
+                    cursorTick={cursorTick}
+                    onMoveCursor={setCursorTick}
+                    musicalKey={project.key}
                     onAudition={audition}
                   />
+
+                  <div className="mt-2 space-y-2">
+                    <VelocityLane editor={editor} clip={clip} onAudition={audition} />
+                    <PitchCurveLane editor={editor} clip={clip} onAudition={audition} />
+                  </div>
+
+                  <p className="mt-2 text-xs leading-relaxed text-neutral-500">
+                    빈 곳 클릭 = 음 추가 · 끌기 = 범위 선택 · Shift+클릭 = 선택 추가 ·
+                    눈금 클릭 = 재생 위치 · Space = 커서부터 재생 ·
+                    ⌘C/⌘V 복사·붙여넣기 · ⌘D 복제 · ⌘A 전체 선택 · ⌘L 선택 구간 반복 ·
+                    ↑↓ 반음 · Delete 삭제 · Esc 선택 해제
+                  </p>
                 </section>
               ) : (
                 <p className="rounded-lg border border-dashed border-neutral-800 p-6 text-sm text-neutral-500">

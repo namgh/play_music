@@ -21,6 +21,7 @@ import { pitchToHz } from '../model/pitch.ts';
 import { PPQ } from '../model/time.ts';
 import type { PitchCurve, Project } from '../model/project.ts';
 import { createRegistry } from '../instruments/definitions.ts';
+import { curveCentsAt, isCurveFlat } from '../model/curve.ts';
 
 const FS = 48000;
 const registry = createRegistry();
@@ -238,5 +239,54 @@ test('곡선을 끄면 검증된 올패스 경로의 정확도가 그대로다',
     const { pcm, targetHz } = await render(projectWithCurve(midi, null));
     const err = measureCentsError(pcm, targetHz, FS);
     assert.ok(Math.abs(err) <= 1, `midi=${midi}: ${err.toFixed(3)} 센트`);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// 화면과 소리가 갈라지지 않는가
+//
+// `model/curve.ts` 의 `curveCentsAt` 은 Rust `cents_at` 을 손으로 옮긴 것이고,
+// **그래프를 그리는 데 쓰인다.** 두 구현이 갈라지면 사용자가 그린 모양과 들리는 것이
+// 어긋나고, 그건 편집 도구로서 최악이다. 여기서 실제 파형과 대조해 못 갈라지게 묶는다.
+// ---------------------------------------------------------------------------
+
+test('그래프용 곡선 함수가 실제 파형의 음정과 일치한다', async () => {
+  const curve: PitchCurve = {
+    glide: { cents: -180, ms: 220 },
+    vibrato: { cents: 35, hz: 5, delayMs: 300 },
+    points: null,
+  };
+  const { pcm, targetHz } = await render(projectWithCurve(57, curve));
+  const tracked = trackPitchCents(pcm, targetHz, FS, { periodsPerWindow: 3 });
+
+  // 글라이드 초반은 변화가 빨라 추적기의 창(3주기)이 평균을 내므로 오차가 크다.
+  // 곡선이 자리를 잡은 뒤부터 비교한다
+  const checkpoints = [0.35, 0.45, 0.55, 0.7, 0.85];
+  for (const at of checkpoints) {
+    const measured = centsAt(tracked, at);
+    const predicted = curveCentsAt(curve, at);
+    assert.ok(
+      Math.abs(measured - predicted) < 12,
+      `t=${at}s: 그래프 ${predicted.toFixed(1)}¢ vs 파형 ${measured.toFixed(1)}¢ — `
+        + 'TS 와 Rust 의 곡선 식이 갈라졌다',
+    );
+  }
+});
+
+test('평평 판정이 두 구현에서 같다', async () => {
+  // TS 가 "평평하다"고 보는 곡선은 엔진도 평평하게 봐야 한다.
+  // 어긋나면 화면에는 곡선이 그려지는데 소리는 안 변한다 (실제로 났던 종류의 버그)
+  const flatByTs: PitchCurve = { glide: { cents: 40, ms: 0 }, vibrato: null, points: null };
+  assert.equal(isCurveFlat(flatByTs), true);
+
+  const plain = await render(projectWithCurve(57, null));
+  const withFlat = await render(projectWithCurve(57, flatByTs));
+
+  // 같은 경로를 타면 결정론적 렌더라 파형이 완전히 같아야 한다
+  assert.equal(withFlat.pcm.length, plain.pcm.length);
+  for (let i = 0; i < plain.pcm.length; i += 97) {
+    if (withFlat.pcm[i] !== plain.pcm[i]) {
+      assert.fail(`샘플 ${i} 가 다르다 — 평평 판정이 엔진과 어긋난다`);
+    }
   }
 });

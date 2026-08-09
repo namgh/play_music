@@ -45,6 +45,16 @@ export function useAudioEngine(
   const [exporting, setExporting] = useState(false);
   const [engineKind, setEngineKind] = useState<EngineKind | null>(null);
 
+  /**
+   * 메트로놈. 렌더러가 아직 없으면 값만 기억해 두고 만들어질 때 반영한다 —
+   * `AudioContext` 는 사용자 제스처가 있어야 생기므로 켜는 시점에 없을 수 있다.
+   */
+  const metronomeRef = useRef(false);
+  const setMetronome = useCallback((on: boolean) => {
+    metronomeRef.current = on;
+    rendererRef.current?.setMetronome(on);
+  }, []);
+
   const ensure = useCallback(async (): Promise<AudioRenderer> => {
     if (!ctxRef.current) ctxRef.current = new AudioContext({ latencyHint: 'interactive' });
     const ctx = ctxRef.current;
@@ -91,6 +101,7 @@ export function useAudioEngine(
     await ctx.resume();
     // 워크렛이 wasm 을 준비하기 전에 예약하면 그 음들이 버려진다
     await readyRef.current?.();
+    rendererRef.current.setMetronome(metronomeRef.current);
     return rendererRef.current;
   }, [registry]);
 
@@ -186,5 +197,8 @@ export function useAudioEngine(
     }
   }, [ensure]);
 
-  return { state, playheadTick, error, exporting, engineKind, play, stop, audition, exportWav };
+  return {
+    state, playheadTick, error, exporting, engineKind,
+    play, stop, audition, exportWav, setMetronome,
+  };
 }

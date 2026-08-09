@@ -95,6 +95,7 @@ export function createEmptyProject(name: string): Project {
     timeSignature: { ...DEFAULT_TIME_SIGNATURE },
     key: null,
     tuning: { ...DEFAULT_TUNING },
+    loop: null,
     lengthBars: 16,
     tracks: [],
     master: { gain: 1, effects: [] },

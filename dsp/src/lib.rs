@@ -30,7 +30,23 @@ use string_voice::StringParams;
 use synth::{SynthParams, Waveform};
 use voice::{AnyVoice, VoiceKind};
 
-pub const MAX_VOICES: usize = 32;
+/// 동시에 **울릴 수 있는** 보이스 수 (할당 상한).
+pub const POLYPHONY: usize = 32;
+
+/// 보이스 배열의 크기. `POLYPHONY` 를 넘는 8개는 **페이드아웃 전용 여유**다
+/// (`WORKPLAN.md` 2-4).
+///
+/// 클릭의 원인은 울리던 파형이 한 샘플 만에 0 으로 점프하는 것이다. 페이드를 걸려면
+/// 뺏긴 보이스가 사라지는 데 시간이 필요한데, 슬롯이 꽉 차 있으면 그 시간을 줄 곳이
+/// 없다. 여유를 두면 **새 음을 지연시키지 않고** 뺏긴 음을 페이드아웃할 수 있다.
+pub const MAX_VOICES: usize = POLYPHONY + 8;
+
+/// 여유가 없으면 페이드를 걸 곳이 없어 훔칠 때 클릭이 난다.
+/// 테스트가 아니라 **컴파일 타임**에 막는다 — 누가 상수를 되돌리면 빌드가 깨져야 한다
+const _: () = assert!(MAX_VOICES > POLYPHONY);
+
+/// 보이스를 뺏을 때 걸어 주는 페이드. 짧아서 안 들리고, 없으면 딱 소리가 난다
+const STEAL_FADE_MS: f64 = 5.0;
 
 /// 샘플 하나가 담기는 최대 프레임 수 (48kHz 에서 약 8초)
 pub const SAMPLE_CAPACITY: usize = 384_000;
@@ -72,7 +88,10 @@ struct Engine {
     scratch: Vec<f32>,
     /// JS 가 파라미터를 써 넣는 곳
     param_in: Vec<f32>,
-    next_voice: usize,
+    /// 보이스별 발음 순번. 뺏을 때 **가장 오래된 것**을 고르는 데 쓴다
+    ages: Vec<u64>,
+    /// 다음 발음에 줄 순번 (단조 증가)
+    note_counter: u64,
 }
 
 static mut ENGINE: Option<Engine> = None;
@@ -103,7 +122,8 @@ pub extern "C" fn init(sample_rate: f32) {
         out: vec![0.0; MAX_BLOCK],
         scratch: vec![0.0; MAX_BLOCK],
         param_in: vec![0.0; PARAM_COUNT],
-        next_voice: 0,
+        ages: vec![0; MAX_VOICES],
+        note_counter: 0,
     };
     unsafe {
         let ptr = &raw mut ENGINE;
@@ -218,21 +238,65 @@ fn read_curve() -> PitchCurve {
     }
 }
 
+/// 할당 결정 (`WORKPLAN.md` 2-4). **순수 함수라 테스트가 직접 검증한다** —
+/// 보이스 풀은 전역 상태 뒤에 있어서 밖에서 재현하기 어렵다.
+///
+/// 반환: `(페이드를 걸 보이스, 새 음이 들어갈 슬롯)`
+///
+/// **가장 조용한 것을 찾지 않는 이유:** 우리 보이스는 전부 시간이 갈수록 감쇠한다
+/// (줄은 T60, 신스는 ADSR, 드럼은 엔벌로프). 그래서 "가장 오래된 것"이 곧 "가장
+/// 조용한 것"이고, 진폭 추적기를 보이스마다 돌리는 비용이 필요 없다.
+pub fn plan_allocation(
+    active: &[bool],
+    fading: &[bool],
+    ages: &[u64],
+    polyphony: usize,
+) -> (Option<usize>, usize) {
+    let n = active.len();
+    let oldest_live = (0..n)
+        .filter(|&i| active[i] && !fading[i])
+        .min_by_key(|&i| ages[i]);
+
+    // 폴리포니 상한을 넘으면 가장 오래된 것을 페이드아웃시켜 자리를 만든다.
+    // 즉시 리셋하지 않으므로 **클릭이 나지 않는다**
+    let live = (0..n).filter(|&i| active[i] && !fading[i]).count();
+    let victim = if live >= polyphony { oldest_live } else { None };
+
+    let slot = match (0..n).find(|&i| !active[i]) {
+        Some(i) => i,
+        // 페이드용 여유까지 다 찼다 — 5ms 안에 8음이 더 들어온 극단적인 경우다.
+        // 가장 오래된 것을 즉시 재사용한다 (클릭이 나지만 음을 버리는 것보다 낫다)
+        None => (0..n).min_by_key(|&i| ages[i]).unwrap_or(0),
+    };
+
+    (victim, slot)
+}
+
+fn allocate_voice(e: &mut Engine) -> usize {
+    // 스택 배열 — 오디오 경로에서 힙을 건드리지 않는다
+    let mut active = [false; MAX_VOICES];
+    let mut fading = [false; MAX_VOICES];
+    for i in 0..MAX_VOICES {
+        active[i] = e.voices[i].is_active();
+        fading[i] = e.voices[i].is_fading();
+    }
+
+    let (victim, slot) = plan_allocation(&active, &fading, &e.ages, POLYPHONY);
+    if let Some(i) = victim {
+        e.voices[i].start_fade(STEAL_FADE_MS);
+    }
+    slot
+}
+
 /// 발음. `param_buffer()` 를 채운 뒤 부른다. 반환값은 쓰인 보이스 번호
 #[no_mangle]
 pub extern "C" fn note_on(freq_hz: f32, velocity: f32, gain: f32) -> u32 {
     let params = read_params();
     let e = engine();
 
-    // 쉬는 보이스 우선, 없으면 가장 오래된 것을 뺏는다 (보이스 스틸링)
-    let index = match e.voices.iter().position(|v| !v.is_active()) {
-        Some(i) => i,
-        None => {
-            let i = e.next_voice;
-            e.next_voice = (e.next_voice + 1) % MAX_VOICES;
-            i
-        }
-    };
+    let index = allocate_voice(e);
+    e.ages[index] = e.note_counter;
+    e.note_counter += 1;
 
     e.params[index] = params;
     e.gains[index] = gain;
@@ -308,11 +372,18 @@ pub extern "C" fn set_params_live(voice: u32) {
     }
 }
 
+/// 노트오프. `release_ms` 는 줄·모달·샘플러의 뮤트 속도다 (신스는 자기 ADSR 릴리즈를
+/// 쓰고, 타악기는 무시한다 — `voice.rs` 의 `note_off` 참고).
+///
+/// `release_ms` 를 파라미터 슬롯이 아니라 인자로 받는 이유: 이 값은 발음마다 바뀌는
+/// 게 아니라 노트오프 시점에만 필요하다. 슬롯을 늘리면 Rust·TS·워크렛 세 곳의
+/// `PARAM_COUNT` 를 같이 고쳐야 하고, 어긋나면 조용히 엉뚱한 소리가 난다
+/// (`HANDOFF.md` 작업 규칙).
 #[no_mangle]
-pub extern "C" fn note_off(voice: u32) {
+pub extern "C" fn note_off(voice: u32, release_ms: f32) {
     let e = engine();
     if let Some(v) = e.voices.get_mut(voice as usize) {
-        v.note_off();
+        v.note_off(release_ms as f64);
     }
 }
 
@@ -424,4 +495,103 @@ pub extern "C" fn param_count() -> u32 {
 #[no_mangle]
 pub extern "C" fn sample_rate() -> f32 {
     engine().sample_rate as f32
+}
+
+/// 보이스 슬롯 수. 워크렛이 **보이스별 소유권 표**를 이 크기로 잡는다.
+///
+/// 왜 필요한가: 노트오프는 발음보다 나중에 실행되는데, 그 사이에 보이스를 뺏기면
+/// 그 슬롯에는 이미 다른 음이 들어 있다. 그때 노트오프를 그냥 적용하면 **엉뚱한 음이
+/// 잘린다.** 워크렛이 슬롯마다 "지금 누구 것인가"를 들고 있어야 막을 수 있다.
+#[no_mangle]
+pub extern "C" fn max_voices() -> u32 {
+    MAX_VOICES as u32
+}
+
+/// 살아 있는(페이드 중이 아닌) 보이스 수. `POLYPHONY` 를 넘지 않아야 한다.
+///
+/// `process()` 가 돌려주는 "울리는 보이스 수"에는 페이드아웃 중인 것도 들어가므로
+/// 폴리포니 상한을 그것만으로는 검증할 수 없다. 테스트가 이 값을 본다.
+#[no_mangle]
+pub extern "C" fn live_voices() -> u32 {
+    let e = engine();
+    e.voices
+        .iter()
+        .filter(|v| v.is_active() && !v.is_fading())
+        .count() as u32
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `active`·`fading`·`ages` 를 짧게 만드는 도우미. 길이는 슬롯 수
+    fn pool(spec: &[(bool, bool, u64)]) -> (Vec<bool>, Vec<bool>, Vec<u64>) {
+        (
+            spec.iter().map(|s| s.0).collect(),
+            spec.iter().map(|s| s.1).collect(),
+            spec.iter().map(|s| s.2).collect(),
+        )
+    }
+
+    #[test]
+    fn free_slot_is_used_without_stealing() {
+        // 여유가 있으면 아무것도 뺏지 않는다
+        let (a, f, g) = pool(&[(true, false, 0), (false, false, 0), (false, false, 0)]);
+        let (victim, slot) = plan_allocation(&a, &f, &g, 2);
+        assert_eq!(victim, None, "뺏을 필요가 없는데 뺏었다");
+        assert_eq!(slot, 1);
+    }
+
+    #[test]
+    fn steals_the_oldest_not_round_robin() {
+        // 라운드로빈이면 방금 친 음을 죽일 수 있다. 나이가 가장 작은 것을 골라야 한다
+        let (a, f, g) = pool(&[
+            (true, false, 30),
+            (true, false, 10), // 가장 오래된 것
+            (true, false, 20),
+            (false, false, 0), // 페이드용 여유
+        ]);
+        let (victim, slot) = plan_allocation(&a, &f, &g, 3);
+        assert_eq!(victim, Some(1), "가장 오래된 보이스를 고르지 않았다");
+        // 새 음은 **여유 슬롯**에 들어간다 — 뺏은 슬롯을 즉시 재사용하면 클릭이 난다
+        assert_eq!(slot, 3);
+        assert_ne!(slot, victim.unwrap(), "페이드 중인 슬롯을 덮어썼다");
+    }
+
+    #[test]
+    fn already_fading_voices_do_not_count_toward_polyphony() {
+        // 죽는 중인 보이스를 폴리포니로 세면 상한에 못 미치는데도 계속 뺏는다
+        let (a, f, g) = pool(&[
+            (true, true, 5), // 페이드 중
+            (true, false, 10),
+            (false, false, 0),
+        ]);
+        let (victim, slot) = plan_allocation(&a, &f, &g, 2);
+        assert_eq!(victim, None, "살아 있는 보이스가 1개인데 뺏었다");
+        assert_eq!(slot, 2);
+    }
+
+    #[test]
+    fn already_fading_voices_are_not_stolen_again() {
+        let (a, f, g) = pool(&[
+            (true, true, 1), // 가장 오래됐지만 이미 죽는 중
+            (true, false, 9),
+            (true, false, 8),
+            (false, false, 0),
+        ]);
+        let (victim, _) = plan_allocation(&a, &f, &g, 2);
+        assert_eq!(
+            victim,
+            Some(2),
+            "이미 페이드 중인 것을 다시 골랐거나 엉뚱한 것을 골랐다"
+        );
+    }
+
+    #[test]
+    fn full_pool_falls_back_to_the_oldest_slot() {
+        // 페이드 여유까지 다 찬 극단적 경우. 음을 버리지 않는다
+        let (a, f, g) = pool(&[(true, true, 7), (true, true, 3), (true, false, 5)]);
+        let (_, slot) = plan_allocation(&a, &f, &g, 2);
+        assert_eq!(slot, 1, "가장 오래된 슬롯을 재사용해야 한다");
+    }
 }

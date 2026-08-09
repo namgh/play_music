@@ -26,8 +26,8 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
 import { createRegistry, playableInstrumentIds } from '../instruments/definitions.ts';
-import { resolveInstrument } from '../instruments/resolve.ts';
-import { WasmVoiceEngine } from './voice/wasmEngine.ts';
+import { instrumentParams, resolveInstrument } from '../instruments/resolve.ts';
+import { DEFAULT_RELEASE_MS, noteOffFields, WasmVoiceEngine } from './voice/wasmEngine.ts';
 import { measureCentsError, measureCentsErrorInContext, seededRng } from './analysis.ts';
 import { renderProjectOffline, slice } from './offlineRender.ts';
 import type { Project } from '../model/project.ts';
@@ -287,7 +287,7 @@ test('TS 대체 경로는 미구현 보이스를 조용히 무음으로 두지 �
   // wasm 이 없을 때의 경로. 조용히 무음이면 "왜 소리가 안 나지"로 시간을 버린다
   const project = projectWithNotes('acoustic-guitar', [{ midi: 57 }]);
   const broken = createRegistry([
-    { id: 'drum-kit', schemaVersion: 1, name: '드럼', voice: 'sampler' },
+    { id: 'drum-kit', schemaVersion: 1, name: '드럼', voice: 'sampler', category: '드럼' },
   ]);
   project.tracks[0]!.instrumentId = 'drum-kit';
   assert.throws(
@@ -365,5 +365,59 @@ test('같은 프로젝트는 같은 파형을 낸다 (결정론)', () => {
   assert.equal(a.pcm.length, b.pcm.length);
   for (let i = 0; i < a.pcm.length; i++) {
     if (a.pcm[i] !== b.pcm[i]) assert.fail(`샘플 ${i} 가 다르다: ${a.pcm[i]} ≠ ${b.pcm[i]}`);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// 노트오프 배선 (`WORKPLAN.md` 2-1·2-2)
+//
+// 이 함수가 재생과 내보내기 양쪽에서 쓰인다. 갈라지면 "들은 것과 파일이 다르다"가
+// 되므로 순수 함수로 뽑아 두고 여기서 잰다.
+// ---------------------------------------------------------------------------
+
+test('노트 길이가 프레임으로 넘어간다', () => {
+  const { durationFrames, releaseMs } = noteOffFields({ releaseMs: 90 }, 0.5, 48000);
+  assert.equal(durationFrames, 24000, '0.5초 = 24000프레임이어야 한다');
+  assert.equal(releaseMs, 90);
+});
+
+test('letRing 이면 노트오프를 예약하지 않는다', () => {
+  // 0 은 워크렛에서 "노트오프 없음" 이다 — 하프·차임벨처럼 떼도 울리는 악기
+  const ring = noteOffFields({ letRing: 1, releaseMs: 120 }, 0.5, 48000);
+  assert.equal(ring.durationFrames, 0);
+
+  const damped = noteOffFields({ letRing: 0, releaseMs: 120 }, 0.5, 48000);
+  assert.ok(damped.durationFrames > 0);
+});
+
+test('아주 짧은 음도 최소 1프레임을 받는다', () => {
+  // 0 으로 내려가면 "노트오프 없음"으로 해석돼 **영원히 울린다**
+  const { durationFrames } = noteOffFields({}, 1e-9, 48000);
+  assert.equal(durationFrames, 1);
+});
+
+test('releaseMs 가 없거나 이상하면 기본값으로 떨어진다', () => {
+  assert.equal(noteOffFields({}, 1, 48000).releaseMs, DEFAULT_RELEASE_MS);
+  assert.equal(noteOffFields({ releaseMs: -5 }, 1, 48000).releaseMs, DEFAULT_RELEASE_MS);
+  assert.equal(noteOffFields({ releaseMs: '느리게' }, 1, 48000).releaseMs, DEFAULT_RELEASE_MS);
+});
+
+test('악기 정의의 letRing 기본값이 보이스 타입과 맞는다', () => {
+  // 신스가 letRing 이면 ADSR 이 Sustain 에서 멈춰 **음이 안 꺼진다**.
+  // 드럼이 letRing 이 아니면 짧게 찍은 킥이 잘린다.
+  const expected: Record<string, number> = {
+    'acoustic-guitar': 0,
+    'electric-guitar': 0,
+    harp: 1,
+    'synth-lead': 0,
+    'synth-pad': 0,
+    marimba: 1,
+    'tubular-bell': 1,
+    kick: 1,
+    snare: 1,
+  };
+  for (const [id, letRing] of Object.entries(expected)) {
+    const params = instrumentParams(resolveInstrument(id, registry), 'default', null);
+    assert.equal(Number(params.letRing ?? 0), letRing, `${id} 의 letRing`);
   }
 });
