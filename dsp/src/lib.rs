@@ -70,13 +70,14 @@ pub const MAX_BLOCK: usize = 2048;
 /// | 37~45 | 표현력 (2편광 3개 · 연주 노이즈 · 공명현 2개 · 타건 변주 · 바디 2개) |
 /// | 46~60 | **보이싱 세부** — 예전에 Rust 상수로 박혀 있던 값들 |
 /// | 61~63 | 드럼 막 진동 (모드 수 · 비조화도 · 스네어 줄) |
+/// | 64~70 | 신스 두께·움직임 (유니즌 2 · 서브 · 노이즈 · LFO 3) |
 ///
 /// **층을 분리한다** (`sound.md` 5절·8절): "줄 길이"와 "왜곡"은 서로 다른 층이다.
 ///
 /// 34~36 은 `ROADMAP.md` S1, 37~41 은 S2 에서 **각각 한 번에** 추가했다.
 /// 슬롯을 늘리면 Rust·TS·워크렛 세 곳을 같이 고쳐야 하므로 나눠서 늘리지 않는다
 /// (로드맵 원칙 1).
-pub const PARAM_COUNT: usize = 64;
+pub const PARAM_COUNT: usize = 71;
 
 /// 아래 값들은 **기본값일 뿐**이다. 전부 파라미터로 덮을 수 있다.
 ///
@@ -470,6 +471,14 @@ fn read_synth(bright: f64) -> SynthParams {
         sustain: p[2] as f64,
         release_ms: p[3] as f64,
         drive: p[13] as f64,
+        // 두께와 움직임 (`ROADMAP.md` 신스 확장). 전부 0 이면 예전과 같은 소리다
+        unison: (p[64] as usize).clamp(1, synth::MAX_UNISON),
+        unison_detune_cents: p[65] as f64,
+        sub_level: p[66] as f64,
+        noise_level: p[67] as f64,
+        lfo_hz: p[68] as f64,
+        lfo_to_pitch_cents: p[69] as f64,
+        lfo_to_cutoff: p[70] as f64,
     }
 }
 

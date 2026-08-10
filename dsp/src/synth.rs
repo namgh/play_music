@@ -242,6 +242,49 @@ pub struct SynthParams {
     pub release_ms: f64,
     /// 출력 왜곡 (0 이면 없음). 있으면 오버샘플링을 거친다
     pub drive: f64,
+
+    // --- 두께와 움직임 (`ROADMAP.md` 신스 확장) ---
+    //
+    // 여기까지는 **에일리어싱은 잡혔지만 얇았다.** 오실레이터 둘에 ADSR 하나뿐이라
+    // 소리가 정지해 있었다. 실제 신스가 두껍게 들리는 이유는 파형이 아니라
+    // **유니즌·서브·노이즈·LFO** 다.
+    /// 유니즌 보이스 수 (1~7). 여러 개를 조금씩 디튠해 겹친다
+    pub unison: usize,
+    /// 유니즌 보이스 사이의 최대 디튠 (센트)
+    pub unison_detune_cents: f64,
+    /// 한 옥타브 아래 사인. 저역을 받쳐 준다 (0~1)
+    pub sub_level: f64,
+    /// 노이즈 섞기 (0~1). 어택의 바람 소리
+    pub noise_level: f64,
+    /// LFO 속도 (Hz). 0 이면 안 돈다
+    pub lfo_hz: f64,
+    /// LFO → 음정 (센트). 비브라토
+    pub lfo_to_pitch_cents: f64,
+    /// LFO → 컷오프 (0~1). 필터가 흔들린다
+    pub lfo_to_cutoff: f64,
+}
+
+/// 유니즌 보이스 수의 상한. 오디오 경로에서 할당하지 않으려고 고정 배열을 쓴다
+pub const MAX_UNISON: usize = 7;
+
+/// 유니즌 보이스들의 디튠 오프셋 (센트). **순수 함수라 테스트가 직접 본다.**
+///
+/// **±대칭이어야 한다.** 한쪽으로 걸면 여러 보이스의 평균 음정이 밀려 곡 전체가
+/// 샤프해진다 — `HANDOFF.md` 10번(신스 디튠)에서 이미 한 번 밟은 함정이다.
+/// 오디오로 재려 하면 유니즌이 만드는 맥놀이가 음정 추정을 오염시켜 무엇이 틀렸는지
+/// 알 수 없다. 그래서 배치 계산을 따로 떼어 직접 검증한다.
+pub fn unison_detune_offsets(unison: usize, spread_cents: f64) -> ([f64; MAX_UNISON], usize) {
+    let count = unison.clamp(1, MAX_UNISON);
+    let mut out = [0.0; MAX_UNISON];
+    if count < 2 || spread_cents.is_nan() || spread_cents <= 0.0 {
+        return (out, count);
+    }
+    for (i, slot) in out[..count].iter_mut().enumerate() {
+        // -1 ~ +1 로 고르게 편 뒤 폭의 절반을 곱한다
+        let position = (i as f64 / (count as f64 - 1.0)) * 2.0 - 1.0;
+        *slot = position * spread_cents * 0.5;
+    }
+    (out, count)
 }
 
 impl Default for SynthParams {
@@ -251,6 +294,13 @@ impl Default for SynthParams {
             detune_cents: 8.0,
             cutoff_hz: 3000.0,
             resonance: 0.2,
+            unison: 1,
+            unison_detune_cents: 0.0,
+            sub_level: 0.0,
+            noise_level: 0.0,
+            lfo_hz: 0.0,
+            lfo_to_pitch_cents: 0.0,
+            lfo_to_cutoff: 0.0,
             filter_env: 0.5,
             attack_ms: 5.0,
             decay_ms: 300.0,
@@ -265,6 +315,14 @@ pub struct SynthVoice {
     sample_rate: f64,
     osc_a: Oscillator,
     osc_b: Oscillator,
+    /// 유니즌 보이스. `osc_a`·`osc_b` 와 별개로 겹친다
+    unison: [Oscillator; MAX_UNISON],
+    /// 한 옥타브 아래 사인
+    sub: Oscillator,
+    /// LFO 위상
+    lfo_phase: f64,
+    /// 노이즈용 결정론적 난수
+    noise: u32,
     envelope: Envelope,
     filter: StateVariableFilter,
     oversampler: Oversampler,
@@ -281,6 +339,10 @@ impl SynthVoice {
             sample_rate,
             osc_a: Oscillator::default(),
             osc_b: Oscillator::default(),
+            unison: [Oscillator::default(); MAX_UNISON],
+            sub: Oscillator::default(),
+            lfo_phase: 0.0,
+            noise: 0x02f6_e2b1,
             envelope: Envelope::new(),
             filter: StateVariableFilter::default(),
             oversampler: Oversampler::new(sample_rate),
@@ -356,25 +418,81 @@ impl SynthVoice {
         // 평균 음정이 디튠의 절반만큼 샤프해진다 (8센트 디튠에서 +4센트 오차가 났다).
         // 다른 악기와 겹쳐 쓸 때 바로 드러나는 오차다
         let half = self.params.detune_cents / 2.0;
-        let dt_a = (self.freq_hz * (-half / 1200.0).exp2() / self.sample_rate).min(0.49);
-        let dt_b = (self.freq_hz * (half / 1200.0).exp2() / self.sample_rate).min(0.49);
         let waveform = self.params.waveform;
         let use_second = self.params.detune_cents.abs() > 0.01;
         let drive = self.params.drive.clamp(0.0, 1.0);
 
+        // 유니즈 보이스는 **±대칭으로 편다.** 한쪽으로 걸면 음정이 평균만큼 밀린다
+        // (`HANDOFF.md` 10번과 같은 함정)
+        let (unison_offsets, unison_count) =
+            unison_detune_offsets(self.params.unison, self.params.unison_detune_cents);
+        let sub_level = self.params.sub_level.clamp(0.0, 1.0);
+        let noise_level = self.params.noise_level.clamp(0.0, 1.0);
+        let lfo_step = self.params.lfo_hz.max(0.0) / self.sample_rate;
+        let lfo_pitch = self.params.lfo_to_pitch_cents;
+        let lfo_cutoff = self.params.lfo_to_cutoff.clamp(0.0, 1.0);
+
         for sample in out.iter_mut() {
             let env = self.envelope.advance();
 
+            // LFO — 음정과 컷오프를 함께 흔든다. 이게 없으면 소리가 정지해 있다
+            let lfo = if lfo_step > 0.0 {
+                self.lfo_phase += lfo_step;
+                if self.lfo_phase >= 1.0 {
+                    self.lfo_phase -= 1.0;
+                }
+                (2.0 * core::f64::consts::PI * self.lfo_phase).sin()
+            } else {
+                0.0
+            };
+            let vibrato = if lfo_pitch != 0.0 {
+                (lfo * lfo_pitch / 1200.0).exp2()
+            } else {
+                1.0
+            };
+            let freq = self.freq_hz * vibrato;
+            let dt_a = (freq * (-half / 1200.0).exp2() / self.sample_rate).min(0.49);
+            let dt_b = (freq * (half / 1200.0).exp2() / self.sample_rate).min(0.49);
+
             let mut raw = self.osc_a.next(waveform, dt_a);
+            let mut voices = 1.0;
             if use_second {
-                raw = (raw + self.osc_b.next(waveform, dt_b)) * 0.5;
+                raw += self.osc_b.next(waveform, dt_b);
+                voices += 1.0;
+            }
+
+            // 유니즌 — 조금씩 다른 음정으로 겹친다. 신스가 "두껍다"고 느끼는 것의 정체다
+            if unison_count > 1 {
+                for (osc, cents) in self.unison[..unison_count]
+                    .iter_mut()
+                    .zip(unison_offsets[..unison_count].iter())
+                {
+                    let dt = (freq * (cents / 1200.0).exp2() / self.sample_rate).min(0.49);
+                    raw += osc.next(waveform, dt);
+                    voices += 1.0;
+                }
+            }
+            raw /= voices;
+
+            // 서브 — 한 옥타브 아래 사인. 저역을 받쳐 준다
+            if sub_level > 0.0 {
+                let dt = (freq * 0.5 / self.sample_rate).min(0.49);
+                raw += self.sub.next(Waveform::Sine, dt) * sub_level;
+            }
+
+            // 노이즈 — 어택의 바람 소리
+            if noise_level > 0.0 {
+                self.noise = self.noise.wrapping_mul(1664525).wrapping_add(1013904223);
+                let white = (self.noise as f64 / 4294967296.0) * 2.0 - 1.0;
+                raw += white * noise_level * 0.3;
             }
 
             // 엔벌로프가 컷오프를 밀어 올린다 (감산 합성의 기본 움직임)
             let base = self.cutoff.advance();
-            let cutoff = base * (1.0 + self.params.filter_env * env * 3.0);
+            let cutoff =
+                base * (1.0 + self.params.filter_env * env * 3.0) * (1.0 + lfo * lfo_cutoff * 0.6);
             self.filter
-                .set(cutoff, self.params.resonance, self.sample_rate);
+                .set(cutoff.max(20.0), self.params.resonance, self.sample_rate);
 
             let filtered = self.filter.process(raw);
             *sample += (filtered * env * self.velocity * 0.4) as f32;
@@ -391,6 +509,174 @@ impl SynthVoice {
         }
         if !self.filter.is_finite() {
             self.reset();
+        }
+    }
+}
+
+#[cfg(test)]
+mod thickness_tests {
+    use super::*;
+
+    const FS: f64 = 48000.0;
+
+    fn render(params: SynthParams, freq: f64, n: usize) -> Vec<f32> {
+        let mut voice = SynthVoice::new(FS);
+        voice.note_on(freq, 1.0, &params);
+        let mut out = vec![0.0f32; n];
+        for chunk in out.chunks_mut(256) {
+            voice.process(chunk);
+        }
+        out
+    }
+
+    fn base() -> SynthParams {
+        SynthParams {
+            waveform: Waveform::Saw,
+            cutoff_hz: 8000.0,
+            filter_env: 0.0,
+            attack_ms: 1.0,
+            decay_ms: 5000.0,
+            sustain: 1.0,
+            detune_cents: 0.0,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn defaults_are_the_old_sound() {
+        // **전부 0 이면 예전과 완전히 같아야 한다** — 이미 맞춰 둔 프리셋이 흔들리면 안 된다
+        let a = render(base(), 220.0, 8192);
+        let b = render(
+            SynthParams {
+                unison: 1,
+                unison_detune_cents: 0.0,
+                sub_level: 0.0,
+                noise_level: 0.0,
+                lfo_hz: 0.0,
+                ..base()
+            },
+            220.0,
+            8192,
+        );
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn unison_keeps_the_pitch_centered() {
+        // **오디오로 재지 않는다.** 유니즌은 맥놀이를 만들어 음정 추정을 오염시킨다 —
+        // 무엇이 틀렸는지 알 수 없게 된다. 배치 계산을 직접 본다
+        // (`HANDOFF.md` 10번: 한쪽으로 걸면 평균 음정이 디튠의 절반만큼 밀린다)
+        for unison in 2..=MAX_UNISON {
+            let (offsets, count) = unison_detune_offsets(unison, 30.0);
+            assert_eq!(count, unison);
+            let sum: f64 = offsets[..count].iter().sum();
+            assert!(
+                sum.abs() < 1e-9,
+                "{unison} 유니즌의 평균이 {sum} 센트 밀렸다"
+            );
+            let span = offsets[count - 1] - offsets[0];
+            assert!((span - 30.0).abs() < 1e-9, "폭이 {span} 센트다");
+        }
+        let (offsets, count) = unison_detune_offsets(1, 30.0);
+        assert_eq!(count, 1);
+        assert_eq!(offsets[0], 0.0, "하나뿐인데 디튠이 걸렸다");
+    }
+
+    #[test]
+    fn unison_thickens_without_getting_louder() {
+        // 정규화가 빠지면 유니즌을 켤 때마다 커진다
+        let rms = |x: &[f32]| {
+            (x.iter().map(|v| (*v as f64).powi(2)).sum::<f64>() / x.len() as f64).sqrt()
+        };
+        let thin = rms(&render(base(), 220.0, 8192));
+        let thick = rms(&render(
+            SynthParams {
+                unison: 7,
+                unison_detune_cents: 20.0,
+                ..base()
+            },
+            220.0,
+            8192,
+        ));
+        let ratio = thick / thin;
+        assert!(
+            (0.5..1.6).contains(&ratio),
+            "유니즌으로 크기가 {ratio:.2}배 변했다"
+        );
+    }
+
+    #[test]
+    fn sub_adds_low_end() {
+        // **한 옥타브 아래에 실제로 에너지가 생기는지** 본다.
+        // 영점 통과로 재려다 실패했다 — 톱니의 기본음이 그대로 남아 있어 통과 횟수가
+        // 줄지 않는다. 코드가 아니라 측정이 틀렸던 것이다
+        let goertzel = |x: &[f32], hz: f64| {
+            let w = 2.0 * core::f64::consts::PI * hz / FS;
+            let (mut re, mut im) = (0.0, 0.0);
+            for (i, v) in x.iter().enumerate() {
+                re += *v as f64 * (w * i as f64).cos();
+                im -= *v as f64 * (w * i as f64).sin();
+            }
+            (re * re + im * im).sqrt() / x.len() as f64
+        };
+        let n = 16384;
+        let with_sub = render(
+            SynthParams {
+                sub_level: 1.0,
+                ..base()
+            },
+            440.0,
+            n,
+        );
+        let without = render(base(), 440.0, n);
+        assert!(
+            goertzel(&with_sub, 220.0) > goertzel(&without, 220.0) * 3.0,
+            "서브가 한 옥타브 아래에 에너지를 안 더한다"
+        );
+    }
+
+    #[test]
+    fn lfo_moves_the_sound() {
+        let still = render(base(), 220.0, (FS * 0.5) as usize);
+        let moving = render(
+            SynthParams {
+                lfo_hz: 5.0,
+                lfo_to_pitch_cents: 25.0,
+                ..base()
+            },
+            220.0,
+            (FS * 0.5) as usize,
+        );
+        let differs = still
+            .iter()
+            .zip(moving.iter())
+            .filter(|(a, b)| a != b)
+            .count();
+        assert!(differs > still.len() / 2, "LFO 를 켰는데 소리가 그대로다");
+    }
+
+    #[test]
+    fn stays_finite_at_extremes() {
+        for unison in 1..=MAX_UNISON {
+            let x = render(
+                SynthParams {
+                    unison,
+                    unison_detune_cents: 100.0,
+                    sub_level: 1.0,
+                    noise_level: 1.0,
+                    lfo_hz: 20.0,
+                    lfo_to_pitch_cents: 200.0,
+                    lfo_to_cutoff: 1.0,
+                    drive: 1.0,
+                    ..base()
+                },
+                880.0,
+                8192,
+            );
+            assert!(
+                x.iter().all(|v| v.is_finite()),
+                "{unison} 유니즌에서 발산했다"
+            );
         }
     }
 }
@@ -482,6 +768,7 @@ mod tests {
             detune_cents: 0.0,
             drive: 0.0,
             release_ms: 200.0,
+            ..Default::default()
         };
         let banded = render(params, freq, 16384);
         let naive = naive_saw(freq, 16384);

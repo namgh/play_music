@@ -552,6 +552,37 @@ const SYNTH_BASE: InstrumentDefinition = {
     },
     ampEnabled: { type: 'int', min: 0, max: 1, default: 0, label: '앰프', group: '앰프' },
     ampDrive: { type: 'float', min: 0, max: 1, default: 0, label: '드라이브', group: '앰프' },
+    // --- 두께와 움직임 (`ROADMAP.md` 신스 확장) ---
+    // 에일리어싱은 잡혀 있었지만 **얇았다.** 신스가 두껍게 들리는 이유는 파형이
+    // 아니라 유니즌·서브·노이즈·LFO 다
+    synthUnison: {
+      type: 'int', min: 1, max: 7, default: 1,
+      label: '유니즌', group: '오실레이터',
+    },
+    synthUnisonDetuneCents: {
+      type: 'float', min: 0, max: 60, default: 0,
+      unit: '¢', label: '유니즌 폭', curve: 'linear', group: '오실레이터',
+    },
+    synthSubLevel: {
+      type: 'float', min: 0, max: 1, default: 0,
+      label: '서브(-1옥타브)', curve: 'linear', group: '오실레이터',
+    },
+    synthNoiseLevel: {
+      type: 'float', min: 0, max: 1, default: 0,
+      label: '노이즈', curve: 'linear', group: '오실레이터',
+    },
+    synthLfoHz: {
+      type: 'float', min: 0, max: 20, default: 0,
+      unit: 'Hz', label: 'LFO 속도', curve: 'log', group: '모듈레이션',
+    },
+    synthLfoToPitchCents: {
+      type: 'float', min: 0, max: 200, default: 0,
+      unit: '¢', label: 'LFO→음정', curve: 'linear', group: '모듈레이션',
+    },
+    synthLfoToCutoff: {
+      type: 'float', min: 0, max: 1, default: 0,
+      label: 'LFO→컷오프', curve: 'linear', group: '모듈레이션',
+    },
     ...COMMON_SPECS,
   },
   params: {
@@ -574,6 +605,10 @@ const SYNTH_BASE: InstrumentDefinition = {
     velocityBrightness: 0.3,
     // 신스는 원래 기계적인 것이 특징이라 약하게만
     variationAmount: 0.15,
+    // 기준 신스는 유니즌 3 — 하나면 얇고, 많으면 리드가 뭉개진다
+    synthUnison: 3,
+    synthUnisonDetuneCents: 12,
+    synthSubLevel: 0.25,
   },
   tones: {
     default: {},
@@ -588,7 +623,16 @@ const SYNTH_LEAD: InstrumentDefinition = {
   schemaVersion: 1,
   name: '신스 리드',
   extends: 'synth-base',
-  params: { synthCutoffHz: 5000, synthResonance: 0.35 },
+  params: {
+    synthCutoffHz: 5000, synthResonance: 0.35,
+    // 리드는 또렷해야 하므로 유니즌을 얕게 준다.
+    //
+    // **비브라토는 기본으로 걸지 않는다.** 그건 음색이 아니라 연주 선택이고,
+    // 악기에 박아 두면 사용자가 0.0센트로 맞춘 음을 엔진이 계속 흔들게 된다 —
+    // "음정이 정밀하다"는 주장과 정면으로 부딪힌다.
+    // 음마다 거는 비브라토는 이미 `pitchCurve` 가 담당한다
+    synthUnison: 3, synthUnisonDetuneCents: 8,
+  },
   range: { low: 48, high: 108 },
 };
 
@@ -602,6 +646,15 @@ const SYNTH_PAD: InstrumentDefinition = {
     synthCutoffHz: 1800, damping: 0.8, synthDetuneCents: 14,
     // 패드는 넓게 깔리는 것이 존재 이유다
     stereoWidth: 0.4,
+    // **패드는 두께가 전부다.** 유니즌을 넓게 벌리고 필터를 천천히 흔든다.
+    //
+    // 폭을 32센트까지 벌려 봤더니 음정 회귀 테스트가 걸렸다 — 보이스가 대칭이라
+    // 중심은 정확하지만 에너지가 퍼져 기본음 추정이 흔들린다. 더 두껍게 하고 싶으면
+    // 튜닝 도구에서 올릴 수 있고, 그건 사용자의 선택이다
+    synthUnison: 7, synthUnisonDetuneCents: 28,
+    synthSubLevel: 0.35, synthNoiseLevel: 0.06,
+    // LFO 는 컷오프만 흔든다 — 음정은 안 건드린다
+    synthLfoHz: 0.35, synthLfoToCutoff: 0.5,
   },
   range: { low: 36, high: 96 },
 };
@@ -615,6 +668,9 @@ const SYNTH_BASS: InstrumentDefinition = {
   params: {
     synthWaveform: 1, synthCutoffHz: 900, synthDetuneCents: 0,
     stiffness: 200, damping: 0.4,
+    // **베이스는 유니즌을 안 쓴다.** 저역에서 여러 보이스를 벌리면 위상이 서로
+    // 상쇄돼 오히려 힘이 빠진다. 대신 서브로 받친다
+    synthUnison: 1, synthSubLevel: 0.6,
   },
   range: { low: 24, high: 60 },
 };

@@ -86,7 +86,18 @@ function centsErrorOf(
   const project = projectWithNotes(instrumentId, [{ midi, cents }]);
   // 앰프는 끈다 — ±1센트 주장은 합성 엔진에 대한 것이고, 왜곡은 상호변조로
   // 측정값을 당긴다 (wasmString.test.ts 가 그 크기를 따로 묶는다)
-  project.tracks[0]!.toneParams = { ampEnabled: 0 };
+  //
+  // **유니즌도 끈다.** 유니즌은 여러 오실레이터를 대칭으로 벌리는 것이고, 그러면
+  // 설계상 **단일 기본음이 존재하지 않는다** — 수퍼소우가 그 자체로 그런 소리다.
+  // 단일 기본음을 재는 이 측정으로는 "의도한 퍼짐"과 "엔진의 오차"를 구분할 수 없다
+  // (`HANDOFF.md` 의 "측정 구간이 틀렸다" 사례와 같은 종류다).
+  //
+  // 대신 **두 갈래로 나눠 전부 검증한다:**
+  //  - 오실레이터 자체의 음정 — 여기서 유니즌을 끄고 잰다
+  //  - 벌리는 배치의 대칭성 — `synth.rs` 의 `unison_detune_offsets` 단위 테스트가
+  //    오프셋 합이 정확히 0 인지 본다 (한쪽으로 쏠리면 평균이 밀린다)
+  // 어느 쪽도 검증에서 빠지지 않는다
+  project.tracks[0]!.toneParams = { ampEnabled: 0, synthUnison: 1 };
   const { pcm } = renderProjectOffline(project, registry, {
     sampleRate: SAMPLE_RATE,
     rng: seededRng(),

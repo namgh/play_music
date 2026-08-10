@@ -97,6 +97,14 @@ export const WASM_PARAM_ORDER = [
   'drumModeCount',
   'drumInharmonicity',
   'drumSnareWires',
+  // 신스 두께·움직임. 전부 0 이면 예전과 같은 소리다
+  'synthUnison',
+  'synthUnisonDetuneCents',
+  'synthSubLevel',
+  'synthNoiseLevel',
+  'synthLfoHz',
+  'synthLfoToPitchCents',
+  'synthLfoToCutoff',
 ] as const;
 
 /**
@@ -192,7 +200,7 @@ export function noteOffFields(
 const MAX_BLOCK = 2048;
 
 /** Rust 쪽 PARAM_COUNT 와 같아야 한다 */
-export const WASM_PARAM_COUNT = 64;
+export const WASM_PARAM_COUNT = 71;
 
 interface WasmExports {
   memory: WebAssembly.Memory;
