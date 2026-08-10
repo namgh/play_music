@@ -17,7 +17,27 @@ use crate::filters::{solve_allpass_coef, Allpass, DcBlock, OneZero};
 use crate::interp::{lagrange4, lagrange4_response, solve_lagrange_fraction};
 use crate::smooth::{times, Smoothed};
 
+/// 분산 단의 **최대** 개수. 실제로 몇 개를 쓰는지는 비조화도가 정한다.
+///
+/// 3단으로 고정돼 있을 때는 분산이 전체 루프 지연의 2% 밖에 안 돼서, 계수를 최대로
+/// 올려도 **8배음이 6센트도 안 움직였다** — 사실상 분산이 없는 것과 같았다.
+/// 실제 피아노는 저역에서 8배음이 30~50센트까지 밀린다.
+///
+/// 단을 늘리면 그만큼 루프 지연이 늘어나므로 딜레이 라인이 짧아진다. 고음에서는
+/// 그 여유가 없어 `compute_loop` 이 계수를 줄여 대응한다.
+pub const MAX_DISPERSION_STAGES: usize = 12;
+/// 비조화도를 안 준 악기가 쓰는 단 수 — **예전과 같은 소리**
 pub const DISPERSION_STAGES: usize = 3;
+
+/// 비조화도 → 분산 단 수. **순수 함수라 테스트가 직접 본다**
+pub fn dispersion_stages(inharmonicity: f64) -> usize {
+    let amount = inharmonicity.clamp(0.0, 1.0);
+    if amount <= 0.0 {
+        return DISPERSION_STAGES;
+    }
+    DISPERSION_STAGES
+        + ((MAX_DISPERSION_STAGES - DISPERSION_STAGES) as f64 * amount).round() as usize
+}
 const MIN_FREQ_HZ: f64 = 20.0;
 const REF_SCALE_MM: f64 = 648.0;
 
@@ -54,6 +74,14 @@ pub struct StringParams {
     /// 편광 디튠이 음역에 따라 줄어드는 기준음과 하한. 0 이면 엔진 기본값
     pub detune_ref_hz: f64,
     pub detune_min_scale: f64,
+    /// **비조화도를 직접 지정한다** (0~1). 0 이면 `stiffness` 만 쓴다.
+    ///
+    /// 왜 따로 두나: `stiffness` 는 줄 길이에 `L⁻⁴` 로 묶여 있다. 그건 같은 줄을
+    /// 길이만 바꿀 때는 맞지만, **피아노처럼 긴 줄에 굵은 강선을 쓰는 악기**에는
+    /// 안 맞는다 — 실제 B 는 굵기·장력이 함께 정하고, 피아노는 길어도 비조화도가 크다.
+    /// 그 결과 피아노가 사실상 분산 없이 울리고 있었다 (실측: 강성을 15배 올려도
+    /// 8배음이 2센트도 안 움직였다).
+    pub inharmonicity: f64,
 }
 
 impl Default for StringParams {
@@ -71,6 +99,7 @@ impl Default for StringParams {
             polarization_decay_ratio: 0.35,
             detune_ref_hz: 0.0,
             detune_min_scale: 0.0,
+            inharmonicity: 0.0,
         }
     }
 }
@@ -81,6 +110,8 @@ pub struct LoopSetup {
     pub delay_int: usize,
     pub ap_coef: f64,
     pub disp_coef: f64,
+    /// 실제로 쓰는 분산 단 수
+    pub disp_stages: usize,
     pub lp_coef: f64,
     pub loop_gain: f64,
     /// 딜레이 라인 + 분수 보간이 담당하는 지연
@@ -96,12 +127,30 @@ pub fn compute_loop(freq_hz: f64, params: &StringParams, sample_rate: f64) -> Lo
 
     // 분산(강성): 같은 음정을 짧은 줄로 내면 장력이 낮아 인하모니시티가 커진다 (B ∝ L⁻⁴).
     // 고음은 주기가 짧아 보정할 여유가 없으므로 딜레이가 남는 선까지 되돌린다.
-    let mut disp_mag = (params.stiffness * ratio.powi(4)).min(0.6);
+    // 비조화도를 직접 준 악기는 그것을 쓰고, 아니면 예전처럼 줄 길이에 묶인 강성을 쓴다.
+    // **둘 중 큰 쪽**이라 값을 안 준 악기는 소리가 그대로다
+    let from_stiffness = params.stiffness * ratio.powi(4);
+    // ## 여기가 피아노를 막고 있는 지점이다 (실측 기록)
+    //
+    // 1차 올패스의 위상 지연은 `|a|` 가 작으면 **나이퀴스트 근처에서만** 변한다.
+    // 그래서 110Hz 음의 1~8배음이 전부 "평평한 구간"에 들어가고, 계수를 상한까지
+    // 올려도 **8배음이 6센트도 안 밀린다** — 사실상 분산이 없다.
+    //
+    // `a → -1` 로 올리면 변화 지점이 저역으로 내려오지만, 0.9 부근에서 루프가
+    // 무너진다 (배음 크기가 10배 떨어졌다). 단 수를 3 → 12 로 늘려도 마찬가지다.
+    //
+    // **계수 조정으로 될 일이 아니다.** 목표 비조화도 B 에 맞춰 올패스 계수를
+    // 설계로 푸는 전용 분산 필터가 필요하다 (Rauhala-Välimäki 계열). 그건 별도
+    // 작업이고, 그때까지 이 값은 **안전한 범위에서만** 동작한다.
+    let from_inharmonicity = params.inharmonicity.clamp(0.0, 1.0) * 0.5;
+    let mut disp_mag = from_stiffness.max(from_inharmonicity).min(0.6);
+    // 단 수도 비조화도가 정한다. 3단으로는 전체 지연의 2% 라 배음이 안 밀린다
+    let stages = dispersion_stages(params.inharmonicity);
     let target_delay = sample_rate / freq_hz;
     let mut line_delay = 0.0;
     for _ in 0..64 {
         let in_loop = OneZero::phase_delay(lp_coef, w)
-            + DISPERSION_STAGES as f64 * Allpass::phase_delay(-disp_mag, w)
+            + stages as f64 * Allpass::phase_delay(-disp_mag, w)
             + DcBlock::phase_delay(DC_BLOCK_POLE, w);
         line_delay = target_delay - in_loop;
         if line_delay >= 2.0 || disp_mag <= 0.0 {
@@ -169,6 +218,7 @@ pub fn compute_loop(freq_hz: f64, params: &StringParams, sample_rate: f64) -> Lo
         delay_int,
         ap_coef: ap_coef.unwrap_or(0.0),
         disp_coef: -disp_mag,
+        disp_stages: stages,
         lp_coef,
         loop_gain,
         line_delay,
@@ -198,7 +248,7 @@ pub struct StringVoice {
     setup: LoopSetup,
     ap_state: f64,
     lp_state: f64,
-    disp_state: [f64; DISPERSION_STAGES],
+    disp_state: [f64; MAX_DISPERSION_STAGES],
     dc_x1: f64,
     dc_y1: f64,
 
@@ -240,7 +290,7 @@ impl StringVoice {
             setup: LoopSetup::default(),
             ap_state: 0.0,
             lp_state: 0.0,
-            disp_state: [0.0; DISPERSION_STAGES],
+            disp_state: [0.0; MAX_DISPERSION_STAGES],
             dc_x1: 0.0,
             dc_y1: 0.0,
             rng: Lcg(seed | 1),
@@ -319,7 +369,7 @@ impl StringVoice {
         // 필터 계수는 기본음 기준으로 고정하고, 그것들이 만드는 지연만 현재
         // 주파수에서 다시 잰다. 계수까지 바꾸면 음색이 비브라토와 함께 흔들린다
         let in_loop = OneZero::phase_delay(self.setup.lp_coef, w)
-            + DISPERSION_STAGES as f64 * Allpass::phase_delay(self.setup.disp_coef, w)
+            + self.setup.disp_stages as f64 * Allpass::phase_delay(self.setup.disp_coef, w)
             + DcBlock::phase_delay(DC_BLOCK_POLE, w);
         let line_delay = (self.sample_rate / freq - in_loop).max(4.0);
 
@@ -381,7 +431,7 @@ impl StringVoice {
     fn reset_states(&mut self) {
         self.ap_state = 0.0;
         self.lp_state = 0.0;
-        self.disp_state = [0.0; DISPERSION_STAGES];
+        self.disp_state = [0.0; MAX_DISPERSION_STAGES];
         self.dc_x1 = 0.0;
         self.dc_y1 = 0.0;
         for v in self.buffer.iter_mut() {
@@ -499,7 +549,7 @@ impl StringVoice {
             let mut v = self.buffer[read] as f64;
 
             // 분산 올패스 캐스케이드
-            for k in 0..DISPERSION_STAGES {
+            for k in 0..self.setup.disp_stages {
                 let y = a * v + self.disp_state[k];
                 self.disp_state[k] = v - a * y;
                 v = y;
@@ -588,7 +638,7 @@ impl StringVoice {
                 v += coef * self.buffer[(base - m) % size] as f64;
             }
 
-            for k in 0..DISPERSION_STAGES {
+            for k in 0..self.setup.disp_stages {
                 let y = a * v + self.disp_state[k];
                 self.disp_state[k] = v - a * y;
                 v = y;

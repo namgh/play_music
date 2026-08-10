@@ -70,6 +70,16 @@ const EXPRESSION_SPECS: Record<string, ParamSpec> = {
  * 줄 악기의 표현력 파라미터 (`ROADMAP.md` S2). 줄에만 의미가 있어 공통에 넣지 않는다.
  */
 const STRING_EXPRESSION_SPECS: Record<string, ParamSpec> = {
+  inharmonicity: {
+    // **줄 길이와 무관하게** 비조화도를 직접 준다. `stiffness` 는 `L⁻⁴` 로 길이에
+    // 묶여 있어 피아노처럼 긴 줄에 굵은 강선을 쓰는 악기에 안 맞는다.
+    //
+    // 지금은 **안전 범위에서만 동작한다** — 1차 올패스로는 저역 배음을 못 밀고,
+    // 계수를 더 올리면 루프가 무너진다 (`string_voice.rs` 의 실측 기록).
+    // 피아노급 비조화도는 설계된 분산 필터가 필요하다
+    type: 'float', min: 0, max: 1, default: 0,
+    label: '비조화도', curve: 'linear', group: '진동체',
+  },
   polarizationMix: {
     // 실제 줄은 두 방향으로 진동한다. 0 이면 편광이 하나뿐이라 지수 감쇠만 남고,
     // 그게 "합성음 같다"는 인상의 1순위 원인이다

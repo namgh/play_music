@@ -105,6 +105,8 @@ export const WASM_PARAM_ORDER = [
   'synthLfoHz',
   'synthLfoToPitchCents',
   'synthLfoToCutoff',
+  // 줄 비조화도 — **줄 길이와 무관하게 직접 지정한다**. 0 이면 stiffness 만 쓴다
+  'inharmonicity',
 ] as const;
 
 /**
@@ -200,7 +202,7 @@ export function noteOffFields(
 const MAX_BLOCK = 2048;
 
 /** Rust 쪽 PARAM_COUNT 와 같아야 한다 */
-export const WASM_PARAM_COUNT = 71;
+export const WASM_PARAM_COUNT = 72;
 
 interface WasmExports {
   memory: WebAssembly.Memory;
