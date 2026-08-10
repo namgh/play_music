@@ -1,0 +1,86 @@
+# 로컬 개발용. 운영 배포 순서는 `SERVER_OPS.md` 2절: migrate → api → worker → scheduler
+#
+# 앱 프로세스 넷은 **같은 이미지**를 쓰고 커맨드만 다르다. 이미지를 나누면
+# "워커만 옛 코드" 같은 조합이 생기고, 그 조합은 아무도 테스트하지 않는다.
+# 평소에는 DB·Redis 만 띄운다 (앱은 로컬에서 직접 도는 게 빠르다):
+#     docker compose up            → postgres, redis
+#     docker compose --profile app up  → 전부
+x-app: &app
+  build: .
+  profiles: ["app"]
+  environment: &app-env
+    ENV: local
+    KEY_PREFIX: local:v1
+    DATABASE_URL: postgresql+asyncpg://resona:resona@postgres:5432/resona
+    REDIS_CACHE_URL: redis://redis:6379/0
+    REDIS_CORE_URL: redis://redis:6379/1
+    JWT_SECRET: local-dev-secret-not-for-production-use
+  depends_on:
+    postgres: {condition: service_healthy}
+    redis: {condition: service_healthy}
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: resona
+      POSTGRES_PASSWORD: resona
+      POSTGRES_DB: resona
+    ports: ["55432:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U resona"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    # **캐시와 코어를 나눠야 하지만** 로컬은 DB 번호로 가른다.
+    # 운영에서는 인스턴스를 분리한다 (SERVER_REDIS.md 2절) —
+    # LRU 축출이 락 키를 지우면 두 워커가 같은 임계 구역에 들어간다
+    command: ["redis-server", "--maxmemory-policy", "noeviction"]
+    ports: ["56379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  # --- 애플리케이션 프로세스 -------------------------------------------------
+  # **마이그레이션은 별도 프로세스다** (`SERVER.md` 절대 규칙).
+  # 앱 시작 시 돌리면 인스턴스 N개가 동시에 같은 DDL 을 친다
+  migrate:
+    <<: *app
+    command: ["alembic", "upgrade", "head"]
+    restart: "no"
+
+  api:
+    <<: *app
+    command: ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers ${WEB_CONCURRENCY:-4}"]
+    ports: ["8000:8000"]
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      migrate: {condition: service_completed_successfully}
+
+  worker:
+    <<: *app
+    command: ["python", "-m", "app.worker.main"]
+    # 워커는 늘려도 안전하다 — SKIP LOCKED 임대라 같은 잡을 두 번 집지 않는다
+    deploy: {replicas: 2}
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      migrate: {condition: service_completed_successfully}
+    # 종료 시 임대를 반납할 시간을 준다 (안 주면 잡이 5분 멈춘다)
+    stop_grace_period: 30s
+
+  scheduler:
+    <<: *app
+    command: ["python", "-m", "app.scheduler.main"]
+    # **하나만 띄운다.** 여러 개 떠도 Redis 락으로 한 번만 돌지만,
+    # 락이 최후의 방어선이지 설계가 아니다
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      migrate: {condition: service_completed_successfully}
