@@ -99,7 +99,10 @@ impl BandPass {
         let high = x - self.low - self.q * self.band;
         self.band = flush(self.band + self.f * high);
         self.low = flush(self.low + self.f * self.band);
-        self.band
+        // **`q` 를 곱해 정규화한다.** 대역통과의 공진점 이득은 Q 에 비례하므로
+        // 그냥 두면 공진을 세울수록 소리가 커진다 — 하이햇이 **한 번만 쳐도**
+        // +2.4dBFS 로 잘렸다 (`body.rs` 에서 이미 밟은 것과 같은 함정)
+        self.band * self.q
     }
 
     fn reset(&mut self) {

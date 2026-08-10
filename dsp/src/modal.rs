@@ -175,6 +175,7 @@ impl ModalVoice {
         let position = params.strike_position.clamp(0.0, 1.0);
 
         self.count = 0;
+        let mut total_weight = 0.0;
         for (index, (ratio, amplitude, decay_scale)) in table.iter().copied().enumerate() {
             if self.count >= MAX_MODES {
                 break;
@@ -207,7 +208,22 @@ impl ModalVoice {
                 params.decay_sec * decay_scale,
                 self.sample_rate,
             );
+            total_weight += weight;
             self.count += 1;
+        }
+
+        // **모드 합을 정규화한다.** 모드가 많은 재질(차임벨)은 위상이 맞는 순간
+        // 진폭이 겹쳐 **한 음만 쳐도 클리핑했다** (실측 +1.2dBFS).
+        // 모드를 늘릴수록 커지면 "모드 수"가 음량 손잡이가 되어 버린다
+        if total_weight > 1.0 {
+            for mode in self.modes[..self.count].iter_mut() {
+                // **회전자를 직접 줄인다.** 진폭은 `amplitude` 필드가 아니라 `re`/`im`
+                // 안에 들어 있다 — 필드만 고치면 아무 일도 일어나지 않는다
+                // (실제로 그렇게 짰다가 차임벨이 계속 +1.2dBFS 로 잘렸다)
+                mode.re /= total_weight;
+                mode.im /= total_weight;
+                mode.amplitude /= total_weight;
+            }
         }
 
         self.gain.reset(1.0);

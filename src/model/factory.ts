@@ -72,7 +72,15 @@ export function createTrack(opts: {
     instrumentId: opts.instrumentId,
     toneId: opts.toneId ?? 'default',
     toneParams: null,
-    gain: 0.8,
+    // **기본 게인 (`ROADMAP.md` 제품 품질 기준).**
+    //
+    // 0.8 이었는데, 7트랙짜리 보통 편곡을 합치니 **+6.4dBFS 로 잘렸다.**
+    // 마스터 리미터를 안 넣기로 한 이상(`WORKPLAN.md` 4절) 기본값이 헤드룸을
+    // 책임져야 한다 — 사용자가 페이더를 내려야만 안 깨지는 것은 기본값이 틀린 것이다.
+    //
+    // 0.34 면 13보이스가 동시에 터지는 밀도에서도 -1dBFS 안쪽에 앉는다. 한 트랙만 쓸 때 작아 보이지만,
+    // 그건 마스터를 올리면 되고 **잘린 파일은 되돌릴 수 없다**
+    gain: 0.34,
     pan: 0,
     mute: false,
     solo: false,

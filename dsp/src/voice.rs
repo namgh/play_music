@@ -488,6 +488,25 @@ mod polarization_tests {
     }
 
     #[test]
+    fn modal_voice_stays_finite() {
+        // 실측 도구가 마림바에서 NaN 을 잡았다. 어느 층에서 나오는지 좁힌다
+        let mut voice = AnyVoice::new(FS, 0x77);
+        let params = crate::modal::ModalParams {
+            material: crate::modal::ModalMaterial::Marimba,
+            decay_sec: 1.0,
+            strike_position: 0.25,
+            strike_hardness: 0.0,
+        };
+        voice.note_on_modal(110.0, 1.0, &params);
+        let mut out = vec![0.0f32; 4096];
+        for chunk in out.chunks_mut(256) {
+            voice.process(chunk, &SampleData::empty());
+        }
+        let bad = out.iter().position(|v| !v.is_finite());
+        assert!(bad.is_none(), "{bad:?} 번 샘플에서 NaN");
+    }
+
+    #[test]
     fn play_noise_only_at_the_attack() {
         // 픽 소리는 어택에만 있어야 한다. 계속 남으면 잡음이 낀 악기가 된다
         let mut voice = AnyVoice::new(FS, 0xabcd);

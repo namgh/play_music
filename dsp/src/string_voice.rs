@@ -121,7 +121,16 @@ pub struct LoopSetup {
 /// 파라미터 → 루프 계수. 테스트가 이 함수를 직접 검증할 수 있게 밖으로 낸다.
 pub fn compute_loop(freq_hz: f64, params: &StringParams, sample_rate: f64) -> LoopSetup {
     let w = 2.0 * core::f64::consts::PI * freq_hz / sample_rate;
-    let ratio = REF_SCALE_MM / params.scale_length_mm;
+    // **줄 길이 0 을 그대로 나누면 무한대가 되고 그때부터 전부 NaN 이다.**
+    // `sound.md` 6-5 가 요구하는 클램프다 — 위에서 걸러 주기를 기대하지 않는다.
+    // 실제로 보이스 타입을 안 넘긴 호출이 이 경로로 들어와 트랙 전체를 무음으로
+    // 만들 뻔했다
+    let scale_mm = if params.scale_length_mm.is_finite() && params.scale_length_mm > 1.0 {
+        params.scale_length_mm
+    } else {
+        REF_SCALE_MM
+    };
+    let ratio = REF_SCALE_MM / scale_mm;
 
     let lp_coef = (params.damping * ratio).clamp(0.0, 0.4);
 

@@ -313,6 +313,10 @@ impl Default for SynthParams {
 
 pub struct SynthVoice {
     sample_rate: f64,
+    /// 출력 DC 차단 상태. 톱니·유니즌은 구간 평균이 0 이 아니라 DC 가 남는다 —
+    /// 안 들리지만 헤드룸을 먹고 트랙을 쌓을수록 클리핑이 빨라진다
+    dc_x1: f64,
+    dc_y1: f64,
     osc_a: Oscillator,
     osc_b: Oscillator,
     /// 유니즌 보이스. `osc_a`·`osc_b` 와 별개로 겹친다
@@ -337,6 +341,8 @@ impl SynthVoice {
     pub fn new(sample_rate: f64) -> Self {
         Self {
             sample_rate,
+            dc_x1: 0.0,
+            dc_y1: 0.0,
             osc_a: Oscillator::default(),
             osc_b: Oscillator::default(),
             unison: [Oscillator::default(); MAX_UNISON],
@@ -495,7 +501,11 @@ impl SynthVoice {
                 .set(cutoff.max(20.0), self.params.resonance, self.sample_rate);
 
             let filtered = self.filter.process(raw);
-            *sample += (filtered * env * self.velocity * 0.4) as f32;
+            // DC 차단 — 20Hz 아래만 걷어낸다
+            let dc_out = filtered - self.dc_x1 + 0.9995 * self.dc_y1;
+            self.dc_x1 = filtered;
+            self.dc_y1 = crate::denormal::flush(dc_out);
+            *sample += (dc_out * env * self.velocity * 0.4) as f32;
         }
 
         // 출력 왜곡은 **오버샘플링 안에서만** (`sound.md` 6-1)
