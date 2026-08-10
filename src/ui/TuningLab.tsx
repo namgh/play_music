@@ -35,6 +35,13 @@ interface Snapshot {
   name: string;
   instrumentId: string;
   params: Params;
+  /**
+   * 몸통 구성·공명현 조율도 함께 저장한다. 파라미터가 아니라 별도 데이터라
+   * **안 담으면 복원했을 때 조용히 사라진다** — 애써 맞춘 통이 없어진다.
+   * 옛 스냅샷에는 없으므로 선택 필드다
+   */
+  bodyModes?: { ratio: number; gain: number; q: number }[];
+  sympatheticSemitones?: number[];
 }
 
 const midiToHz = (m: number) => 440 * Math.pow(2, (m - 69) / 12);
@@ -71,12 +78,27 @@ export function TuningLab() {
   const params = active === 'A' ? slotA : slotB;
   const setParams = active === 'A' ? setSlotA : setSlotB;
 
+  /**
+   * 몸통 구성·공명현 조율. **파라미터가 아니라 버퍼로 가는 데이터**라 여기서 따로
+   * 들고 있는다 (`ROADMAP.md` S4). 악기를 바꾸면 그 악기 것으로 채운다.
+   */
+  const [bodyModes, setBodyModes] = useState<{ ratio: number; gain: number; q: number }[]>([]);
+  const [sympTuning, setSympTuning] = useState<number[]>([]);
+
   // 악기를 바꾸면 두 슬롯을 그 악기의 기본값으로 채운다
   useEffect(() => {
     const base = instrumentParams(instrument, 'default', null);
     setSlotA({ ...base });
     setSlotB({ ...base });
+    setBodyModes(instrument.bodyModes.map((m) => ({ ...m })));
+    setSympTuning([...instrument.sympatheticSemitones]);
   }, [instrument]);
+
+  // **엔진에 보낸다.** 안 보내면 튜닝 도구가 엔진 기본 통으로 울려서, 편집기와
+  // 다른 소리를 듣고 값을 맞추게 된다
+  useEffect(() => {
+    engineRef.current?.setVoicing(bodyModes, sympTuning);
+  }, [bodyModes, sympTuning, ready]);
 
   const engine = useCallback(async (): Promise<LiveEngine> => {
     if (!ctxRef.current) ctxRef.current = new AudioContext({ latencyHint: 'interactive' });
@@ -136,7 +158,13 @@ export function TuningLab() {
 
   const saveSnapshot = () => {
     const name = `${instrument.name} ${new Date().toLocaleTimeString('ko-KR')}`;
-    const next = [{ name, instrumentId, params: { ...params } }, ...snapshots].slice(0, 30);
+    const next = [{
+      name,
+      instrumentId,
+      params: { ...params },
+      bodyModes: bodyModes.map((m) => ({ ...m })),
+      sympatheticSemitones: [...sympTuning],
+    }, ...snapshots].slice(0, 30);
     setSnapshots(next);
     localStorage.setItem(SNAPSHOT_KEY, JSON.stringify(next));
   };
@@ -146,6 +174,9 @@ export function TuningLab() {
     // 악기 변경 이펙트가 슬롯을 덮어쓰므로 한 틱 뒤에 넣는다
     setTimeout(() => {
       (into === 'A' ? setSlotA : setSlotB)({ ...snapshot.params });
+      // 옛 스냅샷에는 없다 — 그러면 악기 기본 구성을 그대로 둔다
+      if (snapshot.bodyModes) setBodyModes(snapshot.bodyModes.map((m) => ({ ...m })));
+      if (snapshot.sympatheticSemitones) setSympTuning([...snapshot.sympatheticSemitones]);
       setActive(into);
     }, 0);
   };
@@ -298,6 +329,88 @@ export function TuningLab() {
               </div>
             </section>
           ))}
+
+          {/*
+            몸통 구성·공명현 조율 — **파라미터가 아니라 개수가 가변인 데이터**라
+            자동 생성되는 슬라이더 목록에 안 들어간다 (`ROADMAP.md` S4).
+            통이 다른 악기는 모드 개수와 Q 자체가 다르므로 여기서 직접 만진다.
+          */}
+          <section className="rounded-lg border border-neutral-800 p-4">
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-neutral-500">
+              몸통 공진 <span className="text-neutral-600">— 헬름홀츠 대비 비율</span>
+            </h2>
+            <div className="mt-3 space-y-2">
+              {bodyModes.map((mode, index) => (
+                <div key={index} className="grid grid-cols-[1fr_1fr_1fr_2rem] items-center gap-2">
+                  {(['ratio', 'gain', 'q'] as const).map((field) => (
+                    <label key={field} className="flex items-center gap-1 text-xs text-neutral-400">
+                      <span className="w-8">{{ ratio: '비율', gain: '세기', q: 'Q' }[field]}</span>
+                      <input
+                        type="number"
+                        step={field === 'q' ? 1 : 0.05}
+                        min={0}
+                        value={mode[field]}
+                        onChange={(e) => setBodyModes((prev) => prev.map((m, i) => (
+                          i === index ? { ...m, [field]: Number(e.target.value) } : m
+                        )))}
+                        className="w-full rounded border border-neutral-700 bg-neutral-900 px-1 py-0.5 font-mono text-xs"
+                      />
+                    </label>
+                  ))}
+                  <button
+                    type="button"
+                    aria-label={`${index + 1}번 모드 삭제`}
+                    onClick={() => setBodyModes((prev) => prev.filter((_, i) => i !== index))}
+                    className="rounded border border-neutral-700 text-xs text-neutral-400"
+                  >−</button>
+                </div>
+              ))}
+              <button
+                type="button"
+                onClick={() => setBodyModes((prev) => [...prev, { ratio: 2, gain: 0.5, q: 15 }])}
+                className="rounded border border-neutral-700 px-2 py-1 text-xs text-neutral-300"
+              >모드 추가</button>
+              {bodyModes.length === 0 && (
+                <p className="text-xs text-neutral-500">
+                  비어 있으면 엔진 기본 모드(드레드노트)로 울립니다
+                </p>
+              )}
+            </div>
+
+            <h2 className="mt-5 text-xs font-semibold uppercase tracking-wider text-neutral-500">
+              공명현 조율 <span className="text-neutral-600">— 기준음 대비 반음</span>
+            </h2>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              {sympTuning.map((semitone, index) => (
+                <span key={index} className="flex items-center gap-1">
+                  <input
+                    type="number"
+                    step={1}
+                    value={semitone}
+                    aria-label={`${index + 1}번 줄`}
+                    onChange={(e) => setSympTuning((prev) => prev.map((v, i) => (
+                      i === index ? Number(e.target.value) : v
+                    )))}
+                    className="w-14 rounded border border-neutral-700 bg-neutral-900 px-1 py-0.5 font-mono text-xs"
+                  />
+                  <button
+                    type="button"
+                    aria-label={`${index + 1}번 줄 삭제`}
+                    onClick={() => setSympTuning((prev) => prev.filter((_, i) => i !== index))}
+                    className="text-xs text-neutral-500"
+                  >×</button>
+                </span>
+              ))}
+              <button
+                type="button"
+                onClick={() => setSympTuning((prev) => [...prev, 12])}
+                className="rounded border border-neutral-700 px-2 py-1 text-xs text-neutral-300"
+              >줄 추가</button>
+            </div>
+            <p className="mt-2 text-xs text-neutral-500">
+              공명현은 <b>공명현</b> 값이 0 이면 안 들립니다 — 위 슬라이더에서 올리세요
+            </p>
+          </section>
         </div>
 
         <aside className="space-y-6">

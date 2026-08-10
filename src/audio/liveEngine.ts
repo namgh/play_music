@@ -94,6 +94,24 @@ export class LiveEngine {
     });
   }
 
+  /**
+   * 몸통 구성·공명현 조율을 보낸다 (`ROADMAP.md` S4).
+   *
+   * **이게 없으면 튜닝 도구가 엔진 기본 통으로 울린다** — 편집기에서 나는 소리와
+   * 다른 것을 듣고 값을 맞추게 되고, 그건 튜닝 도구로서 최악이다.
+   * 개수가 가변이라 파라미터가 아니라 버퍼로 간다.
+   */
+  setVoicing(
+    bodyModes: readonly { ratio: number; gain: number; q: number }[],
+    sympatheticSemitones: readonly number[],
+  ): void {
+    this.node.port.postMessage({
+      type: 'voicing',
+      bodyModes: [...bodyModes],
+      sympatheticSemitones: [...sympatheticSemitones],
+    });
+  }
+
   /** **발음 중인 소리에** 파라미터를 반영한다 */
   setParamsLive(params: Readonly<Record<string, ParamValue>>): void {
     this.node.port.postMessage({ type: 'setParams', params: this.encode(params) });
