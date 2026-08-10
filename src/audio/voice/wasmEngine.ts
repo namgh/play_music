@@ -76,6 +76,23 @@ export const WASM_PARAM_ORDER = [
   'sympatheticBaseHz',
   'bodyAmount',
   'bodyHelmholtzHz',
+  // **보이싱 세부** — 예전에 Rust 상수로 박혀 있던 값들 (`ROADMAP.md` S4 준비).
+  // 전부 0 이면 엔진 기본값으로 떨어져 예전과 같은 소리가 난다
+  'velocityReference',
+  'panCenterHz',
+  'panOctaveSpan',
+  'variationGainDepth',
+  'variationBrightDepth',
+  'variationDecayDepth',
+  'detuneRefHz',
+  'detuneMinScale',
+  'playNoiseMs',
+  'playNoiseLevel',
+  'stealFadeMs',
+  'pickupCoilHz',
+  'sympatheticT60Sec',
+  'sympatheticDamping',
+  'bodyMix',
 ] as const;
 
 /**
@@ -171,13 +188,18 @@ export function noteOffFields(
 const MAX_BLOCK = 2048;
 
 /** Rust 쪽 PARAM_COUNT 와 같아야 한다 */
-export const WASM_PARAM_COUNT = 46;
+export const WASM_PARAM_COUNT = 61;
 
 interface WasmExports {
   memory: WebAssembly.Memory;
   init(sampleRate: number): void;
   param_buffer(): number;
   curve_buffer(): number;
+  voicing_buffer(): number;
+  body_mode_capacity(): number;
+  sympathetic_string_capacity(): number;
+  set_body_modes(count: number): void;
+  set_sympathetic_tuning(count: number): void;
   curve_point_capacity(): number;
   set_curve_points(count: number, durationSec: number): void;
   output_buffer(): number;
@@ -206,6 +228,7 @@ export class WasmVoiceEngine {
   private viewBuffer: ArrayBuffer | null = null;
   private paramView!: Float32Array;
   private curveView!: Float32Array;
+  private voicingView!: Float32Array;
   private outputView!: Float32Array;
   private outputViewR!: Float32Array;
 
@@ -229,6 +252,9 @@ export class WasmVoiceEngine {
     this.paramView = new Float32Array(buffer, this.exports.param_buffer(), WASM_PARAM_COUNT);
     this.curveView = new Float32Array(
       buffer, this.exports.curve_buffer(), this.exports.curve_point_capacity() * 2,
+    );
+    this.voicingView = new Float32Array(
+      buffer, this.exports.voicing_buffer(), this.exports.body_mode_capacity() * 3,
     );
     this.outputView = new Float32Array(buffer, this.exports.output_buffer(), MAX_BLOCK);
     this.outputViewR = new Float32Array(buffer, this.exports.output_buffer_right(), MAX_BLOCK);
@@ -311,6 +337,35 @@ export class WasmVoiceEngine {
       this.curveView[i * 2 + 1] = points[i]!.cents;
     }
     this.exports.set_curve_points(count, curve!.durationSec);
+  }
+
+  /**
+   * 바디 모드를 통째로 바꾼다 (`ROADMAP.md` S4 준비).
+   *
+   * 예전에는 Rust `const` 라 밖에서 손댈 수 없었다 — 통이 다른 악기를 같은 통으로
+   * 만들고 있었다는 뜻이다. 빈 배열이면 엔진 기본 모드로 되돌린다.
+   */
+  setBodyModes(modes: readonly { ratio: number; gain: number; q: number }[]): void {
+    this.refreshViews();
+    const capacity = Math.floor(this.voicingView.length / 3);
+    const count = Math.min(modes.length, capacity);
+    for (let i = 0; i < count; i++) {
+      this.voicingView[i * 3] = modes[i]!.ratio;
+      this.voicingView[i * 3 + 1] = modes[i]!.gain;
+      this.voicingView[i * 3 + 2] = modes[i]!.q;
+    }
+    this.exports.set_body_modes(count);
+    this.refreshViews();
+  }
+
+  /** 공명현 조율 (기준음 대비 반음). 빈 배열이면 기본 조율 */
+  setSympatheticTuning(semitones: readonly number[]): void {
+    this.refreshViews();
+    const capacity = this.exports.sympathetic_string_capacity();
+    const count = Math.min(semitones.length, capacity);
+    for (let i = 0; i < count; i++) this.voicingView[i] = semitones[i]!;
+    this.exports.set_sympathetic_tuning(count);
+    this.refreshViews();
   }
 
   noteOff(voice: number, releaseMs = DEFAULT_RELEASE_MS): void {

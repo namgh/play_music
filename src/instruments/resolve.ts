@@ -5,7 +5,7 @@
  * 파생 악기(우쿨렐레·만돌린·밴조…)가 20줄이면 끝난다.
  */
 
-import type {
+import type { BodyMode,
   InstrumentCategory, InstrumentDefinition, ParamSpec, ParamValue, ResolvedInstrument, VoiceType,
 } from './types.ts';
 
@@ -47,6 +47,8 @@ export function resolveInstrument(
   let voice: VoiceType | undefined;
   let category: InstrumentCategory | undefined;
   let range: { low: number; high: number } | undefined;
+  let bodyModes: readonly BodyMode[] | undefined;
+  let sympatheticSemitones: readonly number[] | undefined;
   const params: Record<string, ParamValue> = {};
   const paramSpecs: Record<string, ParamSpec> = {};
   const tones: Record<string, Record<string, ParamValue>> = {};
@@ -55,6 +57,10 @@ export function resolveInstrument(
     if (def.voice !== undefined) voice = def.voice;
     if (def.category !== undefined) category = def.category;
     if (def.range !== undefined) range = def.range;
+    // 몸통·공명현 구성은 **덮어쓴다** (병합하지 않는다) — 통이 다른 악기의 모드를
+    // 섞으면 어느 쪽도 아닌 통이 된다
+    if (def.bodyModes !== undefined) bodyModes = def.bodyModes;
+    if (def.sympatheticSemitones !== undefined) sympatheticSemitones = def.sympatheticSemitones;
     Object.assign(params, def.params);
     Object.assign(paramSpecs, def.paramSpecs);
     for (const [toneId, toneParams] of Object.entries(def.tones ?? {})) {
@@ -88,6 +94,8 @@ export function resolveInstrument(
     paramSpecs,
     range: range ?? { low: 0, high: 127 },
     tones,
+    bodyModes: bodyModes ?? [],
+    sympatheticSemitones: sympatheticSemitones ?? [],
     lineage: chain.map((d) => d.id),
   };
 }

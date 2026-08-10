@@ -23,8 +23,8 @@
 
 const MAX_BLOCK = 2048;
 // Rust 쪽 PARAM_COUNT 와 같아야 한다
-// (줄 6 + 곡선 5 + 앰프 9 + 보이스 10 + 드럼 4 + 연주표현 3 + 표현력 9)
-const PARAM_COUNT = 46;
+// (줄 6 + 곡선 5 + 앰프 9 + 보이스 10 + 드럼 4 + 연주표현 3 + 표현력 9 + 보이싱 15)
+const PARAM_COUNT = 61;
 /**
  * 이만큼 지난 예약은 버린다.
  *
@@ -41,6 +41,7 @@ class KsProcessor extends AudioWorkletProcessor {
     this.paramView = null;
     this.outputView = null;
     this.curveView = null;
+    this.voicingView = null;
     /** { frame, freq, velocity, params, gain, durationFrames, releaseMs } — frame 순 정렬 */
     this.pending = [];
     /** { frame, voice, serial, releaseMs } — frame 순 정렬 */
@@ -82,6 +83,10 @@ class KsProcessor extends AudioWorkletProcessor {
           seed: message.seed ?? 0,
         });
         this.pending.sort((a, b) => a.frame - b.frame);
+        break;
+      case 'voicing':
+        // 바디 모드·공명현 조율. 파라미터 슬롯이 아니라 버퍼로 온다
+        if (this.wasm) this.writeVoicing(message);
         break;
       case 'setParams':
         if (this.wasm) {
@@ -127,6 +132,9 @@ class KsProcessor extends AudioWorkletProcessor {
     this.curveView = new Float32Array(
       buffer, this.wasm.curve_buffer(), this.wasm.curve_point_capacity() * 2,
     );
+    this.voicingView = new Float32Array(
+      buffer, this.wasm.voicing_buffer(), this.wasm.body_mode_capacity() * 3,
+    );
   }
 
   /**
@@ -147,6 +155,30 @@ class KsProcessor extends AudioWorkletProcessor {
       this.curveView[i * 2 + 1] = points[i].cents;
     }
     this.wasm.set_curve_points(count, curve.durationSec);
+  }
+
+  /** 개수가 가변인 보이싱 데이터를 버퍼에 써 넣는다 */
+  writeVoicing(message) {
+    this.refreshViews();
+    const view = this.voicingView;
+    if (Array.isArray(message.bodyModes)) {
+      const capacity = Math.floor(view.length / 3);
+      const count = Math.min(message.bodyModes.length, capacity);
+      for (let i = 0; i < count; i++) {
+        view[i * 3] = message.bodyModes[i].ratio;
+        view[i * 3 + 1] = message.bodyModes[i].gain;
+        view[i * 3 + 2] = message.bodyModes[i].q;
+      }
+      this.wasm.set_body_modes(count);
+      this.refreshViews();
+    }
+    if (Array.isArray(message.sympatheticSemitones)) {
+      const capacity = this.wasm.sympathetic_string_capacity();
+      const count = Math.min(message.sympatheticSemitones.length, capacity);
+      for (let i = 0; i < count; i++) this.voicingView[i] = message.sympatheticSemitones[i];
+      this.wasm.set_sympathetic_tuning(count);
+      this.refreshViews();
+    }
   }
 
   writeParams(params) {

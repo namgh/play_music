@@ -87,6 +87,13 @@ export async function renderOfflineWithWorklet(
         if (data?.type === 'ready') { clearTimeout(timer); resolve(); }
       };
       node.port.postMessage({ type: 'load', bytes: wasmBytes.slice(0) });
+      // **재생과 같은 보이싱을 보낸다.** 안 보내면 내보낸 파일만 엔진 기본 통으로
+      // 울린다 — "들은 것과 파일이 다르다"의 전형적인 형태다
+      node.port.postMessage({
+        type: 'voicing',
+        bodyModes: instrument.bodyModes,
+        sympatheticSemitones: instrument.sympatheticSemitones,
+      });
     }));
 
     // 이 트랙의 음을 프레임 시각으로 예약한다

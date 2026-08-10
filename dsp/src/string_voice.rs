@@ -51,6 +51,9 @@ pub struct StringParams {
     pub polarization_mix: f64,
     /// 두 번째 편광의 감쇠 배율. 실제 줄은 브리지에 세로로 더 잘 붙어 먼저 죽는다
     pub polarization_decay_ratio: f64,
+    /// 편광 디튠이 음역에 따라 줄어드는 기준음과 하한. 0 이면 엔진 기본값
+    pub detune_ref_hz: f64,
+    pub detune_min_scale: f64,
 }
 
 impl Default for StringParams {
@@ -66,6 +69,8 @@ impl Default for StringParams {
             polarization_detune_cents: 0.0,
             polarization_mix: 0.0,
             polarization_decay_ratio: 0.35,
+            detune_ref_hz: 0.0,
+            detune_min_scale: 0.0,
         }
     }
 }

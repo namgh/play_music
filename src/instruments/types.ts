@@ -57,6 +57,18 @@ export const CATEGORY_ORDER: readonly InstrumentCategory[] = [
   '기타', '베이스', '피아노', '건반·신스', '말렛·벨', '줄', '드럼',
 ];
 
+/**
+ * 몸통 공진 하나 — `(헬름홀츠 대비 비율, 세기, Q)`.
+ *
+ * 개수가 악기마다 다르므로 파라미터 슬롯이 아니라 **버퍼**로 엔진에 간다
+ * (곡선 점과 같은 이유). 없으면 엔진 기본 모드(드레드노트)를 쓴다.
+ */
+export interface BodyMode {
+  ratio: number;
+  gain: number;
+  q: number;
+}
+
 export interface InstrumentDefinition {
   id: string;
   schemaVersion: number;
@@ -67,6 +79,10 @@ export interface InstrumentDefinition {
   extends?: string;
   voice?: VoiceType;
   params?: Record<string, ParamValue>;
+  /** 몸통 공진 구성. 통이 다른 악기는 모드 구성 자체가 다르다 */
+  bodyModes?: readonly BodyMode[];
+  /** 공명현 조율 (기준음 대비 반음). 기타는 EADGBE, 피아노는 다르다 */
+  sympatheticSemitones?: readonly number[];
   /** 이 악기가 새로 선언하는 파라미터의 메타데이터 */
   paramSpecs?: Record<string, ParamSpec>;
   range?: { low: number; high: number };
@@ -84,6 +100,10 @@ export interface ResolvedInstrument {
   paramSpecs: Record<string, ParamSpec>;
   range: { low: number; high: number };
   tones: Record<string, Record<string, ParamValue>>;
+  /** 몸통 공진 구성. 비어 있으면 엔진 기본 모드 */
+  bodyModes: readonly BodyMode[];
+  /** 공명현 조율. 비어 있으면 엔진 기본 조율 */
+  sympatheticSemitones: readonly number[];
   /** 상속 체인 (자신 → 부모 순) — 디버깅·표시용 */
   lineage: string[];
 }

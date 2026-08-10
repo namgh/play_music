@@ -44,22 +44,38 @@ impl VoiceKind {
 /// 편광의 간섭이 세지고, 측정한 기본음이 밀려 **±1센트 회귀 테스트를 깬다**
 /// (C6 위에서 실측 1.9센트). 물리적으로도 편광 갈라짐을 7옥타브에 걸쳐 같은
 /// 비율로 두는 근거가 없다 — 높고 뻣뻣한 줄일수록 덜 갈린다.
-const DETUNE_REF_HZ: f64 = 250.0;
-const DETUNE_MIN_SCALE: f64 = 0.25;
+pub const DEFAULT_DETUNE_REF_HZ: f64 = 250.0;
+pub const DEFAULT_DETUNE_MIN_SCALE: f64 = 0.25;
 
 /// 음 높이에 따라 줄인 편광 디튠 (센트). **순수 함수라 테스트가 직접 본다.**
 pub fn effective_detune_cents(detune_cents: f64, freq_hz: f64) -> f64 {
+    effective_detune_cents_with(
+        detune_cents,
+        freq_hz,
+        DEFAULT_DETUNE_REF_HZ,
+        DEFAULT_DETUNE_MIN_SCALE,
+    )
+}
+
+/// 기준음과 하한을 밖에서 정하는 판. **악기마다 다를 수 있다** — 피아노는 저음현이
+/// 굵어 갈라짐이 더 크고, 나일론 줄은 덜하다
+pub fn effective_detune_cents_with(
+    detune_cents: f64,
+    freq_hz: f64,
+    ref_hz: f64,
+    min_scale: f64,
+) -> f64 {
     // NaN 을 명시적으로 거른다 — 나누면 결과가 통째로 NaN 이 된다
-    if freq_hz.is_nan() || freq_hz <= 0.0 {
+    if freq_hz.is_nan() || freq_hz <= 0.0 || ref_hz <= 0.0 {
         return detune_cents;
     }
-    detune_cents * (DETUNE_REF_HZ / freq_hz).clamp(DETUNE_MIN_SCALE, 1.0)
+    detune_cents * (ref_hz / freq_hz).clamp(min_scale.clamp(0.0, 1.0), 1.0)
 }
 
 /// 연주 노이즈의 감쇠 시간. 픽이 줄을 긁고 지나가는 시간에 해당한다
-const PLAY_NOISE_MS: f64 = 7.0;
+pub const DEFAULT_PLAY_NOISE_MS: f64 = 7.0;
 /// 연주 노이즈의 기본 크기. `play_noise_amount = 1` 일 때의 진폭
-const PLAY_NOISE_LEVEL: f64 = 0.18;
+pub const DEFAULT_PLAY_NOISE_LEVEL: f64 = 0.18;
 
 /// 픽·프렛 노이즈 (`ROADMAP.md` S2-2).
 ///
@@ -72,6 +88,7 @@ const PLAY_NOISE_LEVEL: f64 = 0.18;
 struct PlayNoise {
     rng: crate::string_voice::Lcg,
     env: f64,
+    sample_rate: f64,
     decay: f64,
     /// 고역만 남기는 일차 고역통과 상태. 저역이 남으면 픽이 아니라 퍽 소리가 된다
     hp_state: f64,
@@ -82,14 +99,28 @@ impl PlayNoise {
         Self {
             rng: crate::string_voice::Lcg(seed | 1),
             env: 0.0,
-            decay: (-1.0 / (PLAY_NOISE_MS * 0.001 * sample_rate)).exp(),
+            sample_rate,
+            decay: (-1.0 / (DEFAULT_PLAY_NOISE_MS * 0.001 * sample_rate)).exp(),
             hp_state: 0.0,
         }
     }
 
-    fn trigger(&mut self, amount: f64, velocity: f64) {
+    /// `decay_ms`·`level` 은 악기가 정한다 — 나일론 줄의 손톱 소리와 피크로 긁는
+    /// 소리는 길이도 세기도 다르다
+    fn trigger(&mut self, amount: f64, velocity: f64, decay_ms: f64, level: f64) {
+        let ms = if decay_ms > 0.0 {
+            decay_ms
+        } else {
+            DEFAULT_PLAY_NOISE_MS
+        };
+        self.decay = (-1.0 / (ms * 0.001 * self.sample_rate)).exp();
         // 세게 뜯을수록 픽 소리도 커진다
-        self.env = amount.clamp(0.0, 1.0) * velocity.clamp(0.0, 1.0) * PLAY_NOISE_LEVEL;
+        let scale = if level > 0.0 {
+            level
+        } else {
+            DEFAULT_PLAY_NOISE_LEVEL
+        };
+        self.env = amount.clamp(0.0, 1.0) * velocity.clamp(0.0, 1.0) * scale;
         self.hp_state = 0.0;
     }
 
@@ -180,8 +211,8 @@ impl AnyVoice {
     }
 
     /// 픽·프렛 노이즈를 낸다. **발음 직후에 부른다** — 보이스 타입과 무관하다
-    pub fn trigger_play_noise(&mut self, amount: f64, velocity: f64) {
-        self.play_noise.trigger(amount, velocity);
+    pub fn trigger_play_noise(&mut self, amount: f64, velocity: f64, decay_ms: f64, level: f64) {
+        self.play_noise.trigger(amount, velocity, decay_ms, level);
     }
 
     pub fn kind(&self) -> VoiceKind {
@@ -231,7 +262,12 @@ impl AnyVoice {
         // **주파수를 발음 전에 정한다.** 발음 뒤에 루프를 다시 잡으면 이미 채워 둔
         // 여진 길이가 딜레이 라인 길이와 어긋나 DC 모드가 살아난다 (`HANDOFF.md` 3번).
         let d = if m > 0.0 {
-            effective_detune_cents(params.polarization_detune_cents, freq_hz)
+            effective_detune_cents_with(
+                params.polarization_detune_cents,
+                freq_hz,
+                params.detune_ref_hz,
+                params.detune_min_scale,
+            )
         } else {
             0.0
         };
@@ -456,7 +492,7 @@ mod polarization_tests {
         // 픽 소리는 어택에만 있어야 한다. 계속 남으면 잡음이 낀 악기가 된다
         let mut voice = AnyVoice::new(FS, 0xabcd);
         voice.note_on_string(220.0, 1.0, &single(), &PitchCurve::default());
-        voice.trigger_play_noise(1.0, 1.0);
+        voice.trigger_play_noise(1.0, 1.0, 0.0, 0.0);
         let mut out = vec![0.0f32; (FS * 0.2) as usize];
         for chunk in out.chunks_mut(512) {
             voice.process(chunk, &SampleData::empty());
@@ -472,7 +508,7 @@ mod polarization_tests {
         // 켜지 않은 악기는 예전과 같은 소리여야 한다
         let mut a = AnyVoice::new(FS, 0xabcd);
         a.note_on_string(220.0, 1.0, &single(), &PitchCurve::default());
-        a.trigger_play_noise(0.0, 1.0);
+        a.trigger_play_noise(0.0, 1.0, 0.0, 0.0);
         let mut b = AnyVoice::new(FS, 0xabcd);
         b.note_on_string(220.0, 1.0, &single(), &PitchCurve::default());
 

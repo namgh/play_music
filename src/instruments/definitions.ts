@@ -121,8 +121,85 @@ const STRING_EXPRESSION_SPECS: Record<string, ParamSpec> = {
   },
 };
 
+/**
+ * **보이싱 세부** (`ROADMAP.md` S4 준비).
+ *
+ * 예전에는 전부 Rust `const` 였다 — 밖에서 손댈 수 없으니 **튜닝 도구에 노출할 것이
+ * 없었고**, "귀로 맞춘다"는 계획 자체가 성립하지 않았다.
+ * `sound.md` 9-1("악기는 데이터, 엔진은 코드")·9-5(파라미터 메타데이터로 UI 자동 생성)를
+ * 어긴 것이기도 하다.
+ *
+ * **전부 기본값 0 이고, 0 이면 엔진 기본값으로 떨어진다.** 그래서 값을 안 준 악기와
+ * 옛 프로젝트는 예전과 완전히 같은 소리가 난다.
+ */
+const VOICING_SPECS: Record<string, ParamSpec> = {
+  velocityReference: {
+    type: 'float', min: 0, max: 1, default: 0,
+    label: '세기 기준점', curve: 'linear', group: '보이싱',
+  },
+  panCenterHz: {
+    type: 'float', min: 0, max: 2000, default: 0,
+    unit: 'Hz', label: '좌우 기준음', curve: 'log', group: '보이싱',
+  },
+  panOctaveSpan: {
+    type: 'float', min: 0, max: 8, default: 0,
+    label: '좌우 폭(옥타브)', curve: 'linear', group: '보이싱',
+  },
+  variationGainDepth: {
+    type: 'float', min: 0, max: 0.5, default: 0,
+    label: '변주 세기폭', curve: 'linear', group: '보이싱',
+  },
+  variationBrightDepth: {
+    type: 'float', min: 0, max: 0.5, default: 0,
+    label: '변주 밝기폭', curve: 'linear', group: '보이싱',
+  },
+  variationDecayDepth: {
+    type: 'float', min: 0, max: 0.5, default: 0,
+    label: '변주 감쇠폭', curve: 'linear', group: '보이싱',
+  },
+  detuneRefHz: {
+    type: 'float', min: 0, max: 2000, default: 0,
+    unit: 'Hz', label: '편광 디튠 기준음', curve: 'log', group: '보이싱',
+  },
+  detuneMinScale: {
+    type: 'float', min: 0, max: 1, default: 0,
+    label: '편광 디튠 하한', curve: 'linear', group: '보이싱',
+  },
+  playNoiseMs: {
+    type: 'float', min: 0, max: 60, default: 0,
+    unit: 'ms', label: '연주 노이즈 길이', curve: 'log', group: '보이싱',
+  },
+  playNoiseLevel: {
+    type: 'float', min: 0, max: 1, default: 0,
+    label: '연주 노이즈 크기', curve: 'linear', group: '보이싱',
+  },
+  stealFadeMs: {
+    type: 'float', min: 0, max: 50, default: 0,
+    unit: 'ms', label: '보이스 훔치기 페이드', curve: 'log', group: '보이싱',
+  },
+  pickupCoilHz: {
+    // 0 이면 험버커 여부에서 유도한다 (예전 동작)
+    type: 'float', min: 0, max: 12000, default: 0,
+    unit: 'Hz', label: '픽업 코일 공진', curve: 'log', group: '앰프',
+  },
+  sympatheticT60Sec: {
+    type: 'float', min: 0, max: 12, default: 0,
+    unit: 's', label: '공명현 길이', curve: 'log', group: '진동체',
+  },
+  sympatheticDamping: {
+    type: 'float', min: 0, max: 0.95, default: 0,
+    label: '공명현 고역감쇠', curve: 'linear', group: '진동체',
+  },
+  bodyMix: {
+    type: 'float', min: 0, max: 4, default: 0,
+    label: '몸통 섞는 배율', curve: 'linear', group: '진동체',
+  },
+};
+
 /** 모든 악기가 공통으로 갖는 파라미터 */
-const COMMON_SPECS: Record<string, ParamSpec> = { ...NOTE_OFF_SPECS, ...EXPRESSION_SPECS };
+const COMMON_SPECS: Record<string, ParamSpec> = {
+  ...NOTE_OFF_SPECS, ...EXPRESSION_SPECS, ...VOICING_SPECS,
+};
 
 /**
  * 웨이브가이드 줄의 기준 정의. 파생 악기들은 여기서 숫자만 덮어쓴다.
@@ -235,6 +312,15 @@ const ACOUSTIC_GUITAR: InstrumentDefinition = {
     bodyHelmholtzHz: 100,
   },
   range: { low: 40, high: 88 }, // E2 ~ E6
+  // 드레드노트: 헬름홀츠(100) · 앞판(200) · 뒷판(250) · 상위 두 개
+  bodyModes: [
+    { ratio: 1.00, gain: 1.00, q: 12 },
+    { ratio: 2.00, gain: 0.80, q: 18 },
+    { ratio: 2.50, gain: 0.55, q: 20 },
+    { ratio: 3.80, gain: 0.30, q: 22 },
+    { ratio: 5.50, gain: 0.18, q: 24 },
+  ],
+  sympatheticSemitones: [0, 5, 10, 15, 19, 24], // EADGBE
 };
 
 /**
@@ -357,6 +443,15 @@ const UKULELE: InstrumentDefinition = {
     bodyAmount: 0.5, bodyHelmholtzHz: 260,
   },
   range: { low: 60, high: 93 }, // C4 ~ A6
+  // **모드 구성 자체가 다르다.** 작고 얕은 통이라 상위 모드가 촘촘하고 Q 가 낮다 —
+  // 기타 모드를 위로 옮기기만 하면 "작은 기타"가 되지 우쿨렐레가 안 된다
+  bodyModes: [
+    { ratio: 1.00, gain: 1.00, q: 9 },
+    { ratio: 1.70, gain: 0.70, q: 12 },
+    { ratio: 2.30, gain: 0.45, q: 14 },
+    { ratio: 3.10, gain: 0.25, q: 16 },
+  ],
+  sympatheticSemitones: [0, 4, 9, 14], // GCEA 재진입 조율
 };
 
 const MANDOLIN: InstrumentDefinition = {
@@ -370,6 +465,13 @@ const MANDOLIN: InstrumentDefinition = {
     bodyAmount: 0.45, bodyHelmholtzHz: 230,
   },
   range: { low: 55, high: 91 },
+  // 만돌린은 앞판이 아치라 모드가 더 위로 벌어진다
+  bodyModes: [
+    { ratio: 1.00, gain: 1.00, q: 14 },
+    { ratio: 2.20, gain: 0.65, q: 18 },
+    { ratio: 3.40, gain: 0.35, q: 20 },
+  ],
+  sympatheticSemitones: [0, 7, 14, 21], // GDAE
 };
 
 const HARP: InstrumentDefinition = {
@@ -388,6 +490,13 @@ const HARP: InstrumentDefinition = {
     bodyAmount: 0.35, bodyHelmholtzHz: 75,
   },
   range: { low: 24, high: 96 },
+  // 하프는 통이 아니라 큰 사운드보드 — 넓고 완만한 공진 몇 개다
+  bodyModes: [
+    { ratio: 1.00, gain: 1.00, q: 7 },
+    { ratio: 1.90, gain: 0.60, q: 9 },
+    { ratio: 3.20, gain: 0.30, q: 11 },
+  ],
+  sympatheticSemitones: [0, 2, 4, 7, 9, 12, 14, 16], // 온음계로 늘어서 있다
 };
 
 // --- 신스 (Tier 3) ---------------------------------------------------------
@@ -565,6 +674,16 @@ const ACOUSTIC_PIANO: InstrumentDefinition = {
     releaseMs: 90,
   },
   range: { low: 21, high: 108 }, // A0 ~ C8
+  // 사운드보드는 크고 넓은 판이라 모드가 낮고 완만하다
+  bodyModes: [
+    { ratio: 1.00, gain: 1.00, q: 8 },
+    { ratio: 1.60, gain: 0.75, q: 10 },
+    { ratio: 2.40, gain: 0.50, q: 12 },
+    { ratio: 3.60, gain: 0.28, q: 14 },
+    { ratio: 5.20, gain: 0.15, q: 16 },
+  ],
+  // 댐퍼를 뗀 현들 — 옥타브·5도가 가장 강하게 걸린다
+  sympatheticSemitones: [0, 7, 12, 19, 24, 28, 31, 36],
   tones: {
     default: {},
     밝은: { pluckHardness: 0.9, bodyAmount: 0.4, damping: 0.02 },

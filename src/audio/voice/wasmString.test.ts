@@ -634,3 +634,91 @@ test('험버커가 싱글코일보다 어둡다', async () => {
     '험버커가 더 어둡지 않다 — 코일 공진이 반영되지 않았다',
   );
 });
+
+// --- 보이싱을 데이터로 (ROADMAP.md S4 준비) --------------------------------
+
+test('악기마다 몸통 구성이 실제로 다르게 들어간다', async () => {
+  // 예전에는 모드 구성이 Rust 상수라 **통이 다른 악기가 같은 통으로 울렸다**.
+  // 우쿨렐레는 기타 모드를 위로 옮긴 게 아니라 모드 개수·Q 자체가 다르다
+  const guitar = resolveInstrument('acoustic-guitar', registry);
+  const ukulele = resolveInstrument('ukulele-soprano', registry);
+  assert.ok(guitar.bodyModes.length > 0, '기타에 몸통 구성이 없다');
+  assert.notDeepEqual(guitar.bodyModes, ukulele.bodyModes, '두 악기의 통이 같다');
+  assert.notDeepEqual(
+    guitar.sympatheticSemitones, ukulele.sympatheticSemitones, '조율이 같다',
+  );
+});
+
+test('몸통 구성을 바꾸면 소리가 바뀐다', async () => {
+  const params = {
+    ...instrumentParams(resolveInstrument('acoustic-guitar', registry), 'default', null),
+    bodyAmount: 0.8,
+  };
+  const render = async (modes: readonly { ratio: number; gain: number; q: number }[]) => {
+    const wasm = await engine();
+    wasm.setBodyModes(modes);
+    wasm.noteOn(midiToHz(52), 1, params);
+    const out = new Float32Array(BLOCK * 40);
+    const scratch = new Float32Array(BLOCK);
+    for (let at = 0; at < out.length; at += BLOCK) {
+      scratch.fill(0);
+      wasm.process(scratch, BLOCK);
+      out.set(scratch, at);
+    }
+    return out;
+  };
+
+  const low = await render([{ ratio: 1, gain: 1, q: 12 }]);
+  const high = await render([{ ratio: 4, gain: 1, q: 12 }]);
+  let differs = 0;
+  for (let i = 0; i < low.length; i++) if (low[i] !== high[i]) differs++;
+  assert.ok(differs > low.length * 0.5, '모드를 바꿨는데 소리가 그대로다');
+});
+
+test('빈 구성을 주면 엔진 기본 모드로 돌아간다', async () => {
+  // 조용히 무음이 되면 사용자가 원인을 못 찾는다
+  const params = {
+    ...instrumentParams(resolveInstrument('acoustic-guitar', registry), 'default', null),
+    bodyAmount: 0.8,
+  };
+  const wasm = await engine();
+  wasm.setBodyModes([]);
+  wasm.noteOn(midiToHz(52), 1, params);
+  const out = new Float32Array(BLOCK * 20);
+  const scratch = new Float32Array(BLOCK);
+  for (let at = 0; at < out.length; at += BLOCK) {
+    scratch.fill(0);
+    wasm.process(scratch, BLOCK);
+    out.set(scratch, at);
+  }
+  assert.ok(Math.max(...[...out].map(Math.abs)) > 1e-4, '빈 구성에서 소리가 사라졌다');
+});
+
+test('보이싱 파라미터가 0이면 예전과 같은 소리다', async () => {
+  // **호환성 방어선.** 값을 안 준 악기와 옛 프로젝트가 흔들리면 안 된다
+  const base = instrumentParams(resolveInstrument('acoustic-guitar', registry), 'default', null);
+  const explicitZero = {
+    ...base,
+    velocityReference: 0, panCenterHz: 0, panOctaveSpan: 0,
+    variationGainDepth: 0, variationBrightDepth: 0, variationDecayDepth: 0,
+    detuneRefHz: 0, detuneMinScale: 0, playNoiseMs: 0, playNoiseLevel: 0,
+    stealFadeMs: 0, pickupCoilHz: 0, sympatheticT60Sec: 0, sympatheticDamping: 0, bodyMix: 0,
+  };
+  const render = async (p: Record<string, ParamValue>) => {
+    const wasm = await engine();
+    wasm.noteOn(midiToHz(52), 0.9, p);
+    const out = new Float32Array(BLOCK * 30);
+    const scratch = new Float32Array(BLOCK);
+    for (let at = 0; at < out.length; at += BLOCK) {
+      scratch.fill(0);
+      wasm.process(scratch, BLOCK);
+      out.set(scratch, at);
+    }
+    return out;
+  };
+  const a = await render(base);
+  const b = await render(explicitZero);
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) assert.fail(`샘플 ${i} 가 다르다 — 0 이 기본값으로 안 떨어진다`);
+  }
+});

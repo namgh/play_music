@@ -28,17 +28,33 @@
 
 use crate::denormal::flush;
 
+/// 젖은 소리 배율의 기본값
+const DEFAULT_MIX: f64 = 1.4;
+
 /// `(헬름홀츠 대비 배율, 세기, Q)`
 ///
 /// 세기가 모두 1 이 아닌 이유: 실제 바디는 헬름홀츠와 앞판 첫 모드가 지배적이고
 /// 상위 모드는 훨씬 약하다. 같게 두면 통이 "웅웅"거리기만 한다.
-const MODES: [(f64, f64, f64); 5] = [
+pub const MAX_MODES: usize = 12;
+
+/// 드레드노트 기타의 기본 모드. **기본값일 뿐이고 밖에서 통째로 갈아끼울 수 있다** —
+/// `set_modes` 로 개수·비율·세기·Q 를 전부 준다. 통이 다른 악기는 모드 구성 자체가
+/// 다르므로, 비율만 옮기는 것으로는 우쿨렐레와 첼로를 같은 통으로 만들게 된다
+pub const DEFAULT_MODES: [(f64, f64, f64); 5] = [
     (1.00, 1.00, 12.0),
     (2.00, 0.80, 18.0),
     (2.50, 0.55, 20.0),
     (3.80, 0.30, 22.0),
     (5.50, 0.18, 24.0),
 ];
+
+/// 모드 하나 — `(헬름홀츠 대비 비율, 세기, Q)`
+#[derive(Clone, Copy, Debug, Default)]
+pub struct BodyMode {
+    pub ratio: f64,
+    pub gain: f64,
+    pub q: f64,
+}
 
 /// TPT 상태변수 필터의 대역통과 출력.
 ///
@@ -86,21 +102,62 @@ impl Resonator {
 /// 악기 몸통. 트랙 하나에 하나 (앰프·공명현과 같은 층이다).
 pub struct BodyResonance {
     sample_rate: f64,
-    modes: [Resonator; MODES.len()],
+    filters: [Resonator; MAX_MODES],
+    shape: [BodyMode; MAX_MODES],
+    count: usize,
     amount: f64,
     helmholtz_hz: f64,
+    /// 젖은 소리를 얼마나 섞을지. 정규화된 뒤라 "공진점에서 몇 배로 울리나"다
+    mix: f64,
 }
 
 impl BodyResonance {
     pub fn new(sample_rate: f64) -> Self {
+        let mut shape = [BodyMode::default(); MAX_MODES];
+        for (slot, &(ratio, gain, q)) in shape.iter_mut().zip(DEFAULT_MODES.iter()) {
+            *slot = BodyMode { ratio, gain, q };
+        }
         let mut this = Self {
             sample_rate,
-            modes: [Resonator::default(); MODES.len()],
+            filters: [Resonator::default(); MAX_MODES],
+            shape,
+            count: DEFAULT_MODES.len(),
             amount: 0.0,
             helmholtz_hz: 0.0,
+            mix: DEFAULT_MIX,
         };
         this.set(0.0, 100.0);
         this
+    }
+
+    /// 모드 구성을 통째로 바꾼다. **비어 있으면 기본 모드로 되돌린다** —
+    /// 조용히 무음이 되면 사용자가 원인을 못 찾는다
+    pub fn set_modes(&mut self, modes: &[BodyMode]) {
+        let usable: Vec<BodyMode> = modes
+            .iter()
+            .filter(|m| m.ratio > 0.0 && m.q > 0.0 && m.gain.is_finite())
+            .take(MAX_MODES)
+            .copied()
+            .collect();
+
+        if usable.is_empty() {
+            for (slot, &(ratio, gain, q)) in self.shape.iter_mut().zip(DEFAULT_MODES.iter()) {
+                *slot = BodyMode { ratio, gain, q };
+            }
+            self.count = DEFAULT_MODES.len();
+        } else {
+            self.count = usable.len();
+            for (slot, mode) in self.shape.iter_mut().zip(usable.iter()) {
+                *slot = *mode;
+            }
+        }
+        // 다음 `set` 이 다시 튜닝하도록 강제한다
+        self.helmholtz_hz = 0.0;
+    }
+
+    /// 젖은 소리 배율. 0 이하면 기본값
+    pub fn set_mix(&mut self, mix: f64) {
+        self.mix = if mix > 0.0 { mix } else { DEFAULT_MIX };
     }
 
     /// `amount` 가 0 이면 완전히 꺼진다 (소리도 CPU 도 예전 그대로).
@@ -116,8 +173,8 @@ impl BodyResonance {
             return;
         }
         self.helmholtz_hz = base;
-        for (mode, &(ratio, _, q)) in self.modes.iter_mut().zip(MODES.iter()) {
-            mode.set(base * ratio, q, self.sample_rate);
+        for (filter, mode) in self.filters.iter_mut().zip(self.shape[..self.count].iter()) {
+            filter.set(base * mode.ratio, mode.q, self.sample_rate);
         }
     }
 
@@ -126,8 +183,8 @@ impl BodyResonance {
     }
 
     pub fn reset(&mut self) {
-        for mode in self.modes.iter_mut() {
-            mode.reset();
+        for filter in self.filters.iter_mut() {
+            filter.reset();
         }
     }
 
@@ -139,15 +196,19 @@ impl BodyResonance {
         if !self.is_enabled() {
             return;
         }
+        let count = self.count;
         for sample in buffer.iter_mut() {
             let dry = *sample as f64;
             let mut wet = 0.0;
-            for (mode, &(_, gain, _)) in self.modes.iter_mut().zip(MODES.iter()) {
-                wet += mode.process(dry) * gain;
+            for (filter, mode) in self.filters[..count]
+                .iter_mut()
+                .zip(self.shape[..count].iter())
+            {
+                wet += filter.process(dry) * mode.gain;
             }
-            // 공진이 다섯 개나 겹치므로 그대로 더하면 저역이 터진다.
+            // 공진이 여러 개 겹치므로 그대로 더하면 저역이 터진다.
             // 정규화된 뒤라 이 배율이 곧 "공진점에서 몇 배로 울리나"다
-            *sample = (dry + wet * self.amount * 1.4) as f32;
+            *sample = (dry + wet * self.amount * self.mix) as f32;
         }
     }
 }

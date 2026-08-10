@@ -78,13 +78,19 @@ export function renderProjectOffline(
   const pcm = new Float32Array(totalSamples);
 
   // 트랙별로 악기를 한 번만 해석한다 — 음마다 상속을 펼치면 낭비다
-  const trackSetup = new Map<string, { params: Record<string, number | string>; voiceType: string; gain: number }>();
+  const trackSetup = new Map<string, {
+    params: Record<string, number | string>; voiceType: string; gain: number;
+    bodyModes: readonly { ratio: number; gain: number; q: number }[];
+    sympatheticSemitones: readonly number[];
+  }>();
   for (const track of project.tracks) {
     const instrument = resolveInstrument(track.instrumentId, instrumentDefs);
     trackSetup.set(track.id, {
       params: instrumentParams(instrument, track.toneId, track.toneParams),
       voiceType: instrument.voice,
       gain: track.gain,
+      bodyModes: instrument.bodyModes,
+      sympatheticSemitones: instrument.sympatheticSemitones,
     });
   }
 
@@ -121,6 +127,9 @@ export function renderProjectOffline(
       if (!setup) return;
       const wasm = pool[trackIndex]!;
       wasm.allOff();
+      // 몸통·공명현 구성. **재생 경로와 같은 값**이어야 한다
+      wasm.setBodyModes(setup.bodyModes);
+      wasm.setSympatheticTuning(setup.sympatheticSemitones);
 
       const trackEvents = events.filter((event) => event.trackId === track.id);
       if (trackEvents.length === 0) return;

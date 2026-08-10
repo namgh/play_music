@@ -50,9 +50,6 @@ pub const MAX_VOICES: usize = POLYPHONY + 8;
 /// 테스트가 아니라 **컴파일 타임**에 막는다 — 누가 상수를 되돌리면 빌드가 깨져야 한다
 const _: () = assert!(MAX_VOICES > POLYPHONY);
 
-/// 보이스를 뺏을 때 걸어 주는 페이드. 짧아서 안 들리고, 없으면 딱 소리가 난다
-const STEAL_FADE_MS: f64 = 5.0;
-
 /// 샘플 하나가 담기는 최대 프레임 수 (48kHz 에서 약 8초)
 pub const SAMPLE_CAPACITY: usize = 384_000;
 pub const MAX_BLOCK: usize = 2048;
@@ -71,31 +68,52 @@ pub const MAX_BLOCK: usize = 2048;
 /// | 30~33 | 드럼 |
 /// | 34~36 | 연주 표현 (스테레오 · 픽업 · 벨로시티 밝기) |
 /// | 37~45 | 표현력 (2편광 3개 · 연주 노이즈 · 공명현 2개 · 타건 변주 · 바디 2개) |
+/// | 46~60 | **보이싱 세부** — 예전에 Rust 상수로 박혀 있던 값들 |
 ///
 /// **층을 분리한다** (`sound.md` 5절·8절): "줄 길이"와 "왜곡"은 서로 다른 층이다.
 ///
 /// 34~36 은 `ROADMAP.md` S1, 37~41 은 S2 에서 **각각 한 번에** 추가했다.
 /// 슬롯을 늘리면 Rust·TS·워크렛 세 곳을 같이 고쳐야 하므로 나눠서 늘리지 않는다
 /// (로드맵 원칙 1).
-pub const PARAM_COUNT: usize = 46;
+pub const PARAM_COUNT: usize = 61;
 
-/// 벨로시티 밝기의 기준점. 이 세기로 쳤을 때 악기 정의의 값이 그대로 쓰인다.
-/// 0.7 은 mf(보통 세기)에 해당한다 — 위면 밝아지고 아래면 어두워진다.
-const VELOCITY_REFERENCE: f64 = 0.7;
-
-/// 음 높이 → 좌우 위치를 계산할 때 기준이 되는 음 (C4) 과 폭.
-/// C4 에서 ±3옥타브를 좌우 끝으로 편다 — 악기 음역 대부분이 이 안에 들어온다.
-const PAN_CENTER_HZ: f64 = 261.625_57;
-const PAN_OCTAVE_SPAN: f64 = 3.0;
-
-/// 타건 변주의 최대 폭. `variation_amount = 1` 일 때 이만큼까지 벌어진다.
+/// 아래 값들은 **기본값일 뿐**이다. 전부 파라미터로 덮을 수 있다.
 ///
-/// **음정은 흔들지 않는다.** "음정이 정밀하다"가 제품의 핵심 주장인데
-/// 사용자가 0.0센트로 맞춘 음을 엔진이 몰래 흔들면 그 주장이 무너진다
-/// (`CLAUDE.md` 타협 불가). 세기·밝기·감쇠만 흔든다.
-const VARIATION_GAIN: f64 = 0.12;
-const VARIATION_BRIGHT: f64 = 0.08;
-const VARIATION_DECAY: f64 = 0.10;
+/// 예전에는 Rust `const` 라 밖에서 손댈 수 없었다. 그건 **"악기는 데이터, 엔진은
+/// 코드"(`sound.md` 9-1) 를 어긴 것**이고, 튜닝 도구(9-6)에 노출할 것이 없다는
+/// 뜻이기도 했다 — 귀로 맞추려 해도 돌릴 손잡이가 없었다.
+///
+/// 슬롯이 0 이하면 여기로 떨어진다. 그래서 **옛 프로젝트와 값을 안 준 악기는
+/// 예전과 완전히 같은 소리**가 난다.
+pub mod defaults {
+    /// 벨로시티 밝기의 기준점. 0.7 은 mf(보통 세기)
+    pub const VELOCITY_REFERENCE: f64 = 0.7;
+    /// 좌우 배치의 기준음(C4)과 폭(옥타브)
+    pub const PAN_CENTER_HZ: f64 = 261.625_57;
+    pub const PAN_OCTAVE_SPAN: f64 = 3.0;
+    /// 타건 변주의 최대 폭
+    pub const VARIATION_GAIN: f64 = 0.12;
+    pub const VARIATION_BRIGHT: f64 = 0.08;
+    pub const VARIATION_DECAY: f64 = 0.10;
+    /// 보이스를 뺏을 때 걸어 주는 페이드
+    pub const STEAL_FADE_MS: f64 = 5.0;
+}
+
+/// 슬롯 값이 유효하면 그것을, 아니면 기본값을 준다
+fn param_or(index: usize, fallback: f64) -> f64 {
+    let value = engine().param_in[index] as f64;
+    if value.is_finite() && value > 0.0 {
+        value
+    } else {
+        fallback
+    }
+}
+
+const VELOCITY_REFERENCE: f64 = defaults::VELOCITY_REFERENCE;
+
+// 타건 변주는 **음정을 흔들지 않는다.** "음정이 정밀하다"가 제품의 핵심 주장인데
+// 사용자가 0.0센트로 맞춘 음을 엔진이 몰래 흔들면 그 주장이 무너진다
+// (`CLAUDE.md` 타협 불가). 세기·밝기·감쇠만 흔든다.
 
 /// 씨앗 하나에서 서로 다른 세 개의 [-1, 1] 값을 뽑는다. **순수 함수.**
 ///
@@ -158,6 +176,8 @@ struct Engine {
     /// **다음 `note_on` 한 번에만 적용되고 소비된다** — 남겨 두면 곡선을 안 그린
     /// 음까지 휘어진다
     curve_in: Vec<f32>,
+    /// 보이싱 데이터(바디 모드·공명현 조율)를 JS 가 써 넣는 곳
+    voicing_in: Vec<f32>,
     curve_point_count: usize,
     curve_duration_sec: f64,
     /// 보이스별 발음 순번. 뺏을 때 **가장 오래된 것**을 고르는 데 쓴다
@@ -203,6 +223,7 @@ pub extern "C" fn init(sample_rate: f32) {
         scratch: vec![0.0; MAX_BLOCK],
         param_in: vec![0.0; PARAM_COUNT],
         curve_in: vec![0.0; MAX_CURVE_POINTS * 2],
+        voicing_in: vec![0.0; body::MAX_MODES * 3],
         curve_point_count: 0,
         curve_duration_sec: 0.0,
         ages: vec![0; MAX_VOICES],
@@ -230,6 +251,64 @@ pub extern "C" fn curve_buffer() -> *mut f32 {
 #[no_mangle]
 pub extern "C" fn curve_point_capacity() -> u32 {
     MAX_CURVE_POINTS as u32
+}
+
+/// 보이싱 버퍼 — 개수가 가변인 데이터를 넘긴다 (바디 모드, 공명현 조율).
+///
+/// **왜 파라미터 슬롯이 아닌가:** 모드 개수는 악기마다 다르다. 고정 슬롯에 넣으려면
+/// 최대 개수만큼 자리를 잡아 두고 대부분을 비워 둬야 하고, 그러면 슬롯이 수십 개
+/// 늘어난다. 곡선 점(`curve_buffer`)과 같은 이유·같은 방식이다.
+#[no_mangle]
+pub extern "C" fn voicing_buffer() -> *mut f32 {
+    engine().voicing_in.as_mut_ptr()
+}
+
+#[no_mangle]
+pub extern "C" fn body_mode_capacity() -> u32 {
+    body::MAX_MODES as u32
+}
+
+#[no_mangle]
+pub extern "C" fn sympathetic_string_capacity() -> u32 {
+    symp::MAX_STRINGS as u32
+}
+
+/// `voicing_buffer()` 에 `[비율, 세기, Q]` 를 `count` 개 써 넣은 뒤 부른다.
+/// `count = 0` 이면 기본 모드로 되돌린다.
+#[no_mangle]
+pub extern "C" fn set_body_modes(count: u32) {
+    let n = (count as usize).min(body::MAX_MODES);
+    let mut modes = [body::BodyMode::default(); body::MAX_MODES];
+    {
+        let e = engine();
+        for (i, slot) in modes[..n].iter_mut().enumerate() {
+            *slot = body::BodyMode {
+                ratio: e.voicing_in[i * 3] as f64,
+                gain: e.voicing_in[i * 3 + 1] as f64,
+                q: e.voicing_in[i * 3 + 2] as f64,
+            };
+        }
+    }
+    let e = engine();
+    e.body.set_modes(&modes[..n]);
+    e.body_r.set_modes(&modes[..n]);
+}
+
+/// `voicing_buffer()` 에 반음 오프셋을 `count` 개 써 넣은 뒤 부른다.
+/// `count = 0` 이면 기본 조율로 되돌린다.
+#[no_mangle]
+pub extern "C" fn set_sympathetic_tuning(count: u32) {
+    let n = (count as usize).min(symp::MAX_STRINGS);
+    let mut semitones = [0.0f64; symp::MAX_STRINGS];
+    {
+        let e = engine();
+        for (i, slot) in semitones[..n].iter_mut().enumerate() {
+            *slot = e.voicing_in[i] as f64;
+        }
+    }
+    let e = engine();
+    e.sympathetic.set_tuning(&semitones[..n]);
+    e.sympathetic_r.set_tuning(&semitones[..n]);
 }
 
 /// `curve_buffer()` 에 써 넣은 점들을 **다음 `note_on` 한 번에** 적용한다.
@@ -273,12 +352,22 @@ pub extern "C" fn output_buffer_right() -> *const f32 {
 /// 등가 파워 팬을 쓰되 중앙이 1.0 이 되게 맞춘다. 중앙을 0.707 로 두는 관례를 그대로
 /// 쓰면 **오늘까지 나던 소리가 갑자기 3dB 작아진다.**
 pub fn pan_gains(freq_hz: f64, width: f64) -> (f32, f32) {
+    pan_gains_with(
+        freq_hz,
+        width,
+        defaults::PAN_CENTER_HZ,
+        defaults::PAN_OCTAVE_SPAN,
+    )
+}
+
+/// 기준음과 폭을 밖에서 정하는 판. 악기가 값을 주면 이쪽이 쓰인다
+pub fn pan_gains_with(freq_hz: f64, width: f64, center_hz: f64, octave_span: f64) -> (f32, f32) {
     let width = width.clamp(0.0, 1.0);
     // NaN 도 여기서 걸러진다 — 비교가 전부 거짓이라 `> 0.0` 이 성립하지 않는다
-    if !(width > 0.0 && freq_hz > 0.0) {
+    if !(width > 0.0 && freq_hz > 0.0 && center_hz > 0.0 && octave_span > 0.0) {
         return (1.0, 1.0);
     }
-    let octaves = (freq_hz / PAN_CENTER_HZ).log2() / PAN_OCTAVE_SPAN;
+    let octaves = (freq_hz / center_hz).log2() / octave_span;
     let pan = octaves.clamp(-1.0, 1.0) * width;
     // -1 → 0, 0 → π/4, +1 → π/2
     let theta = (pan + 1.0) * core::f64::consts::FRAC_PI_4;
@@ -313,6 +402,11 @@ fn read_params(bright: f64) -> StringParams {
         polarization_detune_cents: p[37] as f64,
         polarization_mix: p[38] as f64,
         polarization_decay_ratio: if p[39] > 0.0 { p[39] as f64 } else { 0.35 },
+        // **여기서 기본값으로 떨어뜨린다.** 0 을 그대로 넘기면
+        // `effective_detune_cents_with` 이 "기준음이 없다"로 보고 음역 스케일링을
+        // 통째로 건너뛴다 — 고음에서 디튠이 안 줄어 음정이 밀린다 (실측 1.3센트)
+        detune_ref_hz: 0.0,
+        detune_min_scale: 0.0,
     }
 }
 
@@ -321,7 +415,9 @@ fn read_stereo_width() -> f64 {
 }
 
 fn read_velocity_brightness(velocity: f64) -> f64 {
-    velocity_brightness(velocity, engine().param_in[36] as f64)
+    let reference = param_or(46, defaults::VELOCITY_REFERENCE);
+    let amount = (engine().param_in[36] as f64).clamp(0.0, 1.0);
+    amount * (velocity.clamp(0.0, 1.0) - reference)
 }
 
 fn read_body() -> (f64, f64) {
@@ -417,8 +513,13 @@ fn read_amp() -> (bool, AmpParams) {
             // — 그래서 더 두껍고 어둡게 들린다. 싱글코일은 그 반대다.
             // 예전에는 이 값이 픽업 **위치**에서 파생돼서, 스트랫과 레스폴의 차이가
             // 줄 길이 20mm 뿐이었다
-            pickup_coil_hz: if p[35] > 0.5 { 3000.0 } else { 6500.0 }
-                + (1.0 - p[19] as f64) * 1000.0,
+            // **코일 공진을 직접 줄 수 있다** (슬롯 57). 0 이면 험버커 여부에서
+            // 유도한다 — 예전 동작 그대로다
+            pickup_coil_hz: if p[57] > 0.0 {
+                p[57] as f64
+            } else {
+                (if p[35] > 0.5 { 3000.0 } else { 6500.0 }) + (1.0 - p[19] as f64) * 1000.0
+            },
         },
     )
 }
@@ -486,7 +587,7 @@ pub fn plan_allocation(
     (victim, slot)
 }
 
-fn allocate_voice(e: &mut Engine) -> usize {
+fn allocate_voice(e: &mut Engine, steal_fade_ms: f64) -> usize {
     // 스택 배열 — 오디오 경로에서 힙을 건드리지 않는다
     let mut active = [false; MAX_VOICES];
     let mut fading = [false; MAX_VOICES];
@@ -497,7 +598,7 @@ fn allocate_voice(e: &mut Engine) -> usize {
 
     let (victim, slot) = plan_allocation(&active, &fading, &e.ages, POLYPHONY);
     if let Some(i) = victim {
-        e.voices[i].start_fade(STEAL_FADE_MS);
+        e.voices[i].start_fade(steal_fade_ms);
     }
     slot
 }
@@ -517,25 +618,41 @@ pub extern "C" fn note_on(freq_hz: f32, velocity: f32, gain: f32, variation_seed
 
     // 세게 칠수록 밝아진다. 보이스마다 밝기를 담당하는 파라미터가 다르므로
     // 보정값만 구해 두고 적용은 각 `read_*` 가 한다
-    let bright = read_velocity_brightness(velocity as f64) + v_bright * amount * VARIATION_BRIGHT;
+    // 변주 폭도 악기가 정한다 — 드럼은 크게, 신스는 작게 하고 싶을 수 있다
+    let depth_gain = param_or(49, defaults::VARIATION_GAIN);
+    let depth_bright = param_or(50, defaults::VARIATION_BRIGHT);
+    let depth_decay = param_or(51, defaults::VARIATION_DECAY);
+    let bright = read_velocity_brightness(velocity as f64) + v_bright * amount * depth_bright;
     let mut params = read_params(bright);
+    params.detune_ref_hz = param_or(52, voice::DEFAULT_DETUNE_REF_HZ);
+    params.detune_min_scale = param_or(53, voice::DEFAULT_DETUNE_MIN_SCALE);
     // 감쇠도 조금씩 다르다 — 실제로 같은 줄을 같은 세기로 두 번 뜯어도 같지 않다
-    params.sustain_sec *= 1.0 + v_decay * amount * VARIATION_DECAY;
-    let (pan_l, pan_r) = pan_gains(freq_hz as f64, read_stereo_width());
+    params.sustain_sec *= 1.0 + v_decay * amount * depth_decay;
+    let (pan_l, pan_r) = pan_gains_with(
+        freq_hz as f64,
+        read_stereo_width(),
+        param_or(47, defaults::PAN_CENTER_HZ),
+        param_or(48, defaults::PAN_OCTAVE_SPAN),
+    );
+    let steal_fade_ms = param_or(56, defaults::STEAL_FADE_MS);
     let e = engine();
-
-    let index = allocate_voice(e);
+    let index = allocate_voice(e, steal_fade_ms);
     e.ages[index] = e.note_counter;
     e.note_counter += 1;
 
     e.params[index] = params;
-    e.gains[index] = gain * (1.0 + v_gain * amount * VARIATION_GAIN) as f32;
+    e.gains[index] = gain * (1.0 + v_gain * amount * depth_gain) as f32;
     // 좌우 배치는 **발음 시점에 정한다.** 울리는 도중 바뀌면 음이 화면을 가로지른다
     e.pan_l[index] = pan_l;
     e.pan_r[index] = pan_r;
 
     // 픽·프렛 노이즈. 음정이 없어야 하므로 보이스 밖에서 더한다 (`ROADMAP.md` S2-2)
-    engine().voices[index].trigger_play_noise(read_play_noise_amount(), velocity as f64);
+    engine().voices[index].trigger_play_noise(
+        read_play_noise_amount(),
+        velocity as f64,
+        param_or(54, voice::DEFAULT_PLAY_NOISE_MS),
+        param_or(55, voice::DEFAULT_PLAY_NOISE_LEVEL),
+    );
 
     // 보이스 타입에 따라 라우팅한다. **여기가 유일한 분기점**이다 (`sound.md` 9-4)
     match read_voice_kind() {
@@ -587,6 +704,13 @@ pub extern "C" fn note_on(freq_hz: f32, velocity: f32, gain: f32, variation_seed
     e.sympathetic_r.set(symp_amount, symp_base);
     e.body.set(body_amount, body_hz);
     e.body_r.set(body_amount, body_hz);
+    // 젖은 소리 배율·공명 감쇠도 악기가 정한다
+    let mix = param_or(60, 0.0);
+    e.body.set_mix(mix);
+    e.body_r.set_mix(mix);
+    let (t60, damping) = (param_or(58, 0.0), param_or(59, 0.0));
+    e.sympathetic.set_decay(t60, damping);
+    e.sympathetic_r.set_decay(t60, damping);
 
     index as u32
 }
@@ -936,7 +1060,7 @@ mod tests {
     #[test]
     fn center_pitch_stays_centered() {
         // C4 는 기준음이라 폭과 무관하게 가운데
-        let (l, r) = pan_gains(PAN_CENTER_HZ, 1.0);
+        let (l, r) = pan_gains(defaults::PAN_CENTER_HZ, 1.0);
         assert!((l - r).abs() < 1e-6, "기준음이 한쪽으로 치우쳤다");
         assert!(
             (l - 1.0).abs() < 1e-6,
@@ -946,8 +1070,8 @@ mod tests {
 
     #[test]
     fn low_goes_left_and_high_goes_right() {
-        let (low_l, low_r) = pan_gains(PAN_CENTER_HZ / 4.0, 0.5);
-        let (high_l, high_r) = pan_gains(PAN_CENTER_HZ * 4.0, 0.5);
+        let (low_l, low_r) = pan_gains(defaults::PAN_CENTER_HZ / 4.0, 0.5);
+        let (high_l, high_r) = pan_gains(defaults::PAN_CENTER_HZ * 4.0, 0.5);
         assert!(low_l > low_r, "낮은 음이 왼쪽으로 가지 않았다");
         assert!(high_r > high_l, "높은 음이 오른쪽으로 가지 않았다");
         // 대칭이어야 한다 — 한쪽으로 쏠리면 곡 전체가 기운다
@@ -969,7 +1093,7 @@ mod tests {
     fn pan_is_clamped_beyond_the_span() {
         // 음역 밖으로 나가도 완전히 한쪽으로 사라지지 않는다
         let far = pan_gains(1.0, 1.0);
-        let edge = pan_gains(PAN_CENTER_HZ / 8.0, 1.0);
+        let edge = pan_gains(defaults::PAN_CENTER_HZ / 8.0, 1.0);
         assert_eq!(far, edge, "범위 밖에서 계속 더 왼쪽으로 갔다");
     }
 

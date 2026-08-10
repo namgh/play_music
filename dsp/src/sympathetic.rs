@@ -17,10 +17,16 @@
 /// 악기마다 실제 조율은 다르지만, 이 간격은 4도 중심이라 12평균율 어디에 놓아도
 /// 배음이 잘 걸린다. 하프·피아노처럼 줄이 훨씬 많은 악기도 **들리는 결과는
 /// "관련된 음정들이 함께 운다"** 이므로 여섯 개로 충분하다.
-const STRING_SEMITONES: [f64; 6] = [0.0, 5.0, 10.0, 15.0, 19.0, 24.0];
+pub const MAX_STRINGS: usize = 12;
+
+/// 기본 조율 — 기타 표준(EADGBE)의 간격. **밖에서 통째로 갈아끼울 수 있다.**
+/// 피아노는 댐퍼를 뗀 현이 훨씬 많고 조율도 다르다
+pub const DEFAULT_SEMITONES: [f64; 6] = [0.0, 5.0, 10.0, 15.0, 19.0, 24.0];
 
 /// 공명 줄의 감쇠 시간. 실제 개방현은 꽤 오래 운다
-const RESONANCE_T60_SEC: f64 = 2.2;
+pub const DEFAULT_T60_SEC: f64 = 2.2;
+/// 공명 줄의 고역 감쇠 기본값
+pub const DEFAULT_DAMPING: f64 = 0.45;
 
 /// 공명현 하나 — 딜레이 라인 + 저역통과 되먹임.
 struct Resonator {
@@ -44,17 +50,17 @@ impl Resonator {
         }
     }
 
-    fn tune(&mut self, freq_hz: f64, sample_rate: f64) {
+    fn tune(&mut self, freq_hz: f64, sample_rate: f64, t60: f64, damping: f64) {
         let period = sample_rate / freq_hz.max(20.0);
         self.delay = (period.round() as usize).clamp(1, self.buffer.len() - 1);
 
         // T60 에서 -60dB 가 되도록 되먹임 이득을 잡는다.
         // **전체 주기 기준**이다 — 딜레이 길이로 잡으면 필터가 먹은 만큼 덜 감쇠한다
         // (`HANDOFF.md` 4번)
-        let loops = (RESONANCE_T60_SEC * sample_rate) / period;
+        let loops = (t60.max(0.05) * sample_rate) / period;
         self.gain = 10f64.powf(-3.0 / loops).min(0.999);
         // 고역은 빨리 죽는다 — 공명은 둔한 소리다
-        self.lp_coef = 0.45;
+        self.lp_coef = damping.clamp(0.0, 0.95);
     }
 
     fn reset(&mut self) {
@@ -87,8 +93,11 @@ impl Resonator {
 pub struct SympatheticStrings {
     sample_rate: f64,
     strings: Vec<Resonator>,
+    semitones: Vec<f64>,
     amount: f64,
     base_hz: f64,
+    t60_sec: f64,
+    damping: f64,
 }
 
 impl SympatheticStrings {
@@ -97,14 +106,49 @@ impl SympatheticStrings {
         let max_delay = (sample_rate / 20.0).ceil() as usize + 4;
         let mut this = Self {
             sample_rate,
-            strings: (0..STRING_SEMITONES.len())
+            strings: (0..MAX_STRINGS)
                 .map(|_| Resonator::new(max_delay))
                 .collect(),
+            semitones: DEFAULT_SEMITONES.to_vec(),
             amount: 0.0,
             base_hz: 0.0,
+            t60_sec: DEFAULT_T60_SEC,
+            damping: DEFAULT_DAMPING,
         };
         this.set(0.0, 82.41);
         this
+    }
+
+    /// 공명 줄의 조율을 통째로 바꾼다 (기준음 대비 반음).
+    /// **비어 있으면 기본 조율로 되돌린다** — 조용히 무음이 되면 원인을 못 찾는다
+    pub fn set_tuning(&mut self, semitones: &[f64]) {
+        let usable: Vec<f64> = semitones
+            .iter()
+            .filter(|v| v.is_finite())
+            .take(MAX_STRINGS)
+            .copied()
+            .collect();
+        self.semitones = if usable.is_empty() {
+            DEFAULT_SEMITONES.to_vec()
+        } else {
+            usable
+        };
+        self.base_hz = 0.0; // 다음 `set` 이 다시 튜닝하도록
+    }
+
+    /// 울림 길이와 고역 감쇠. 0 이하면 기본값
+    pub fn set_decay(&mut self, t60_sec: f64, damping: f64) {
+        self.t60_sec = if t60_sec > 0.0 {
+            t60_sec
+        } else {
+            DEFAULT_T60_SEC
+        };
+        self.damping = if damping > 0.0 {
+            damping
+        } else {
+            DEFAULT_DAMPING
+        };
+        self.base_hz = 0.0;
     }
 
     /// `amount` 가 0 이면 완전히 꺼진다 (소리도 CPU 도 예전 그대로).
@@ -116,8 +160,10 @@ impl SympatheticStrings {
             return;
         }
         self.base_hz = base;
-        for (string, semitone) in self.strings.iter_mut().zip(STRING_SEMITONES.iter()) {
-            string.tune(base * (semitone / 12.0).exp2(), self.sample_rate);
+        let (t60, damping) = (self.t60_sec, self.damping);
+        let rate = self.sample_rate;
+        for (string, semitone) in self.strings.iter_mut().zip(self.semitones.iter()) {
+            string.tune(base * (semitone / 12.0).exp2(), rate, t60, damping);
         }
     }
 
@@ -137,11 +183,12 @@ impl SympatheticStrings {
             return;
         }
         // 줄 여섯 개가 각자 받아 울린다. 넣는 양을 나눠 두지 않으면 줄 수만큼 커진다
-        let drive = self.amount / STRING_SEMITONES.len() as f64;
+        let count = self.semitones.len();
+        let drive = self.amount / count as f64;
         for sample in buffer.iter_mut() {
             let input = *sample as f64;
             let mut sum = 0.0;
-            for string in self.strings.iter_mut() {
+            for string in self.strings[..count].iter_mut() {
                 sum += string.process(input * drive);
             }
             *sample = (input + sum) as f32;

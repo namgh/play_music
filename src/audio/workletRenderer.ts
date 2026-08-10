@@ -160,6 +160,13 @@ export class WorkletRenderer implements AudioRenderer {
       }));
       // 바이트는 노드마다 복사해서 넘긴다 (transfer 하면 두 번째부터 못 쓴다)
       node.port.postMessage({ type: 'load', bytes: this.wasmBytes.slice(0) });
+      // 몸통·공명현 구성은 개수가 가변이라 파라미터가 아니라 **버퍼**로 간다.
+      // 트랙마다 한 번만 보내면 된다 — 음마다 바뀌는 값이 아니다
+      node.port.postMessage({
+        type: 'voicing',
+        bodyModes: instrument.bodyModes,
+        sympatheticSemitones: instrument.sympatheticSemitones,
+      });
 
       const gainNode = this.ctx.createGain();
       const panNode = this.ctx.createStereoPanner();
