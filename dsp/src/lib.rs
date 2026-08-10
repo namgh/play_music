@@ -102,11 +102,29 @@ pub mod defaults {
     pub const STEAL_FADE_MS: f64 = 5.0;
 }
 
-/// 슬롯 값이 유효하면 그것을, 아니면 기본값을 준다
-fn param_or(index: usize, fallback: f64) -> f64 {
+/// 파라미터 하나를 **안전한 값으로 만든다** (`sound.md` 6-5·11-5).
+///
+/// 위층이 걸러 주기를 기대하지 않는다 — 튜닝 도구는 사용자가 아무 값이나 넣을 수
+/// 있는 화면이고, NaN 하나가 들어오면 **그 시점부터 트랙 전체가 무음**이 된다.
+/// 퍼징으로 실제로 NaN·무한대·발산이 나왔다.
+fn sane(value: f32, min: f64, max: f64, fallback: f64) -> f64 {
+    let v = value as f64;
+    if v.is_finite() {
+        v.clamp(min, max)
+    } else {
+        fallback
+    }
+}
+
+/// 슬롯 값이 유효하면 **범위 안으로 자른 값**을, 아니면 기본값을 준다.
+///
+/// 자르는 것이 중요하다 — 퍼징에서 이 경로로 20000 같은 값이 들어와 출력이
+/// ±2700 까지 터졌다. 튜닝 도구가 아무 값이나 넣을 수 있는 화면인 이상,
+/// **엔진이 스스로 막아야 한다**
+fn param_or_in(index: usize, min: f64, max: f64, fallback: f64) -> f64 {
     let value = engine().param_in[index] as f64;
     if value.is_finite() && value > 0.0 {
-        value
+        value.clamp(min, max)
     } else {
         fallback
     }
@@ -394,52 +412,59 @@ pub fn velocity_brightness(velocity: f64, amount: f64) -> f64 {
 fn read_params(bright: f64) -> StringParams {
     let p = &engine().param_in;
     StringParams {
-        scale_length_mm: p[0] as f64,
-        stiffness: p[1] as f64,
-        damping: p[2] as f64,
-        sustain_sec: p[3] as f64,
-        pluck_position: p[4] as f64,
+        scale_length_mm: sane(p[0], 1.0, 5000.0, 648.0),
+        stiffness: sane(p[1], 0.0, 1.0, 0.0),
+        damping: sane(p[2], 0.0, 0.95, 0.05),
+        sustain_sec: sane(p[3], 0.01, 60.0, 1.0),
+        pluck_position: sane(p[4], 0.0, 1.0, 0.18),
         // 세게 뜯으면 더 단단하게(= 밝게) 뜯은 것이 된다.
         // `fill_excitation` 이 이 값으로 여진 노이즈의 저역통과를 정한다
-        pluck_hardness: (p[5] as f64 + bright).clamp(0.0, 1.0),
-        polarization_detune_cents: p[37] as f64,
-        polarization_mix: p[38] as f64,
-        polarization_decay_ratio: if p[39] > 0.0 { p[39] as f64 } else { 0.35 },
+        pluck_hardness: (sane(p[5], 0.0, 1.0, 0.4) + bright).clamp(0.0, 1.0),
+        polarization_detune_cents: sane(p[37], 0.0, 100.0, 0.0),
+        polarization_mix: sane(p[38], 0.0, 1.0, 0.0),
+        polarization_decay_ratio: {
+            let r = sane(p[39], 0.0, 1.0, 0.35);
+            if r > 0.0 {
+                r
+            } else {
+                0.35
+            }
+        },
         // **여기서 기본값으로 떨어뜨린다.** 0 을 그대로 넘기면
         // `effective_detune_cents_with` 이 "기준음이 없다"로 보고 음역 스케일링을
         // 통째로 건너뛴다 — 고음에서 디튠이 안 줄어 음정이 밀린다 (실측 1.3센트)
         detune_ref_hz: 0.0,
         detune_min_scale: 0.0,
-        inharmonicity: p[71] as f64,
+        inharmonicity: sane(p[71], 0.0, 1.0, 0.0),
     }
 }
 
 fn read_stereo_width() -> f64 {
-    engine().param_in[34] as f64
+    sane(engine().param_in[34], 0.0, 1.0, 0.0)
 }
 
 fn read_velocity_brightness(velocity: f64) -> f64 {
-    let reference = param_or(46, defaults::VELOCITY_REFERENCE);
+    let reference = param_or_in(46, 0.0, 1.0, defaults::VELOCITY_REFERENCE);
     let amount = (engine().param_in[36] as f64).clamp(0.0, 1.0);
     amount * (velocity.clamp(0.0, 1.0) - reference)
 }
 
 fn read_body() -> (f64, f64) {
     let p = &engine().param_in;
-    (p[44] as f64, p[45] as f64)
+    (sane(p[44], 0.0, 1.0, 0.0), sane(p[45], 20.0, 2000.0, 100.0))
 }
 
 fn read_sympathetic() -> (f64, f64) {
     let p = &engine().param_in;
-    (p[41] as f64, p[43] as f64)
+    (sane(p[41], 0.0, 1.0, 0.0), sane(p[43], 20.0, 2000.0, 82.41))
 }
 
 fn read_play_noise_amount() -> f64 {
-    (engine().param_in[40] as f64).clamp(0.0, 1.0)
+    sane(engine().param_in[40], 0.0, 1.0, 0.0)
 }
 
 fn read_variation_amount() -> f64 {
-    (engine().param_in[42] as f64).clamp(0.0, 1.0)
+    sane(engine().param_in[42], 0.0, 1.0, 0.0)
 }
 
 fn read_voice_kind() -> VoiceKind {
@@ -450,10 +475,10 @@ fn read_modal(bright: f64) -> ModalParams {
     let p = &engine().param_in;
     ModalParams {
         material: ModalMaterial::from_index(p[21] as u32),
-        decay_sec: p[22] as f64,
-        strike_position: p[23] as f64,
+        decay_sec: sane(p[22], 0.01, 30.0, 1.0),
+        strike_position: sane(p[23], 0.0, 1.0, 0.25),
         // 뜯는 세기와 같은 슬롯을 쓴다 (타격 세기). 세게 때리면 밝아진다
-        strike_hardness: (p[4] as f64 + bright).clamp(0.0, 1.0),
+        strike_hardness: (sane(p[4], 0.0, 1.0, 0.5) + bright).clamp(0.0, 1.0),
     }
 }
 
@@ -461,26 +486,27 @@ fn read_synth(bright: f64) -> SynthParams {
     let p = &engine().param_in;
     SynthParams {
         waveform: Waveform::from_index(p[24] as u32),
-        detune_cents: p[25] as f64,
+        detune_cents: sane(p[25], -200.0, 200.0, 0.0),
         // 신스의 밝기는 필터 컷오프다. 옥타브(비율)로 움직여야 저역·고역에서 같은
         // 느낌이 난다 — 헤르츠로 더하면 낮은 컷오프에서만 크게 변한다
-        cutoff_hz: p[26] as f64 * (bright * 2.0).exp2(),
-        resonance: p[27] as f64,
-        filter_env: p[28] as f64,
+        cutoff_hz: (sane(p[26], 20.0, 20000.0, 3000.0) * (bright * 2.0).exp2())
+            .clamp(20.0, 20000.0),
+        resonance: sane(p[27], 0.0, 0.98, 0.2),
+        filter_env: sane(p[28], 0.0, 4.0, 0.0),
         // 엔벌로프는 줄 슬롯을 재사용한다 — 신스에는 줄 파라미터가 의미 없다
-        attack_ms: p[0] as f64,
-        decay_ms: p[1] as f64,
-        sustain: p[2] as f64,
-        release_ms: p[3] as f64,
-        drive: p[13] as f64,
+        attack_ms: sane(p[0], 0.1, 20000.0, 5.0),
+        decay_ms: sane(p[1], 0.1, 20000.0, 300.0),
+        sustain: sane(p[2], 0.0, 1.0, 0.6),
+        release_ms: sane(p[3], 0.1, 20000.0, 250.0),
+        drive: sane(p[13], 0.0, 1.0, 0.0),
         // 두께와 움직임 (`ROADMAP.md` 신스 확장). 전부 0 이면 예전과 같은 소리다
-        unison: (p[64] as usize).clamp(1, synth::MAX_UNISON),
-        unison_detune_cents: p[65] as f64,
-        sub_level: p[66] as f64,
-        noise_level: p[67] as f64,
-        lfo_hz: p[68] as f64,
-        lfo_to_pitch_cents: p[69] as f64,
-        lfo_to_cutoff: p[70] as f64,
+        unison: (sane(p[64], 1.0, synth::MAX_UNISON as f64, 1.0)) as usize,
+        unison_detune_cents: sane(p[65], 0.0, 200.0, 0.0),
+        sub_level: sane(p[66], 0.0, 1.0, 0.0),
+        noise_level: sane(p[67], 0.0, 1.0, 0.0),
+        lfo_hz: sane(p[68], 0.0, 40.0, 0.0),
+        lfo_to_pitch_cents: sane(p[69], 0.0, 1200.0, 0.0),
+        lfo_to_cutoff: sane(p[70], 0.0, 1.0, 0.0),
     }
 }
 
@@ -497,15 +523,15 @@ fn read_drum(bright: f64) -> DrumParams {
     let p = &engine().param_in;
     DrumParams {
         kind: DrumKind::from_index(p[30] as u32),
-        decay_sec: p[31] as f64,
-        pitch_drop: p[32] as f64,
-        noise_amount: p[33] as f64,
+        decay_sec: sane(p[31], 0.01, 10.0, 0.35),
+        pitch_drop: sane(p[32], 0.0, 4.0, 0.0),
+        noise_amount: sane(p[33], 0.0, 1.0, 0.0),
         // 때리는 위치 슬롯을 밝기로 재사용. 세게 치면 밝아진다
-        tone: (p[23] as f64 + bright).clamp(0.0, 1.0),
+        tone: (sane(p[23], 0.0, 1.0, 0.5) + bright).clamp(0.0, 1.0),
         // 막 진동 (`ROADMAP.md` 드럼 개선). 1·0 이면 예전과 같은 사인 하나다
-        mode_count: (p[61] as usize).clamp(1, percussion::MAX_MODES),
-        inharmonicity: p[62] as f64,
-        snare_wires: p[63] as f64,
+        mode_count: sane(p[61], 1.0, percussion::MAX_MODES as f64, 1.0) as usize,
+        inharmonicity: sane(p[62], 0.0, 1.0, 0.0),
+        snare_wires: sane(p[63], 0.0, 1.0, 0.0),
     }
 }
 
@@ -516,13 +542,13 @@ fn read_amp() -> (bool, AmpParams) {
         enabled,
         AmpParams {
             character: AmpCharacter::from_index(p[12] as u32),
-            drive: p[13] as f64,
-            tone_low: p[14] as f64,
-            tone_mid: p[15] as f64,
-            tone_high: p[16] as f64,
-            level: p[17] as f64,
+            drive: sane(p[13], 0.0, 1.0, 0.0),
+            tone_low: sane(p[14], 0.0, 1.0, 0.5),
+            tone_mid: sane(p[15], 0.0, 1.0, 0.5),
+            tone_high: sane(p[16], 0.0, 1.0, 0.5),
+            level: sane(p[17], 0.0, 1.0, 0.7),
             cabinet: p[18] > 0.5,
-            pickup_position: p[19] as f64,
+            pickup_position: sane(p[19], 0.0, 1.0, 0.15),
             // 코일 종류가 공진 주파수를 정한다 (`ROADMAP.md` S1-3).
             //
             // 험버커는 코일 두 개가 직렬이라 인덕턴스가 커지고 공진이 아래로 내려간다
@@ -532,7 +558,7 @@ fn read_amp() -> (bool, AmpParams) {
             // **코일 공진을 직접 줄 수 있다** (슬롯 57). 0 이면 험버커 여부에서
             // 유도한다 — 예전 동작 그대로다
             pickup_coil_hz: if p[57] > 0.0 {
-                p[57] as f64
+                sane(p[57], 200.0, 12000.0, 6000.0)
             } else {
                 (if p[35] > 0.5 { 3000.0 } else { 6500.0 }) + (1.0 - p[19] as f64) * 1000.0
             },
@@ -546,11 +572,11 @@ fn read_curve() -> PitchCurve {
     let e = engine();
     let p = &e.param_in;
     let mut curve = PitchCurve {
-        glide_cents: p[6] as f64,
-        glide_ms: p[7] as f64,
-        vibrato_cents: p[8] as f64,
-        vibrato_hz: p[9] as f64,
-        vibrato_delay_ms: p[10] as f64,
+        glide_cents: sane(p[6], -4800.0, 4800.0, 0.0),
+        glide_ms: sane(p[7], 0.0, 10000.0, 0.0),
+        vibrato_cents: sane(p[8], -1200.0, 1200.0, 0.0),
+        vibrato_hz: sane(p[9], 0.0, 40.0, 0.0),
+        vibrato_delay_ms: sane(p[10], 0.0, 10000.0, 0.0),
         ..Default::default()
     };
     if e.curve_point_count > 0 {
@@ -635,22 +661,22 @@ pub extern "C" fn note_on(freq_hz: f32, velocity: f32, gain: f32, variation_seed
     // 세게 칠수록 밝아진다. 보이스마다 밝기를 담당하는 파라미터가 다르므로
     // 보정값만 구해 두고 적용은 각 `read_*` 가 한다
     // 변주 폭도 악기가 정한다 — 드럼은 크게, 신스는 작게 하고 싶을 수 있다
-    let depth_gain = param_or(49, defaults::VARIATION_GAIN);
-    let depth_bright = param_or(50, defaults::VARIATION_BRIGHT);
-    let depth_decay = param_or(51, defaults::VARIATION_DECAY);
+    let depth_gain = param_or_in(49, 0.0, 0.9, defaults::VARIATION_GAIN);
+    let depth_bright = param_or_in(50, 0.0, 0.9, defaults::VARIATION_BRIGHT);
+    let depth_decay = param_or_in(51, 0.0, 0.9, defaults::VARIATION_DECAY);
     let bright = read_velocity_brightness(velocity as f64) + v_bright * amount * depth_bright;
     let mut params = read_params(bright);
-    params.detune_ref_hz = param_or(52, voice::DEFAULT_DETUNE_REF_HZ);
-    params.detune_min_scale = param_or(53, voice::DEFAULT_DETUNE_MIN_SCALE);
+    params.detune_ref_hz = param_or_in(52, 20.0, 8000.0, voice::DEFAULT_DETUNE_REF_HZ);
+    params.detune_min_scale = param_or_in(53, 0.0, 1.0, voice::DEFAULT_DETUNE_MIN_SCALE);
     // 감쇠도 조금씩 다르다 — 실제로 같은 줄을 같은 세기로 두 번 뜯어도 같지 않다
     params.sustain_sec *= 1.0 + v_decay * amount * depth_decay;
     let (pan_l, pan_r) = pan_gains_with(
         freq_hz as f64,
         read_stereo_width(),
-        param_or(47, defaults::PAN_CENTER_HZ),
-        param_or(48, defaults::PAN_OCTAVE_SPAN),
+        param_or_in(47, 20.0, 8000.0, defaults::PAN_CENTER_HZ),
+        param_or_in(48, 0.5, 10.0, defaults::PAN_OCTAVE_SPAN),
     );
-    let steal_fade_ms = param_or(56, defaults::STEAL_FADE_MS);
+    let steal_fade_ms = param_or_in(56, 0.5, 200.0, defaults::STEAL_FADE_MS);
     let e = engine();
     let index = allocate_voice(e, steal_fade_ms);
     e.ages[index] = e.note_counter;
@@ -666,8 +692,8 @@ pub extern "C" fn note_on(freq_hz: f32, velocity: f32, gain: f32, variation_seed
     engine().voices[index].trigger_play_noise(
         read_play_noise_amount(),
         velocity as f64,
-        param_or(54, voice::DEFAULT_PLAY_NOISE_MS),
-        param_or(55, voice::DEFAULT_PLAY_NOISE_LEVEL),
+        param_or_in(54, 0.5, 500.0, voice::DEFAULT_PLAY_NOISE_MS),
+        param_or_in(55, 0.0, 1.0, voice::DEFAULT_PLAY_NOISE_LEVEL),
     );
 
     // 보이스 타입에 따라 라우팅한다. **여기가 유일한 분기점**이다 (`sound.md` 9-4)
@@ -721,10 +747,13 @@ pub extern "C" fn note_on(freq_hz: f32, velocity: f32, gain: f32, variation_seed
     e.body.set(body_amount, body_hz);
     e.body_r.set(body_amount, body_hz);
     // 젖은 소리 배율·공명 감쇠도 악기가 정한다
-    let mix = param_or(60, 0.0);
+    let mix = param_or_in(60, 0.0, 4.0, 0.0);
     e.body.set_mix(mix);
     e.body_r.set_mix(mix);
-    let (t60, damping) = (param_or(58, 0.0), param_or(59, 0.0));
+    let (t60, damping) = (
+        param_or_in(58, 0.0, 20.0, 0.0),
+        param_or_in(59, 0.0, 0.95, 0.0),
+    );
     e.sympathetic.set_decay(t60, damping);
     e.sympathetic_r.set_decay(t60, damping);
 
@@ -868,6 +897,37 @@ pub extern "C" fn process(frames: u32) -> u32 {
         let mut out_r = core::mem::take(&mut e.out_r);
         e.amp_r.process(&mut out_r[..n]);
         e.out_r = out_r;
+    }
+
+    // **최종 방어선** (`sound.md` 6-5: NaN 검출 시 보이스 리셋).
+    //
+    // 파라미터를 다 걸러도 필터 조합이 발산할 수 있다. 한 블록 훑는 비용은
+    // DSP 비용에 비하면 없는 것과 같고, **깨진 값이 한 번 나가면 그 뒤가 전부
+    // 망가진다** — 스피커와 사용자의 귀에 직접 간다
+    let mut broken = false;
+    for i in 0..n {
+        if !e.out[i].is_finite() || !e.out_r[i].is_finite() || e.out[i].abs() > 16.0 {
+            broken = true;
+            break;
+        }
+    }
+    if broken {
+        for v in e.out[..n].iter_mut() {
+            *v = 0.0;
+        }
+        for v in e.out_r[..n].iter_mut() {
+            *v = 0.0;
+        }
+        for voice in e.voices.iter_mut() {
+            voice.reset();
+        }
+        e.amp.reset();
+        e.amp_r.reset();
+        e.sympathetic.reset();
+        e.sympathetic_r.reset();
+        e.body.reset();
+        e.body_r.reset();
+        return 0;
     }
 
     active

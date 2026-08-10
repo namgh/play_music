@@ -23,7 +23,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
-import { WasmVoiceEngine } from './voice/wasmEngine.ts';
+import { WASM_PARAM_ORDER, WasmVoiceEngine } from './voice/wasmEngine.ts';
 import { encodeWav, decodeWav, peakAmplitude } from './wav.ts';
 import { renderProjectOffline } from './offlineRender.ts';
 import { createClip, createEmptyProject, createNote, createTrack } from '../model/factory.ts';
@@ -279,4 +279,55 @@ test('세게 쳐도 한 악기가 넘치지 않는다', async () => {
     if (peak > 1) loud.push(`${id}: ${dbfs(peak).toFixed(1)}dBFS`);
   }
   assert.deepEqual(loud, [], `한 음이 이미 넘친다:\n${loud.join('\n')}`);
+});
+
+test('극단 파라미터를 퍼징해도 깨지지 않는다', async () => {
+  // `sound.md` 11-5 가 요구하는 항목인데 지금까지 없었다.
+  //
+  // **파라미터가 72개다.** 사용자가 튜닝 도구에서 아무 조합이나 만들 수 있고,
+  // 그중 하나가 NaN 을 내면 그 시점부터 트랙 전체가 무음이 된다. 악기 정의로
+  // 도달 가능한 조합만 보는 것으로는 부족하다.
+  const wasm = await engine();
+  const rng = seededRng();
+  const failures: string[] = [];
+
+  // 각 슬롯의 "말이 되는 최대치". 범위를 넘는 값도 섞어 넣는다 —
+  // 엔진은 위에서 클램프해 주기를 기대하면 안 된다 (`sound.md` 6-5)
+  const wild = () => {
+    const roll = rng();
+    if (roll < 0.15) return 0;
+    if (roll < 0.3) return -1 * rng() * 1000;      // 음수
+    if (roll < 0.45) return rng() * 20000;          // 아주 큰 값
+    if (roll < 0.5) return Number.POSITIVE_INFINITY;
+    if (roll < 0.55) return Number.NaN;
+    return rng() * 2;                                // 보통 범위
+  };
+
+  for (let trial = 0; trial < 300; trial++) {
+    const params: Record<string, number> = {};
+    for (const key of WASM_PARAM_ORDER) params[key] = wild();
+    // 보이스 타입만은 유효하게 — 아니면 늘 같은 보이스만 돌게 된다
+    params.voiceKind = trial % 5;
+
+    wasm.allOff();
+    wasm.noteOn(440 * Math.pow(2, (rng() * 60 - 30) / 12), rng(), params);
+
+    const scratch = new Float32Array(BLOCK);
+    let broke = false;
+    for (let block = 0; block < 24 && !broke; block++) {
+      scratch.fill(0);
+      wasm.process(scratch, BLOCK);
+      for (const v of scratch) {
+        // NaN·무한대는 물론이고 **터무니없이 큰 값**도 깨진 것이다
+        if (!Number.isFinite(v) || Math.abs(v) > 50) {
+          failures.push(`시도 ${trial} (보이스 ${params.voiceKind}): ${v}`);
+          broke = true;
+          break;
+        }
+      }
+    }
+    if (failures.length >= 5) break; // 몇 개만 보여도 충분하다
+  }
+
+  assert.deepEqual(failures, [], `퍼징에서 깨짐:\n${failures.join('\n')}`);
 });
