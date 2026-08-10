@@ -93,6 +93,10 @@ export const WASM_PARAM_ORDER = [
   'sympatheticT60Sec',
   'sympatheticDamping',
   'bodyMix',
+  // 드럼 막 진동. 모드 1개·비조화도 0 이면 예전과 같은 사인 하나다
+  'drumModeCount',
+  'drumInharmonicity',
+  'drumSnareWires',
 ] as const;
 
 /**
@@ -188,7 +192,7 @@ export function noteOffFields(
 const MAX_BLOCK = 2048;
 
 /** Rust 쪽 PARAM_COUNT 와 같아야 한다 */
-export const WASM_PARAM_COUNT = 61;
+export const WASM_PARAM_COUNT = 64;
 
 interface WasmExports {
   memory: WebAssembly.Memory;

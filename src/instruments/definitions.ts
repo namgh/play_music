@@ -906,6 +906,21 @@ const DRUM_BASE: InstrumentDefinition = {
       type: 'float', min: 0, max: 1, default: 0.5,
       label: '밝기', group: '드럼',
     },
+    drumModeCount: {
+      // 실제 북은 여러 모드가 겹쳐 울리고 각자 다른 속도로 죽는다.
+      // 1 이면 사인 하나 — 808 계열 킥은 그게 맞다
+      type: 'int', min: 1, max: 6, default: 1,
+      label: '막 모드 수', group: '드럼',
+    },
+    drumInharmonicity: {
+      // 0 이면 배음이 정수배(음정이 뚜렷), 1 이면 이상적인 원형 막("퉁")
+      type: 'float', min: 0, max: 1, default: 0,
+      label: '막 비조화도', curve: 'linear', group: '드럼',
+    },
+    drumSnareWires: {
+      type: 'float', min: 0, max: 1, default: 0,
+      label: '스네어 줄', curve: 'linear', group: '드럼',
+    },
     ampEnabled: { type: 'int', min: 0, max: 1, default: 0, label: '앰프', group: '앰프' },
     ...COMMON_SPECS,
   },
@@ -937,7 +952,9 @@ const KICK: InstrumentDefinition = {
   schemaVersion: 1,
   name: '킥',
   extends: 'drum-base',
-  params: { drumKind: 0, drumDecaySec: 0.4, drumPitchDrop: 0.8 },
+  // **킥은 모드 하나가 맞다.** 808 계열 전자 킥은 원래 사인 + 음정 스윕이고,
+  // 그건 흉내가 아니라 그 악기의 정의다 (`percussion.rs` 머리말)
+  params: { drumKind: 0, drumDecaySec: 0.4, drumPitchDrop: 0.8, drumModeCount: 1 },
   range: { low: 24, high: 48 },
 };
 
@@ -946,7 +963,12 @@ const SNARE: InstrumentDefinition = {
   schemaVersion: 1,
   name: '스네어',
   extends: 'drum-base',
-  params: { drumKind: 1, drumDecaySec: 0.22, drumPitchDrop: 0.3, drumNoiseAmount: 0.7 },
+  params: {
+    drumKind: 1, drumDecaySec: 0.22, drumPitchDrop: 0.3, drumNoiseAmount: 0.7,
+    // 스네어 막은 모드가 여럿이고 비조화도가 높다 — 그래서 음정이 안 잡힌다.
+    // 줄(wires)이 막의 울림을 따라 달그락거리는 것이 스네어의 정체다
+    drumModeCount: 4, drumInharmonicity: 0.75, drumSnareWires: 0.55,
+  },
   range: { low: 36, high: 60 },
 };
 
@@ -955,7 +977,12 @@ const HIHAT: InstrumentDefinition = {
   schemaVersion: 1,
   name: '하이햇',
   extends: 'drum-base',
-  params: { drumKind: 2, drumDecaySec: 0.3, drumPitchDrop: 0, drumNoiseAmount: 1 },
+  // 금속판은 막보다 모드가 훨씬 불규칙하다. 노이즈만으로는 "치" 소리가 나지
+  // "챙" 이 안 난다
+  params: {
+    drumKind: 2, drumDecaySec: 0.3, drumPitchDrop: 0, drumNoiseAmount: 1,
+    drumModeCount: 5, drumInharmonicity: 1,
+  },
   range: { low: 48, high: 84 },
 };
 
@@ -964,7 +991,10 @@ const HIHAT_OPEN: InstrumentDefinition = {
   schemaVersion: 1,
   name: '하이햇 (열림)',
   extends: 'drum-base',
-  params: { drumKind: 3, drumDecaySec: 0.6, drumPitchDrop: 0, drumNoiseAmount: 1 },
+  params: {
+    drumKind: 3, drumDecaySec: 0.6, drumPitchDrop: 0, drumNoiseAmount: 1,
+    drumModeCount: 5, drumInharmonicity: 1,
+  },
   range: { low: 48, high: 84 },
 };
 
@@ -973,7 +1003,11 @@ const TOM: InstrumentDefinition = {
   schemaVersion: 1,
   name: '탐',
   extends: 'drum-base',
-  params: { drumKind: 4, drumDecaySec: 0.5, drumPitchDrop: 0.4, drumNoiseAmount: 0.15 },
+  params: {
+    drumKind: 4, drumDecaySec: 0.5, drumPitchDrop: 0.4, drumNoiseAmount: 0.15,
+    // 탐은 음정이 어느 정도 잡히므로 비조화도를 중간에 둔다
+    drumModeCount: 4, drumInharmonicity: 0.5,
+  },
   range: { low: 36, high: 72 },
 };
 

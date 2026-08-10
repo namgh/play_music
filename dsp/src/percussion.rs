@@ -45,6 +45,29 @@ impl DrumKind {
     }
 }
 
+/// 이상적인 원형 막의 모드 비율 (베셀 함수 영점). **정수배가 아니다** —
+/// 그래서 북은 음정이 뚜렷하지 않고 "퉁" 하고 울린다
+const MEMBRANE_RATIOS: [f64; MAX_MODES] = [1.0, 1.594, 2.136, 2.296, 2.918, 3.501];
+
+/// 금속판(심벌·하이햇)의 모드. 막보다 훨씬 촘촘하고 불규칙하다
+const METAL_RATIOS: [f64; MAX_MODES] = [1.0, 1.41, 1.93, 2.51, 3.17, 4.07];
+
+pub const MAX_MODES: usize = 6;
+
+/// 막 진동 모드 하나. 사인 하나가 아니라 이것들이 겹쳐야 북 소리가 된다.
+///
+/// **예전에는 사인 하나뿐이었다.** 그래서 킥(원래 사인에 가깝다)은 그럴듯했지만
+/// 스네어·탐은 "삐" 소리에 노이즈를 얹은 것처럼 들렸다 — 실제 막은 여러 모드가
+/// 동시에 울리고 각자 다른 속도로 죽는다.
+#[derive(Clone, Copy, Debug, Default)]
+struct Mode {
+    phase: f64,
+    ratio: f64,
+    gain: f64,
+    env: f64,
+    decay: f64,
+}
+
 /// 결정론적 노이즈. 오디오 스레드에서 OS 난수를 부를 수 없다
 struct Noise(u32);
 
@@ -96,6 +119,12 @@ pub struct DrumParams {
     pub noise_amount: f64,
     /// 밝기 (노이즈 대역의 중심)
     pub tone: f64,
+    /// 막 모드 개수 (1~6). 1 이면 예전과 같은 사인 하나다
+    pub mode_count: usize,
+    /// 0 이면 배음이 정수배(음정이 뚜렷), 1 이면 이상적인 막(퉁 소리)
+    pub inharmonicity: f64,
+    /// 스네어 줄의 달그락거림 (0~1)
+    pub snare_wires: f64,
 }
 
 impl Default for DrumParams {
@@ -106,6 +135,11 @@ impl Default for DrumParams {
             pitch_drop: 0.7,
             noise_amount: 0.0,
             tone: 0.5,
+            // 기본은 **모드 하나** — 예전과 완전히 같은 소리다.
+            // 악기가 켜야 막 진동이 생긴다
+            mode_count: 1,
+            inharmonicity: 0.0,
+            snare_wires: 0.0,
         }
     }
 }
@@ -113,6 +147,12 @@ impl Default for DrumParams {
 pub struct DrumVoice {
     sample_rate: f64,
     kind: DrumKind,
+    /// 막 진동 모드. `[0]` 이 기본 모드다
+    modes: [Mode; MAX_MODES],
+    mode_count: usize,
+    /// 스네어 줄 — 막이 울리는 동안 달그락거린다
+    wires: f64,
+    wire_env: f64,
 
     /// 몸통 사인의 위상
     phase: f64,
@@ -142,6 +182,10 @@ impl DrumVoice {
         Self {
             sample_rate,
             kind: DrumKind::Kick,
+            modes: [Mode::default(); MAX_MODES],
+            mode_count: 1,
+            wires: 0.0,
+            wire_env: 0.0,
             phase: 0.0,
             base_hz: 50.0,
             sweep: 1.0,
@@ -251,6 +295,38 @@ impl DrumVoice {
         } else {
             0.0
         };
+
+        // 막 진동 모드를 세운다 (`ROADMAP.md` 드럼 개선).
+        //
+        // 실제 북은 사인 하나가 아니라 여러 모드가 겹쳐 울리고 **각자 다른 속도로
+        // 죽는다** — 높은 모드가 먼저 사라지면서 "탕 → 퉁" 으로 변한다.
+        // 그 변화가 없으면 아무리 노이즈를 얹어도 신호음처럼 들린다.
+        self.mode_count = params.mode_count.clamp(1, MAX_MODES);
+        let blend = params.inharmonicity.clamp(0.0, 1.0);
+        let metal = matches!(params.kind, DrumKind::HiHatClosed | DrumKind::HiHatOpen);
+        for (i, mode) in self.modes[..self.mode_count].iter_mut().enumerate() {
+            let ideal = if metal {
+                METAL_RATIOS[i]
+            } else {
+                MEMBRANE_RATIOS[i]
+            };
+            // 0 이면 정수배(음정이 뚜렷), 1 이면 이상적인 막(퉁 소리)
+            mode.ratio = (i as f64 + 1.0) * (1.0 - blend) + ideal * blend;
+            // 높은 모드일수록 작고 빨리 죽는다 — 실제 막이 그렇다
+            mode.gain = 1.0 / (1.0 + i as f64 * 1.4);
+            mode.decay = rate(decay / (1.0 + i as f64 * 0.9));
+            mode.env = 1.0;
+            mode.phase = 0.0;
+        }
+
+        // 스네어 줄. 막이 울리는 동안 달그락거린다 — 노이즈 하나로는 안 나는 소리다
+        self.wires = if params.kind == DrumKind::Snare {
+            params.snare_wires.clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        self.wire_env = 1.0;
+
         self.noise_env = 1.0;
         self.active = true;
     }
@@ -263,6 +339,10 @@ impl DrumVoice {
         self.active = false;
         self.body_env = 0.0;
         self.noise_env = 0.0;
+        self.wire_env = 0.0;
+        for mode in self.modes.iter_mut() {
+            mode.env = 0.0;
+        }
         self.band.reset();
     }
 
@@ -273,17 +353,42 @@ impl DrumVoice {
         }
 
         for slot in out.iter_mut() {
-            // 몸통: 음정이 아래로 떨어지는 사인
+            // 몸통: 음정이 아래로 떨어지는 막 진동.
+            //
+            // **장력 변조(sweep)는 모든 모드에 함께 걸린다** — 실제로 막 전체가
+            // 같이 팽팽해졌다 풀리기 때문이다. 모드마다 따로 걸면 화음이 흔들린다
             let mut value = 0.0;
             if self.body_env > 1e-5 && self.base_hz > 0.0 {
-                let hz = self.base_hz * self.sweep;
-                self.phase += hz / self.sample_rate;
-                if self.phase >= 1.0 {
-                    self.phase -= 1.0;
+                let fundamental = self.base_hz * self.sweep;
+                let mut sum = 0.0;
+                let mut norm = 0.0;
+                for mode in self.modes[..self.mode_count].iter_mut() {
+                    if mode.env <= 1e-5 {
+                        continue;
+                    }
+                    mode.phase += (fundamental * mode.ratio) / self.sample_rate;
+                    if mode.phase >= 1.0 {
+                        mode.phase -= 1.0;
+                    }
+                    sum += (2.0 * core::f64::consts::PI * mode.phase).sin() * mode.gain * mode.env;
+                    norm += mode.gain;
+                    mode.env = flush(mode.env * mode.decay);
                 }
-                value += (2.0 * core::f64::consts::PI * self.phase).sin() * self.body_env;
+                // 모드 수가 늘어도 전체 크기가 변하지 않게 정규화한다.
+                // 안 하면 모드를 켤 때마다 드럼이 커진다
+                if norm > 0.0 {
+                    value += (sum / norm) * self.body_env;
+                }
                 self.sweep = 1.0 + (self.sweep - 1.0) * self.sweep_decay;
                 self.body_env = flush(self.body_env * self.body_decay);
+            }
+
+            // 스네어 줄 — 막의 울림에 실려 달그락거린다.
+            // 막 엔벌로프를 곱하므로 막이 죽으면 줄도 조용해진다 (실제로 그렇다)
+            if self.wires > 0.0 && self.wire_env > 1e-5 {
+                let rattle = self.noise.next() * self.noise.next().abs();
+                value += rattle * self.wires * self.wire_env * self.body_env * 1.6;
+                self.wire_env = flush(self.wire_env * self.noise_decay);
             }
 
             // 노이즈: 대역통과를 거쳐 "샤" 소리를 만든다.
@@ -314,6 +419,127 @@ impl DrumVoice {
 
         if self.body_env <= 1e-5 && self.noise_env <= 1e-5 {
             self.active = false;
+        }
+    }
+}
+
+#[cfg(test)]
+mod modal_tests {
+    use super::*;
+
+    const FS: f64 = 48000.0;
+
+    fn render(params: DrumParams, freq: f64, seconds: f64) -> Vec<f32> {
+        let mut voice = DrumVoice::new(FS, 0x9e3b);
+        voice.note_on(freq, 1.0, &params);
+        let mut out = vec![0.0f32; (FS * seconds) as usize];
+        for chunk in out.chunks_mut(256) {
+            voice.process(chunk);
+        }
+        out
+    }
+
+    fn rms(x: &[f32]) -> f64 {
+        (x.iter().map(|v| (*v as f64).powi(2)).sum::<f64>() / x.len().max(1) as f64).sqrt()
+    }
+
+    fn tom(mode_count: usize, inharmonicity: f64) -> DrumParams {
+        DrumParams {
+            kind: DrumKind::Tom,
+            decay_sec: 0.6,
+            noise_amount: 0.0,
+            mode_count,
+            inharmonicity,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn single_mode_is_the_old_sound() {
+        // **모드 하나 = 예전 동작.** 켜지 않은 악기가 흔들리면 안 된다
+        let a = render(tom(1, 0.0), 120.0, 0.3);
+        let b = render(tom(1, 1.0), 120.0, 0.3);
+        // 모드가 하나면 비조화도는 아무 영향이 없다 (첫 모드 비율은 항상 1)
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn more_modes_change_the_sound() {
+        let one = render(tom(1, 0.6), 120.0, 0.3);
+        let many = render(tom(5, 0.6), 120.0, 0.3);
+        let differs = one.iter().zip(many.iter()).filter(|(a, b)| a != b).count();
+        assert!(differs > one.len() / 2, "모드를 켰는데 소리가 그대로다");
+    }
+
+    #[test]
+    fn mode_count_does_not_change_loudness() {
+        // 정규화가 빠지면 모드를 켤 때마다 드럼이 커진다
+        let one = rms(&render(tom(1, 0.5), 120.0, 0.4));
+        let many = rms(&render(tom(6, 0.5), 120.0, 0.4));
+        let ratio = many / one;
+        assert!(
+            (0.5..2.0).contains(&ratio),
+            "모드 수로 크기가 {ratio:.2}배 변했다"
+        );
+    }
+
+    #[test]
+    fn high_modes_die_first() {
+        // "탕 → 퉁" 으로 변하는 것이 북의 특징이다. 높은 모드가 먼저 사라져야 한다
+        let x = render(tom(6, 0.8), 120.0, 0.8);
+        let window = (FS * 0.05) as usize;
+        // 영점 통과 횟수로 대략의 밝기를 센다 — 높은 모드가 살아 있으면 더 자주 지난다
+        let crossings = |from: usize| {
+            x[from..(from + window).min(x.len())]
+                .windows(2)
+                .filter(|w| (w[0] < 0.0) != (w[1] < 0.0))
+                .count()
+        };
+        let early = crossings((FS * 0.01) as usize);
+        let late = crossings((FS * 0.4) as usize);
+        assert!(early > late, "어택이 더 밝지 않다 ({early} vs {late})");
+    }
+
+    #[test]
+    fn snare_wires_add_rattle_that_follows_the_head() {
+        // 줄은 막이 울리는 동안만 달그락거린다 — 막이 죽으면 줄도 조용해진다
+        let base = DrumParams {
+            kind: DrumKind::Snare,
+            decay_sec: 0.25,
+            snare_wires: 0.0,
+            mode_count: 4,
+            inharmonicity: 0.7,
+            ..Default::default()
+        };
+        let dry = render(base, 0.0, 0.6);
+        let wet = render(
+            DrumParams {
+                snare_wires: 1.0,
+                ..base
+            },
+            0.0,
+            0.6,
+        );
+        assert!(rms(&wet) > rms(&dry), "줄을 켰는데 안 들린다");
+
+        // 꼬리에서는 둘 다 조용해야 한다 (줄이 막보다 오래 남으면 안 된다)
+        let tail = (FS * 0.5) as usize;
+        assert!(
+            rms(&wet[tail..]) < rms(&wet[..tail]) * 0.3,
+            "줄이 막보다 오래 남는다"
+        );
+    }
+
+    #[test]
+    fn stays_finite_at_extremes() {
+        for count in 1..=MAX_MODES {
+            for blend in [0.0, 0.5, 1.0] {
+                let x = render(tom(count, blend), 400.0, 0.2);
+                assert!(
+                    x.iter().all(|v| v.is_finite()),
+                    "{count}모드 {blend} 에서 발산"
+                );
+            }
         }
     }
 }

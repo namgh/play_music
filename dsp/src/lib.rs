@@ -69,13 +69,14 @@ pub const MAX_BLOCK: usize = 2048;
 /// | 34~36 | 연주 표현 (스테레오 · 픽업 · 벨로시티 밝기) |
 /// | 37~45 | 표현력 (2편광 3개 · 연주 노이즈 · 공명현 2개 · 타건 변주 · 바디 2개) |
 /// | 46~60 | **보이싱 세부** — 예전에 Rust 상수로 박혀 있던 값들 |
+/// | 61~63 | 드럼 막 진동 (모드 수 · 비조화도 · 스네어 줄) |
 ///
 /// **층을 분리한다** (`sound.md` 5절·8절): "줄 길이"와 "왜곡"은 서로 다른 층이다.
 ///
 /// 34~36 은 `ROADMAP.md` S1, 37~41 은 S2 에서 **각각 한 번에** 추가했다.
 /// 슬롯을 늘리면 Rust·TS·워크렛 세 곳을 같이 고쳐야 하므로 나눠서 늘리지 않는다
 /// (로드맵 원칙 1).
-pub const PARAM_COUNT: usize = 61;
+pub const PARAM_COUNT: usize = 64;
 
 /// 아래 값들은 **기본값일 뿐**이다. 전부 파라미터로 덮을 수 있다.
 ///
@@ -490,6 +491,10 @@ fn read_drum(bright: f64) -> DrumParams {
         noise_amount: p[33] as f64,
         // 때리는 위치 슬롯을 밝기로 재사용. 세게 치면 밝아진다
         tone: (p[23] as f64 + bright).clamp(0.0, 1.0),
+        // 막 진동 (`ROADMAP.md` 드럼 개선). 1·0 이면 예전과 같은 사인 하나다
+        mode_count: (p[61] as usize).clamp(1, percussion::MAX_MODES),
+        inharmonicity: p[62] as f64,
+        snare_wires: p[63] as f64,
     }
 }
 
