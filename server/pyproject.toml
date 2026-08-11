@@ -12,7 +12,10 @@ dependencies = [
     "alembic>=1.13",
     "pydantic-settings>=2.4",
     "argon2-cffi>=23.1",
-    "pyjwt>=2.9",
+    # RS256 검증에 cryptography 가 필요하다 — 구글 id_token 서명을 확인한다
+    "pyjwt[crypto]>=2.9",
+    # 구글 토큰 교환·JWKS 조회. 서버가 밖으로 나가는 몇 안 되는 곳이다
+    "httpx>=0.27",
     "redis>=5.0",
     "email-validator>=2.2",
     "python-ulid>=2.7",

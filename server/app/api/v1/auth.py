@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime, timedelta
+from typing import Annotated
 
-from fastapi import APIRouter, Request, Response, status
+from fastapi import APIRouter, Query, Request, Response, status
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select, update
 
@@ -21,7 +22,7 @@ from app.core.security import (
     verify_password,
 )
 from app.db.models import AuthIdentity, EmailToken, RefreshToken, Subscription, User
-from app.services import mail, orgs
+from app.services import google_oauth, mail, orgs
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -391,3 +392,120 @@ async def reset_password(body: ResetIn, request: Request, session: Db) -> Respon
         session, action="user.reset_password", actor_id=token.user_id, ip=client_ip(request)
     )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# --- 구글 로그인 -------------------------------------------------------------
+
+
+@router.get("/google/start")
+async def google_start(
+    request: Request, next: Annotated[str, Query(max_length=200)] = "/"
+) -> dict[str, str]:
+    """로그인 URL 을 만들어 준다. 리다이렉트는 클라이언트가 한다 —
+    XHR 로 부르면 302 를 다루기 번거롭고, 앱마다 이동 방식이 다르다"""
+    await rate_check("oauth_start", client_ip(request) or "unknown")
+    # **열린 리다이렉트를 막는다.** `next` 는 우리 앱 안의 경로만 받는다 —
+    # "//evil.com" 이나 "https://evil.com" 이 통과하면 피싱 도구가 된다
+    if not next.startswith("/") or next.startswith("//"):
+        next = "/"
+    url, state = await google_oauth.start(next_path=next)
+    return {"authorization_url": url, "state": state}
+
+
+@router.get("/google/callback", response_model=TokenOut)
+async def google_callback(
+    request: Request,
+    response: Response,
+    session: Db,
+    settings: Config,
+    code: Annotated[str | None, Query(max_length=2000)] = None,
+    state: Annotated[str | None, Query(max_length=500)] = None,
+    error: Annotated[str | None, Query(max_length=200)] = None,
+) -> TokenOut:
+    """구글이 되돌려 보내는 곳. 여기서 우리 세션이 만들어진다"""
+    if error or not code or not state:
+        # 사용자가 취소한 경우도 여기로 온다. 내부 사정을 노출하지 않는다
+        raise Unauthorized("구글 로그인이 완료되지 않았습니다", code="oauth_canceled")
+
+    stored = await google_oauth.consume_state(state)
+    id_token = await google_oauth.exchange(code, stored["verifier"])
+    profile = google_oauth.verify_id_token(id_token, expected_nonce=stored["nonce"])
+
+    user = await _link_or_create_google_user(session, profile, ip=client_ip(request))
+    user.last_seen_at = datetime.now(UTC)
+    return await _issue_tokens(
+        session, response, settings, user, user_agent=request.headers.get("user-agent")
+    )
+
+
+async def _link_or_create_google_user(session: Db, profile, *, ip: str | None) -> User:
+    """구글 계정 → 우리 사용자.
+
+    순서가 중요하다:
+
+      1. **`sub` 로 먼저 찾는다.** 구글에서 이메일을 바꿔도 같은 사람이다.
+         이메일로 먼저 찾으면 주소를 바꾼 사용자가 새 계정이 돼 곡을 잃는다
+      2. 없으면 이메일로 기존 계정을 찾아 **연결**한다 — 단 `email_verified` 일 때만.
+         이 조건이 없으면 남의 주소로 구글 계정을 만들어 그 사람 계정을 가져갈 수 있다
+      3. 그래도 없으면 새로 만든다 (개인 워크스페이스까지)
+    """
+    identity = (
+        await session.execute(
+            select(AuthIdentity).where(
+                AuthIdentity.provider == "google", AuthIdentity.subject == profile.subject
+            )
+        )
+    ).scalar_one_or_none()
+
+    if identity is not None:
+        user = await session.get(User, identity.user_id)
+        if user is None or user.status in ("deleted", "purged"):
+            raise Unauthorized("계정을 찾을 수 없습니다", code="account_not_found")
+        await audit.record(session, action="user.login", actor_id=user.id, ip=ip)
+        return user
+
+    existing = (
+        await session.execute(select(User).where(User.email == profile.email))
+    ).scalar_one_or_none()
+
+    if existing is not None:
+        if not profile.email_verified:
+            # **여기서 막는다.** 확인되지 않은 주소로 남의 계정에 붙을 수 없다
+            raise Unauthorized(
+                "구글에서 이메일이 확인되지 않아 기존 계정과 연결할 수 없습니다",
+                code="oauth_email_unverified",
+            )
+        if existing.status in ("deleted", "purged"):
+            raise Unauthorized("계정을 찾을 수 없습니다", code="account_not_found")
+
+        session.add(
+            AuthIdentity(user_id=existing.id, provider="google", subject=profile.subject)
+        )
+        # 구글이 확인해 준 주소이므로 우리 확인도 끝난 것으로 본다
+        if existing.email_verified_at is None:
+            existing.email_verified_at = datetime.now(UTC)
+        if existing.status == "pending_verification":
+            existing.status = "active"
+        await audit.record(
+            session, action="user.link_google", actor_id=existing.id, ip=ip
+        )
+        return existing
+
+    user = User(
+        email=profile.email,
+        display_name=profile.name,
+        # 구글이 확인한 주소면 우리가 다시 확인 메일을 보낼 이유가 없다
+        status="active" if profile.email_verified else "pending_verification",
+        email_verified_at=datetime.now(UTC) if profile.email_verified else None,
+    )
+    session.add(user)
+    await session.flush()
+    # **비밀번호 없이 만든다.** 나중에 비밀번호를 걸고 싶으면 재설정 흐름을 탄다
+    session.add(AuthIdentity(user_id=user.id, provider="google", subject=profile.subject))
+
+    org = await orgs.create_personal_org(session, user)
+    session.add(Subscription(org_id=org.id, plan_code="free", status="active"))
+    await audit.record(
+        session, action="user.signup", actor_id=user.id, detail={"via": "google"}, ip=ip
+    )
+    return user

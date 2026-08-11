@@ -47,6 +47,20 @@ cp .env.example .env              # .env 는 커밋하지 않는다
 권한은 **2축**이다. `users.platform_role`(운영자 권한)은 리소스 접근을 주지 않는다 —
 플랫폼 admin 이라도 남의 워크스페이스에는 들어갈 수 없다.
 
+## 로그인 — 비밀번호 + 구글
+
+`auth_identities` 가 (provider, subject) 로 여러 로그인 수단을 붙인다. 둘 다 **같은
+세션 구조**(리프레시 회전·재사용 감지)를 쓴다.
+
+구글은 Authorization Code + PKCE 다. `GET /v1/auth/google/start` 로 인가 URL 을 받고,
+구글이 `GET /v1/auth/google/callback` 으로 되돌려 보낸다. 검증 넷을 전부 한다 —
+state(CSRF, 한 번 쓰고 삭제) · PKCE · nonce · **`aud` 검증**.
+
+`aud` 를 안 보면 공격자가 자기 앱에서 받은 정상 구글 토큰으로 우리 서비스에 로그인할
+수 있다. 계정 연결은 **`email_verified` 가 참일 때만** — 아니면 남의 주소로 구글
+계정을 만들어 기존 계정을 가져갈 수 있다. 조회는 이메일이 아니라 **구글 `sub` 우선**
+이라, 구글에서 주소를 바꿔도 같은 계정이다.
+
 ## 메일 — 아웃박스 경유 (Gmail SMTP)
 
 요청 안에서 직접 보내지 않는다. `email_outbox` 행을 **같은 트랜잭션에** 넣고 워커가
