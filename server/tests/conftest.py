@@ -6,6 +6,8 @@ SQLite 로 대체하지 않는다. JSONB·배열·부분 인덱스·자문 락�
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import os
 import uuid
 from collections.abc import AsyncIterator
@@ -53,6 +55,36 @@ async def client(app) -> AsyncIterator[AsyncClient]:
         transport=ASGITransport(app=app), base_url="http://test"
     ) as ac:
         yield ac
+
+
+@pytest.fixture
+async def live_server(app, settings) -> AsyncIterator[str]:
+    """**진짜 uvicorn 을 띄운다.**
+
+    httpx 의 ASGI 트랜스포트는 응답 본문을 통째로 모아서 돌려준다 — 끝나지 않는
+    SSE 스트림은 거기서 영원히 안 끝난다. 스트리밍을 검증하려면 진짜 HTTP 가 필요하다.
+    포트는 0 을 줘서 커널이 비어 있는 것을 고르게 한다 (CI 에서 충돌 안 나게).
+    """
+    import uvicorn
+
+    config = uvicorn.Config(app, host="127.0.0.1", port=0, log_level="warning")
+    server = uvicorn.Server(config)
+    task = asyncio.create_task(server.serve())
+
+    for _ in range(100):  # 뜰 때까지 기다린다
+        if server.started:
+            break
+        await asyncio.sleep(0.05)
+    else:  # pragma: no cover
+        raise RuntimeError("테스트 서버가 뜨지 않았다")
+
+    port = server.servers[0].sockets[0].getsockname()[1]
+    try:
+        yield f"http://127.0.0.1:{port}"
+    finally:
+        server.should_exit = True
+        with contextlib.suppress(asyncio.TimeoutError, asyncio.CancelledError):
+            await asyncio.wait_for(task, timeout=5)
 
 
 @pytest.fixture

@@ -18,8 +18,9 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import Conflict, NotFound, Unprocessable
-from app.db.models import Project, ProjectVersion
+from app.core.errors import Conflict, Forbidden, NotFound, Unprocessable
+from app.db.models import OrgMember, Project, ProjectVersion
+from app.services.orgs import ROLE_RANK
 
 # 이보다 크면 객체 스토리지로 보낸다. JSONB 에 수 MB 를 넣으면 목록 조회까지 느려진다
 INLINE_DOC_LIMIT_BYTES = 1 * 1024 * 1024
@@ -81,18 +82,41 @@ def validate_document(doc: Any) -> dict[str, Any]:
     return doc
 
 
-async def get_project(session: AsyncSession, project_id: uuid.UUID, owner_id: uuid.UUID) -> Project:
-    project = (
+async def get_project(
+    session: AsyncSession,
+    project_id: uuid.UUID,
+    user_id: uuid.UUID,
+    *,
+    need: str = "viewer",
+) -> Project:
+    """**소속 조직의 구성원인지로 판단한다** — 만든 사람인지가 아니라.
+
+    `owner_id` 로 보면 팀에서 남이 만든 곡을 아무도 못 연다. 반대로 조직만 보고
+    역할을 안 보면 viewer 가 편집한다. 그래서 둘 다 본다.
+
+    없거나 권한이 없으면 **404** 다. 403 은 "그 곡이 존재한다"를 알려 준다.
+    """
+    row = (
         await session.execute(
-            select(Project).where(
+            select(Project, OrgMember.role)
+            .join(OrgMember, OrgMember.org_id == Project.org_id)
+            .where(
                 Project.id == project_id,
-                Project.owner_id == owner_id,
+                OrgMember.user_id == user_id,
                 Project.deleted_at.is_(None),
             )
         )
-    ).scalar_one_or_none()
-    if project is None:
+    ).first()
+    if row is None:
         raise NotFound("프로젝트를 찾을 수 없습니다", code="project_not_found")
+
+    project, role = row
+    if ROLE_RANK[role] < ROLE_RANK[need]:
+        raise Forbidden(
+            "권한이 없습니다",
+            code="insufficient_org_role",
+            details={"required": need, "actual": role},
+        )
     return project
 
 

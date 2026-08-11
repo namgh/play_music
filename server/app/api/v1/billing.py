@@ -19,6 +19,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import logging
+import uuid
 from datetime import UTC, datetime
 from typing import Annotated, Any
 
@@ -31,7 +32,7 @@ from app.api.deps import CurrentUser, Db
 from app.core import audit
 from app.core.errors import Unauthorized
 from app.db.models import BillingEvent, Subscription, User
-from app.services import entitlements
+from app.services import entitlements, orgs
 
 log = logging.getLogger(__name__)
 
@@ -58,9 +59,13 @@ class SubscriptionOut(BaseModel):
 
 
 @router.get("/billing/subscription", response_model=SubscriptionOut)
-async def my_subscription(session: Db, user: CurrentUser) -> SubscriptionOut:
-    ent = await entitlements.resolve(session, user.id)
-    sub = await session.get(Subscription, user.id)
+async def my_subscription(
+    session: Db, user: CurrentUser, org_id: uuid.UUID | None = None
+) -> SubscriptionOut:
+    """`org_id` 를 안 주면 개인 워크스페이스. **과금 단위는 조직이다**"""
+    org = await orgs.resolve_org(session, user=user, org_id=org_id)
+    ent = await entitlements.resolve(session, org.id)
+    sub = await session.get(Subscription, org.id)
     return SubscriptionOut(
         plan_code=ent.plan_code,
         status=ent.status,
@@ -68,8 +73,8 @@ async def my_subscription(session: Db, user: CurrentUser) -> SubscriptionOut:
         current_period_end=sub.current_period_end if sub else None,
         limits=ent.limits,
         usage={
-            "ai_job": await entitlements.usage_in_period(session, user.id, "ai_job"),
-            "export": await entitlements.usage_in_period(session, user.id, "export"),
+            "ai_job": await entitlements.usage_in_period(session, org.id, "ai_job"),
+            "export": await entitlements.usage_in_period(session, org.id, "export"),
         },
     )
 
@@ -145,9 +150,17 @@ async def _apply(session: Db, event: dict[str, Any], occurred_at: datetime) -> N
         log.error("billing_event_unknown_customer", extra={"event_id": event.get("id")})
         return
 
-    sub = await session.get(Subscription, user.id)
+    # **어느 워크스페이스에 붙일 결제인가.** 결제사 payload 에 org 가 있으면 그것,
+    # 없으면 그 사람의 개인 워크스페이스다 — 팀 결제는 반드시 org 를 실어 보낸다
+    raw_org = data.get("org_id")
+    if raw_org:
+        org_id = uuid.UUID(str(raw_org))
+    else:
+        org_id = (await orgs.personal_org(session, user.id)).id
+
+    sub = await session.get(Subscription, org_id)
     if sub is None:
-        sub = Subscription(user_id=user.id, plan_code="free", status="active")
+        sub = Subscription(org_id=org_id, plan_code="free", status="active")
         session.add(sub)
         await session.flush()
 
@@ -180,9 +193,9 @@ async def _apply(session: Db, event: dict[str, Any], occurred_at: datetime) -> N
     await audit.record(
         session,
         action="billing.apply",
-        target_type="user",
-        target_id=user.id,
+        target_type="org",
+        target_id=org_id,
         detail={"type": event_type, "plan": sub.plan_code, "status": sub.status},
     )
     # 캐시를 즉시 무효화한다. 안 그러면 결제 직후 60초 동안 무료 한도가 걸린다
-    await entitlements.invalidate(user.id)
+    await entitlements.invalidate(org_id)

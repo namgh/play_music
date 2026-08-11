@@ -20,8 +20,8 @@ from app.core.errors import Conflict, NotFound, Unprocessable
 from app.core.idempotency import begin as idem_begin
 from app.core.idempotency import complete as idem_complete
 from app.core.ratelimit import check as rate_check
-from app.db.models import Project, ProjectVersion
-from app.services import entitlements
+from app.db.models import OrgMember, Project, ProjectVersion
+from app.services import entitlements, orgs
 from app.services.projects import get_project, load_version, save_document
 
 router = APIRouter(prefix="/projects", tags=["projects"])
@@ -33,6 +33,7 @@ ReadUser = CurrentUser
 
 class ProjectSummary(BaseModel):
     id: uuid.UUID
+    org_id: uuid.UUID
     name: str
     updated_at: datetime
     head_version_id: uuid.UUID | None
@@ -52,6 +53,8 @@ class ProjectDetail(ProjectSummary):
 class CreateIn(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     document: dict[str, Any]
+    # 없으면 개인 워크스페이스. 팀에서 만들려면 그 조직 id 를 준다
+    org_id: uuid.UUID | None = None
 
 
 class SaveIn(BaseModel):
@@ -67,6 +70,7 @@ class ListOut(BaseModel):
 def _summary(p: Project) -> ProjectSummary:
     return ProjectSummary(
         id=p.id,
+        org_id=p.org_id,
         name=p.name,
         updated_at=p.updated_at,
         head_version_id=p.head_version_id,
@@ -85,14 +89,23 @@ async def list_projects(
     user: ReadUser,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     cursor: str | None = None,
+    org_id: uuid.UUID | None = None,
 ) -> ListOut:
-    """**커서 페이지네이션.** 오프셋은 편집이 잦으면 항목이 중복되거나 빠진다"""
+    """**커서 페이지네이션.** 오프셋은 편집이 잦으면 항목이 중복되거나 빠진다.
+
+    `org_id` 를 주면 그 워크스페이스만, 안 주면 **내가 속한 전부**를 본다 —
+    개인 곡과 팀 곡을 한 화면에서 찾을 수 있어야 한다.
+    """
     stmt = (
         select(Project)
-        .where(Project.owner_id == user.id, Project.deleted_at.is_(None))
+        .join(OrgMember, OrgMember.org_id == Project.org_id)
+        .where(OrgMember.user_id == user.id, Project.deleted_at.is_(None))
         .order_by(Project.updated_at.desc(), Project.id.desc())
         .limit(limit + 1)
     )
+    if org_id is not None:
+        await orgs.require_member(session, org_id=org_id, user_id=user.id)
+        stmt = stmt.where(Project.org_id == org_id)
     if cursor:
         try:
             at, last_id = cursor.split("|", 1)
@@ -135,18 +148,22 @@ async def create_project(
 
     # **무료 한도는 DB 에서 센다** (`SERVER.md` 5절). 코드로만 세면 프로세스 둘이
     # 동시에 통과한다. 자문 락으로 같은 사용자의 동시 생성만 직렬화한다
-    ent = await entitlements.resolve(session, user.id)
+    # `org_id` 가 없으면 **개인 워크스페이스로 간다** — 처음 쓰는 사람에게
+    # "먼저 워크스페이스를 고르세요"를 요구하면 거기서 절반이 떠난다
+    org = await orgs.resolve_org(session, user=user, org_id=body.org_id, need=orgs.EDIT)
+
+    ent = await entitlements.resolve(session, org.id)
     limit = ent.limits.get("projects")
     if limit is not None:
         await session.execute(
             text("SELECT pg_advisory_xact_lock(hashtextextended(:k, 0))").bindparams(
-                k=str(user.id)
+                k=str(org.id)
             )
         )
         count = (
             await session.execute(
                 select(Project).where(
-                    Project.owner_id == user.id, Project.deleted_at.is_(None)
+                    Project.org_id == org.id, Project.deleted_at.is_(None)
                 )
             )
         ).scalars()
@@ -159,7 +176,7 @@ async def create_project(
                 details={"limit": limit, "plan": ent.plan_code},
             )
 
-    project = Project(owner_id=user.id, name=body.name)
+    project = Project(org_id=org.id, owner_id=user.id, name=body.name)
     session.add(project)
     await session.flush()
 
@@ -204,7 +221,7 @@ async def save_project(
     if_match: Annotated[str | None, Header(alias="If-Match")] = None,
 ) -> ProjectDetail:
     await rate_check("project_save", str(user.id))
-    project = await get_project(session, project_id, user.id)
+    project = await get_project(session, project_id, user.id, need=orgs.EDIT)
 
     if if_match is None:
         # **헤더가 없으면 거절한다.** 없으면 덮어쓰기가 기본값이 되고 그건 데이터 손실이다
@@ -285,7 +302,8 @@ async def delete_project(
     project_id: uuid.UUID, request: Request, session: Db, user: ActiveUser
 ) -> Response:
     """**소프트 삭제.** 30일 뒤 정리 잡이 실제로 지운다 — 곡을 잃는 것은 되돌릴 수 없다"""
-    project = await get_project(session, project_id, user.id)
+    # 삭제는 편집보다 무겁다. editor 까지 허용하되 viewer 는 못 한다
+    project = await get_project(session, project_id, user.id, need=orgs.EDIT)
     project.deleted_at = datetime.now(UTC)
     await audit.record(
         session,

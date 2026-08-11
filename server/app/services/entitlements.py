@@ -42,8 +42,9 @@ class Entitlements:
         return self.status in ("active", "canceling", "past_due")
 
 
-async def resolve(session: AsyncSession, user_id: uuid.UUID) -> Entitlements:
-    cached = await r.cache_get(r.key("ent", str(user_id)))
+async def resolve(session: AsyncSession, org_id: uuid.UUID) -> Entitlements:
+    """**조직 단위다.** 개인도 1인 조직이라 경로가 하나뿐이다 (`app/services/orgs.py`)"""
+    cached = await r.cache_get(r.key("ent", str(org_id)))
     if cached:
         data = json.loads(cached)
         return Entitlements(**data)
@@ -52,7 +53,7 @@ async def resolve(session: AsyncSession, user_id: uuid.UUID) -> Entitlements:
         await session.execute(
             select(Subscription, Plan)
             .join(Plan, Plan.code == Subscription.plan_code, isouter=True)
-            .where(Subscription.user_id == user_id)
+            .where(Subscription.org_id == org_id)
         )
     ).first()
 
@@ -67,14 +68,14 @@ async def resolve(session: AsyncSession, user_id: uuid.UUID) -> Entitlements:
             limits=dict(plan.limits) if plan else dict(DEFAULT_FREE_LIMITS),
         )
 
-    await r.cache_set(r.key("ent", str(user_id)), json.dumps(asdict(ent)), ENTITLEMENT_TTL_SEC)
+    await r.cache_set(r.key("ent", str(org_id)), json.dumps(asdict(ent)), ENTITLEMENT_TTL_SEC)
     return ent
 
 
-async def invalidate(user_id: uuid.UUID) -> None:
+async def invalidate(org_id: uuid.UUID) -> None:
     """플랜이 바뀌면 즉시 무효화한다. 실패해도 60초 뒤 TTL 로 사라진다"""
     try:
-        await r.cache().delete(r.key("ent", str(user_id)))
+        await r.cache().delete(r.key("ent", str(org_id)))
     except Exception:  # noqa: BLE001,S110
         # **삼키는 것이 맞다.** Redis 가 죽었다고 결제 반영을 실패시킬 이유가 없다 —
         # 60초 뒤 TTL 로 어차피 사라진다 (`SERVER_REDIS.md` 실패 모드 표)
@@ -89,14 +90,14 @@ def period_bounds(at: datetime | None = None) -> tuple[date, date]:
     return start, end
 
 
-async def usage_in_period(session: AsyncSession, user_id: uuid.UUID, kind: str) -> int:
+async def usage_in_period(session: AsyncSession, org_id: uuid.UUID, kind: str) -> int:
     """롤업(정확하지만 오래된 것) + 그 이후 원장(작다)"""
     start, end = period_bounds()
 
     rollup = (
         await session.execute(
             select(UsageRollup).where(
-                UsageRollup.user_id == user_id,
+                UsageRollup.org_id == org_id,
                 UsageRollup.kind == kind,
                 UsageRollup.period_start == start,
             )
@@ -109,7 +110,7 @@ async def usage_in_period(session: AsyncSession, user_id: uuid.UUID, kind: str) 
     recent = (
         await session.execute(
             select(func.coalesce(func.sum(UsageEvent.quantity), 0)).where(
-                UsageEvent.user_id == user_id,
+                UsageEvent.org_id == org_id,
                 UsageEvent.kind == kind,
                 UsageEvent.occurred_at >= since,
             )
@@ -119,15 +120,15 @@ async def usage_in_period(session: AsyncSession, user_id: uuid.UUID, kind: str) 
 
 
 async def require_quota(
-    session: AsyncSession, user_id: uuid.UUID, kind: str, limit_key: str
+    session: AsyncSession, org_id: uuid.UUID, kind: str, limit_key: str
 ) -> None:
     """초과면 402. **경계에서 몇 건 더 나가는 것은 허용한다** — 정확히 막으려고
     매번 DB 를 치는 비용이 초과분보다 크다. 종량 과금을 도입하면 이 판단을 다시 한다."""
-    ent = await resolve(session, user_id)
+    ent = await resolve(session, org_id)
     limit = ent.limits.get(limit_key)
     if limit is None:
         return
-    used = await usage_in_period(session, user_id, kind)
+    used = await usage_in_period(session, org_id, kind)
     if used >= limit:
         raise LimitReached(
             "이번 달 사용 한도를 다 썼습니다",
@@ -139,11 +140,18 @@ async def require_quota(
 async def record_usage(
     session: AsyncSession,
     *,
-    user_id: uuid.UUID,
+    org_id: uuid.UUID,
+    user_id: uuid.UUID | None,
     kind: str,
     quantity: int = 1,
     job_id: uuid.UUID | None = None,
 ) -> None:
     """**성공한 작업과 같은 트랜잭션에서** 부른다 (`SERVER_BILLING.md` 4-1).
     나누면 "생성은 됐는데 카운트가 안 된" 경우가 생기고 나중에 찾기 어렵다"""
-    session.add(UsageEvent(user_id=user_id, kind=kind, quantity=quantity, job_id=job_id))
+    # 한도는 조직으로 세고, **누가 썼는지도 남긴다** — 팀에서 "이번 달 크레딧을
+    # 누가 다 썼나"에 답할 수 있어야 한다
+    session.add(
+        UsageEvent(
+            org_id=org_id, user_id=user_id, kind=kind, quantity=quantity, job_id=job_id
+        )
+    )

@@ -27,7 +27,7 @@ from app.core import audit
 from app.core.errors import Conflict, NotFound, Unprocessable
 from app.core.ratelimit import check as rate_check
 from app.db.models import Asset, ProjectExport, ProjectVersion
-from app.services import entitlements, storage
+from app.services import entitlements, orgs, storage
 from app.services.projects import get_project
 
 router = APIRouter(tags=["assets"])
@@ -89,8 +89,10 @@ async def create_asset(
             details={"allowed": sorted(storage.ALLOWED_CONTENT_TYPES[body.kind])},
         )
 
-    # 용량 한도는 **올리기 전에** 본다. 올린 뒤 거절하면 대역폭은 이미 썼다
-    ent = await entitlements.resolve(session, user.id)
+    # 용량 한도는 **올리기 전에** 본다. 올린 뒤 거절하면 대역폭은 이미 썼다.
+    # 한도는 개인이 아니라 **워크스페이스** 것이다
+    org = await orgs.personal_org(session, user.id)
+    ent = await entitlements.resolve(session, org.id)
     limit_mb = ent.limits.get("storage_mb")
     if limit_mb is not None:
         used = (
@@ -167,7 +169,7 @@ async def create_export(
     자기 작업물을 쓰지 못하게 되고, 그건 제품이 아니라 인질이다.
     """
     # 없거나 남의 것이면 여기서 404 를 던진다 (존재 자체를 알려주지 않는다)
-    project = await get_project(session, project_id=body.project_id, owner_id=user.id)
+    project = await get_project(session, body.project_id, user.id, need=orgs.EDIT)
 
     version = await session.get(ProjectVersion, body.version_id)
     if version is None or version.project_id != project.id:
@@ -179,7 +181,7 @@ async def create_export(
     if asset.status != "ready":
         raise Conflict("업로드가 아직 끝나지 않았습니다", code="asset_not_ready")
 
-    ent = await entitlements.resolve(session, user.id)
+    ent = await entitlements.resolve(session, project.org_id)
     export = ProjectExport(
         project_id=project.id,
         version_id=version.id,
@@ -199,7 +201,9 @@ async def create_export(
     session.add(export)
     await session.flush()
 
-    await entitlements.record_usage(session, user_id=user.id, kind="export")
+    await entitlements.record_usage(
+        session, org_id=project.org_id, user_id=user.id, kind="export"
+    )
     await audit.record(
         session,
         action="export.create",
@@ -226,7 +230,8 @@ async def list_exports(
     user: CurrentUser,  # 정지된 계정도 **내려받을 수 있어야 한다**
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
 ) -> list[ExportOut]:
-    project = await get_project(session, project_id=project_id, owner_id=user.id)
+    # 내려받기는 viewer 도 된다 — 정지 계정에도 열려 있어야 하는 경로다
+    project = await get_project(session, project_id, user.id)
 
     rows = (
         await session.execute(

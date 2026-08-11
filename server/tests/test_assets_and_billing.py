@@ -223,6 +223,23 @@ async def test_commercial_license_survives_cancellation(client, unique_email, db
     assert listed.json()[0]["download_url"]
 
 
+async def _subscription(db, email: str):
+    """구독은 **개인 워크스페이스**에 붙어 있다 — 과금 단위가 조직이다"""
+    from app.db.models import Organization, OrgMember, User
+
+    user = (await db.execute(select(User).where(User.email == email))).scalar_one()
+    org = (
+        await db.execute(
+            select(Organization)
+            .join(OrgMember, OrgMember.org_id == Organization.id)
+            .where(OrgMember.user_id == user.id, Organization.kind == "personal")
+        )
+    ).scalar_one()
+    return (
+        await db.execute(select(Subscription).where(Subscription.org_id == org.id))
+    ).scalar_one()
+
+
 async def _webhook(client, event: dict, *, secret: str | None = None):
     raw = json.dumps(event).encode()
     headers = {"content-type": "application/json"}
@@ -244,12 +261,7 @@ async def test_webhook_duplicate_is_accepted_once(client, unique_email, db):
     assert (await _webhook(client, event)).status_code == 204
     assert (await _webhook(client, event)).status_code == 204
 
-    from app.db.models import User
-
-    user = (await db.execute(select(User).where(User.email == unique_email))).scalar_one()
-    sub = (
-        await db.execute(select(Subscription).where(Subscription.user_id == user.id))
-    ).scalar_one()
+    sub = await _subscription(db, unique_email)
     assert sub.plan_code == "pro"
 
 
@@ -276,14 +288,7 @@ async def test_webhook_out_of_order_is_ignored(client, unique_email, db):
         },
     )
 
-    from app.db.models import User
-
-    user = (
-        await db.execute(select(User).where(User.email == unique_email))
-    ).scalar_one()
-    sub = (
-        await db.execute(select(Subscription).where(Subscription.user_id == user.id))
-    ).scalar_one()
+    sub = await _subscription(db, unique_email)
     assert sub.status == "canceled"
     assert sub.commercial_license is False
 

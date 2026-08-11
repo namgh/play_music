@@ -17,7 +17,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.v1 import admin, assets, auth, billing, health, jobs, projects
+from app.api.v1 import admin, assets, auth, billing, events, health, jobs, orgs, projects
 from app.config import get_settings
 from app.core import redis as r
 from app.core.errors import AppError, app_error_handler, error_body, unhandled_error_handler
@@ -102,7 +102,9 @@ def create_app() -> FastAPI:
     app.include_router(health.router)
     app.include_router(auth.router, prefix="/v1")
     app.include_router(projects.router, prefix="/v1")
+    app.include_router(orgs.router, prefix="/v1")
     app.include_router(assets.router, prefix="/v1")
+    app.include_router(events.router, prefix="/v1")
     app.include_router(jobs.router, prefix="/v1")
     app.include_router(billing.router, prefix="/v1")
     app.include_router(admin.router, prefix="/v1")

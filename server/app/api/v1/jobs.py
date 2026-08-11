@@ -26,7 +26,7 @@ from app.core.idempotency import begin as idem_begin
 from app.core.idempotency import complete as idem_complete
 from app.core.ratelimit import check as rate_check
 from app.db.models import AiJob
-from app.services import entitlements
+from app.services import entitlements, orgs
 from app.services.projects import get_project
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
@@ -76,13 +76,18 @@ async def submit(
 ) -> JobOut:
     await rate_check("ai_submit", str(user.id))
 
-    ent = await entitlements.resolve(session, user.id)
+    # AI 한도는 **워크스페이스** 것이다. 프로젝트를 지정했으면 그 프로젝트의
+    # 워크스페이스에서, 아니면 개인 워크스페이스에서 깎는다
+    if body.project_id is not None:
+        project = await get_project(session, body.project_id, user.id, need=orgs.EDIT)
+        org_id = project.org_id
+    else:
+        org_id = (await orgs.personal_org(session, user.id)).id
+
+    ent = await entitlements.resolve(session, org_id)
     if not ent.ai_allowed:
         raise Forbidden("구독 상태에서 AI 기능을 쓸 수 없습니다", code="ai_not_allowed")
-    await entitlements.require_quota(session, user.id, kind="ai_job", limit_key="ai_monthly")
-
-    if body.project_id is not None:
-        await get_project(session, project_id=body.project_id, owner_id=user.id)
+    await entitlements.require_quota(session, org_id, kind="ai_job", limit_key="ai_monthly")
 
     # **재시도가 잡을 두 개 만들지 않게 한다.** 네트워크가 끊기면 클라이언트는
     # 반드시 다시 보낸다 — 그때 같은 잡을 돌려주는 게 유일하게 맞는 동작이다
@@ -99,6 +104,7 @@ async def submit(
             return JobOut(**replay.body)
 
     job = AiJob(
+        org_id=org_id,
         user_id=user.id,
         project_id=body.project_id,
         base_version_id=body.base_version_id,

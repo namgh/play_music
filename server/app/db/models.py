@@ -123,6 +123,98 @@ class EmailToken(Base):
     __table_args__ = (CheckConstraint("kind IN ('verify','reset')", name="kind"),)
 
 
+# --- 조직(워크스페이스) ------------------------------------------------------
+
+
+class Organization(Base):
+    """**모든 것이 조직에 속한다. 개인 계정은 1인 조직이다.**
+
+    개인용 경로와 팀용 경로를 따로 만들면 권한·과금·목록 조회가 전부 두 벌이 되고,
+    한쪽에만 있는 버그가 반드시 생긴다. 그래서 가입 시 `kind='personal'` 조직을
+    자동으로 만들고, 팀은 같은 테이블에 `kind='team'` 으로 얹는다.
+
+    나중에 넣으면 프로젝트·구독·권한을 전부 옮겨야 해서 지금 넣는다.
+    """
+
+    __tablename__ = "organizations"
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    # URL 에 쓰는 이름. 개인 조직은 자동 생성하고 사용자가 바꿀 수 있다
+    slug: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    kind: Mapped[str] = mapped_column(Text, nullable=False, server_default="personal")
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = created_at_col()
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        CheckConstraint("kind IN ('personal','team')", name="kind"),
+        # 슬러그는 소문자·숫자·하이픈만. 대소문자만 다른 두 조직은 사람이 구분 못 한다
+        CheckConstraint("slug ~ '^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$'", name="slug_format"),
+    )
+
+
+class OrgMember(Base):
+    """**리소스 권한의 유일한 출처다.**
+
+    플랫폼 역할(`users.platform_role`)과 섞지 않는다 — 2축 권한
+    (`SERVER_ACCOUNTS.md` 3절). admin 이라고 남의 조직에 들어갈 수 없다.
+    """
+
+    __tablename__ = "org_members"
+
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), primary_key=True
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    # owner: 과금·삭제 / admin: 초대·설정 / editor: 편집 / viewer: 보기·반출
+    role: Mapped[str] = mapped_column(Text, nullable=False, server_default="editor")
+    joined_at: Mapped[datetime] = created_at_col()
+
+    __table_args__ = (
+        CheckConstraint("role IN ('owner','admin','editor','viewer')", name="role"),
+        Index("ix_org_members_user_id", "user_id"),
+    )
+
+
+class OrgInvite(Base):
+    """초대는 **이메일로 건다.** 아직 가입 안 한 사람도 초대할 수 있어야 한다"""
+
+    __tablename__ = "org_invites"
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+    email: Mapped[str] = mapped_column(String(320), nullable=False)
+    role: Mapped[str] = mapped_column(Text, nullable=False, server_default="editor")
+    # 토큰 자체는 저장하지 않는다 — 유출되면 그대로 초대 수락에 쓰인다
+    token_hash: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
+    invited_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = created_at_col()
+
+    __table_args__ = (
+        CheckConstraint("role IN ('admin','editor','viewer')", name="role"),
+        # 같은 조직에 같은 주소로 **살아 있는 초대는 하나만**
+        Index(
+            "uq_org_invites_org_id_email_live",
+            "org_id",
+            "email",
+            unique=True,
+            postgresql_where=text("accepted_at IS NULL AND revoked_at IS NULL"),
+        ),
+    )
+
+
 # --- 프로젝트 ---------------------------------------------------------------
 
 
@@ -130,6 +222,12 @@ class Project(Base):
     __tablename__ = "projects"
 
     id: Mapped[uuid.UUID] = uuid_pk()
+    # **소유는 조직이다.** 사람이 팀을 떠나도 곡은 팀에 남는다 —
+    # 개인 소유로 두면 퇴사 한 번에 팀 작업물이 통째로 사라진다
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+    # 만든 사람. 권한 판단에는 안 쓰고 표시와 감사에만 쓴다
     owner_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
@@ -157,9 +255,10 @@ class Project(Base):
     instrument_ids: Mapped[list[str] | None] = mapped_column(ARRAY(Text))
 
     __table_args__ = (
+        # 목록 조회는 **조직 기준**이다 — 인덱스도 거기 맞춘다
         Index(
-            "ix_projects_owner_id_updated_at",
-            "owner_id",
+            "ix_projects_org_id_updated_at",
+            "org_id",
             text("updated_at DESC"),
             postgresql_where=text("deleted_at IS NULL"),
         ),
@@ -297,6 +396,11 @@ class AiJob(Base):
     __tablename__ = "ai_jobs"
 
     id: Mapped[uuid.UUID] = uuid_pk()
+    # 한도를 깎는 단위
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+    # 누가 눌렀는지. 진행 알림(SSE)도 이 사람에게 간다
     user_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
@@ -374,10 +478,13 @@ class Plan(Base):
 
 
 class Subscription(Base):
+    """**과금 단위는 조직이다.** 개인도 1인 조직이라 경로가 하나뿐이다 —
+    개인 요금제와 팀 요금제를 따로 구현하면 한쪽에만 있는 버그가 반드시 생긴다"""
+
     __tablename__ = "subscriptions"
 
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), primary_key=True
     )
     plan_code: Mapped[str] = mapped_column(
         ForeignKey("plans.code"), nullable=False, server_default="free"
@@ -405,8 +512,13 @@ class UsageEvent(Base):
     __tablename__ = "usage_events"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    # 한도를 세는 단위
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+    # 누가 썼는지. 팀에서 "누가 이번 달 크레딧을 다 썼나"를 답할 수 있어야 한다
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
     )
     kind: Mapped[str] = mapped_column(Text, nullable=False)
     quantity: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
@@ -415,8 +527,8 @@ class UsageEvent(Base):
 
     __table_args__ = (
         Index(
-            "ix_usage_events_user_id_kind_occurred_at",
-            "user_id",
+            "ix_usage_events_org_id_kind_occurred_at",
+            "org_id",
             "kind",
             text("occurred_at DESC"),
         ),
@@ -426,8 +538,8 @@ class UsageEvent(Base):
 class UsageRollup(Base):
     __tablename__ = "usage_rollups"
 
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), primary_key=True
     )
     kind: Mapped[str] = mapped_column(Text, primary_key=True)
     period_start: Mapped[date] = mapped_column(Date, primary_key=True)
@@ -448,6 +560,46 @@ class BillingEvent(Base):
     received_at: Mapped[datetime] = created_at_col()
     processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     error: Mapped[str | None] = mapped_column(Text)
+
+
+class EmailOutbox(Base):
+    """**메일은 아웃박스를 거친다.** 요청 안에서 직접 보내지 않는다.
+
+    두 가지 때문이다:
+      1. **롤백**. 가입 트랜잭션이 뒤에서 실패했는데 확인 메일은 이미 나가면,
+         존재하지 않는 계정의 링크를 사용자가 받는다. 아웃박스는 같은 트랜잭션에
+         들어가므로 롤백되면 메일도 없던 일이 된다.
+      2. **지연**. SMTP 는 몇 초씩 걸리고 가끔 안 된다. 그동안 API 워커 하나가
+         묶여 있으면 그게 그대로 장애다.
+
+    워커가 임대해 보낸다 — 잡 큐와 같은 방식이라 재시도·관측이 공짜로 따라온다.
+    """
+
+    __tablename__ = "email_outbox"
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    to_email: Mapped[str] = mapped_column(String(320), nullable=False)
+    template: Mapped[str] = mapped_column(Text, nullable=False)
+    # 템플릿에 넣을 값. **비밀번호나 원문 토큰이 아니라 링크만** 담는다
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False, server_default="queued")
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    max_attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default="5")
+    run_after: Mapped[datetime] = created_at_col()
+    locked_by: Mapped[str | None] = mapped_column(Text)
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = created_at_col()
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        CheckConstraint("status IN ('queued','sending','sent','failed')", name="status"),
+        Index(
+            "ix_email_outbox_run_after",
+            "run_after",
+            postgresql_where=text("status IN ('queued','sending')"),
+        ),
+    )
 
 
 # --- 운영 -------------------------------------------------------------------

@@ -9,22 +9,49 @@ from app.db.models import RefreshToken, User
 PASSWORD = "correct-horse-battery"
 
 
-async def test_signup_creates_user_and_free_subscription(client, unique_email, db):
-    from app.db.models import Subscription
+async def test_signup_creates_personal_workspace_and_free_plan(client, unique_email, db):
+    """**가입하면 개인 워크스페이스가 같이 생긴다.** 없으면 곡을 만들 곳이 없다 —
+    개인 계정도 1인 조직이라는 것이 이 서비스의 전제다"""
+    from app.db.models import Organization, OrgMember, Subscription
 
     res = await client.post(
         "/v1/auth/signup", json={"email": unique_email, "password": PASSWORD}
     )
     assert res.status_code == 201
-    body = res.json()
     # 확인 메일 전에도 **편집을 막지 않는다** — 첫 경험이 끊기면 안 된다
-    assert body["status"] == "pending_verification"
+    assert res.json()["status"] == "pending_verification"
 
     user = (await db.execute(select(User).where(User.email == unique_email))).scalar_one()
+    org, role = (
+        await db.execute(
+            select(Organization, OrgMember.role)
+            .join(OrgMember, OrgMember.org_id == Organization.id)
+            .where(OrgMember.user_id == user.id)
+        )
+    ).one()
+    assert org.kind == "personal"
+    assert role == "owner", "자기 워크스페이스의 owner 여야 과금·삭제를 할 수 있다"
+
+    # 구독은 **조직**에 붙는다. 과금 단위가 조직이라서다
     sub = (
-        await db.execute(select(Subscription).where(Subscription.user_id == user.id))
+        await db.execute(select(Subscription).where(Subscription.org_id == org.id))
     ).scalar_one()
     assert sub.plan_code == "free"
+
+
+async def test_signup_enqueues_verification_mail(client, unique_email, db):
+    """**메일은 아웃박스를 거친다.** 요청 안에서 보내면 트랜잭션이 롤백돼도
+    메일은 이미 나가 있다"""
+    from app.db.models import EmailOutbox
+
+    await client.post("/v1/auth/signup", json={"email": unique_email, "password": PASSWORD})
+    row = (
+        await db.execute(select(EmailOutbox).where(EmailOutbox.to_email == unique_email))
+    ).scalar_one()
+    assert row.template == "verify_email"
+    assert row.status == "queued"
+    # 링크만 담는다 — **토큰 원문이 DB 의 다른 곳에 남지 않게**
+    assert row.payload["link"].startswith("http")
 
 
 async def test_login_does_not_reveal_whether_account_exists(client, unique_email):

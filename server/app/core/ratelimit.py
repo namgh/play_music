@@ -54,6 +54,10 @@ LIMITS: dict[str, Limit] = {
     "project_save": Limit(1.0, 60),                        # 60회 / 분
     "upload_url": Limit(20 / 3600, 20),                    # 20회 / 시간
     "asset_create": Limit(30 / 3600, 30),                  # 서명 URL 발급 자체를 제한
+    # 메일을 보내는 경로는 **남의 편지함을 괴롭히는 도구**가 될 수 있다. 세게 잠근다
+    "password_reset": Limit(5 / 3600, 5, fail_closed=True),
+    "org_invite": Limit(30 / 3600, 30, fail_closed=True),
+    "org_create": Limit(10 / 3600, 10),
     "ai_submit": Limit(10 / 3600, 10),                     # 플랜 한도와 별개인 남용 방어
 }
 

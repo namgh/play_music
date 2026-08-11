@@ -21,6 +21,7 @@ from app.core.security import (
     verify_password,
 )
 from app.db.models import AuthIdentity, EmailToken, RefreshToken, Subscription, User
+from app.services import mail, orgs
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -94,6 +95,29 @@ async def _issue_tokens(
     )
 
 
+VERIFY_TTL_HOURS = 24
+RESET_TTL_HOURS = 2
+
+
+async def _send_verify_mail(session: Db, user: User) -> None:
+    """**토큰 원문은 메일로만 간다.** DB 에도 응답에도 해시만 남는다"""
+    token = new_opaque_token()
+    session.add(
+        EmailToken(
+            user_id=user.id,
+            kind="verify",
+            token_hash=hash_token(token),
+            expires_at=datetime.now(UTC) + timedelta(hours=VERIFY_TTL_HOURS),
+        )
+    )
+    await mail.enqueue(
+        session,
+        to_email=user.email,
+        template="verify_email",
+        payload={"link": mail.link("/verify", token), "expires_hours": VERIFY_TTL_HOURS},
+    )
+
+
 @router.post("/signup", response_model=TokenOut, status_code=status.HTTP_201_CREATED)
 async def signup(
     body: SignupIn, request: Request, response: Response, session: Db, settings: Config
@@ -108,14 +132,7 @@ async def signup(
     if existing is not None:
         # **가입 여부를 알려주지 않는다.** 계정 열거를 막는다 — 대신 확인 메일을
         # 보내고 같은 응답을 준다 (메일 발송은 워커가 한다)
-        session.add(
-            EmailToken(
-                user_id=existing.id,
-                kind="verify",
-                token_hash=hash_token(new_opaque_token()),
-                expires_at=datetime.now(UTC) + timedelta(days=1),
-            )
-        )
+        await _send_verify_mail(session, existing)
         return await _issue_tokens(
             session, response, settings, existing, user_agent=request.headers.get("user-agent")
         )
@@ -132,16 +149,12 @@ async def signup(
             secret_hash=hash_password(body.password),
         )
     )
-    # 무료 구독을 바로 만든다. 없으면 엔타이틀먼트가 매번 기본값 경로를 탄다
-    session.add(Subscription(user_id=user.id, plan_code="free", status="active"))
-    session.add(
-        EmailToken(
-            user_id=user.id,
-            kind="verify",
-            token_hash=hash_token(new_opaque_token()),
-            expires_at=datetime.now(UTC) + timedelta(days=1),
-        )
-    )
+    # **개인 워크스페이스를 여기서 만든다.** 없으면 곡을 만들 곳이 없다 —
+    # 개인 계정도 1인 조직이라는 것이 이 서비스의 전제다 (`app/services/orgs.py`)
+    org = await orgs.create_personal_org(session, user)
+    # 무료 구독은 **조직**에 붙는다. 과금 단위가 조직이라서다
+    session.add(Subscription(org_id=org.id, plan_code="free", status="active"))
+    await _send_verify_mail(session, user)
     await audit.record(session, action="user.signup", actor_id=user.id, ip=ip)
 
     return await _issue_tokens(
@@ -263,5 +276,118 @@ async def logout_all(request: Request, session: Db, user: ActiveUser) -> Respons
     )
     await audit.record(
         session, action="auth.logout_all", actor_id=user.id, ip=client_ip(request)
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# --- 이메일 확인 · 비밀번호 재설정 -------------------------------------------
+
+
+class TokenIn(BaseModel):
+    token: str = Field(min_length=10, max_length=200)
+
+
+@router.post("/verify-email", status_code=status.HTTP_204_NO_CONTENT)
+async def verify_email(body: TokenIn, request: Request, session: Db) -> Response:
+    """확인 링크. **확인 전에도 편집은 막지 않는다** — 첫 경험이 끊기면 안 된다.
+    확인은 발신 평판과 계정 복구를 위한 것이지 기능 잠금이 아니다"""
+    token = (
+        await session.execute(
+            select(EmailToken).where(
+                EmailToken.token_hash == hash_token(body.token), EmailToken.kind == "verify"
+            )
+        )
+    ).scalar_one_or_none()
+    now = datetime.now(UTC)
+    if token is None or token.used_at is not None or token.expires_at <= now:
+        raise Unauthorized("링크가 만료됐거나 올바르지 않습니다", code="token_invalid")
+
+    user = await session.get(User, token.user_id)
+    if user is None:
+        raise Unauthorized("계정을 찾을 수 없습니다", code="account_not_found")
+
+    token.used_at = now
+    user.email_verified_at = now
+    if user.status == "pending_verification":
+        user.status = "active"
+    await audit.record(session, action="user.verify_email", actor_id=user.id, ip=client_ip(request))
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+class ForgotIn(BaseModel):
+    email: EmailStr
+
+
+@router.post("/forgot-password", status_code=status.HTTP_202_ACCEPTED)
+async def forgot_password(body: ForgotIn, request: Request, session: Db) -> dict[str, str]:
+    """**계정이 없어도 같은 응답을 준다.** 여기서 갈리면 가입 여부 확인기가 된다"""
+    ip = client_ip(request) or "unknown"
+    await rate_check("password_reset", ip)
+    await rate_check("password_reset", f"email:{body.email.lower()}")
+
+    user = (
+        await session.execute(select(User).where(User.email == body.email.lower()))
+    ).scalar_one_or_none()
+
+    if user is not None and user.status not in ("deleted", "purged"):
+        token = new_opaque_token()
+        session.add(
+            EmailToken(
+                user_id=user.id,
+                kind="reset",
+                token_hash=hash_token(token),
+                expires_at=datetime.now(UTC) + timedelta(hours=RESET_TTL_HOURS),
+            )
+        )
+        await mail.enqueue(
+            session,
+            to_email=user.email,
+            template="reset_password",
+            payload={"link": mail.link("/reset", token), "expires_hours": RESET_TTL_HOURS},
+        )
+
+    return {"status": "sent"}
+
+
+class ResetIn(BaseModel):
+    token: str = Field(min_length=10, max_length=200)
+    password: str = Field(min_length=10, max_length=200)
+
+
+@router.post("/reset-password", status_code=status.HTTP_204_NO_CONTENT)
+async def reset_password(body: ResetIn, request: Request, session: Db) -> Response:
+    token = (
+        await session.execute(
+            select(EmailToken).where(
+                EmailToken.token_hash == hash_token(body.token), EmailToken.kind == "reset"
+            )
+        )
+    ).scalar_one_or_none()
+    now = datetime.now(UTC)
+    if token is None or token.used_at is not None or token.expires_at <= now:
+        raise Unauthorized("링크가 만료됐거나 올바르지 않습니다", code="token_invalid")
+
+    identity = (
+        await session.execute(
+            select(AuthIdentity).where(
+                AuthIdentity.user_id == token.user_id, AuthIdentity.provider == "password"
+            )
+        )
+    ).scalar_one_or_none()
+    if identity is None:
+        raise Unauthorized("비밀번호 로그인을 쓰지 않는 계정입니다", code="no_password_identity")
+
+    identity.secret_hash = hash_password(body.password)
+    token.used_at = now
+
+    # **비밀번호를 바꾸면 모든 세션을 끊는다.** 탈취당한 상태에서 되찾는 경우가
+    # 재설정의 주된 용도라, 옛 세션이 살아 있으면 되찾은 게 아니다
+    await session.execute(
+        update(RefreshToken)
+        .where(RefreshToken.user_id == token.user_id, RefreshToken.revoked_at.is_(None))
+        .values(revoked_at=now)
+    )
+    await audit.record(
+        session, action="user.reset_password", actor_id=token.user_id, ip=client_ip(request)
     )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
