@@ -81,6 +81,17 @@ class Settings(BaseSettings):
     # --- 결제 ---
     billing_webhook_secret: SecretStr = SecretStr("")
 
+    # **첫 플랫폼 운영자.** 이 주소로 가입하면 `owner` 로 승격된다.
+    #
+    # 없으면 어드민 API 전체가 아무도 못 쓰는 상태로 뜬다 — 권한 부여
+    # 엔드포인트가 owner 를 요구하는데 owner 는 가입으로도 마이그레이션으로도
+    # 생기지 않기 때문이다. 첫 남용 신고가 들어오면 운영자가 프로덕션 DB 에
+    # 직접 UPDATE 를 쳐야 하고, 그 조작은 감사 로그에도 안 남는다.
+    #
+    # 이미 존재하는 계정은 승격하지 않는다 — 환경변수를 바꾸는 것만으로 남의
+    # 계정이 운영자가 되면 그게 곧 권한 상승 경로다
+    bootstrap_owner_email: str = ""
+
     # Redis 가 느려지면 API 전체가 같이 느려진다 — 그건 캐시가 할 일이 아니다
     redis_timeout_sec: float = 0.2
 

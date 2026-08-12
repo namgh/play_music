@@ -7,6 +7,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Query, Request, Response, status
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select, update
 
@@ -163,6 +164,12 @@ async def signup(
         )
 
     user = User(email=email, display_name=body.display_name, status="pending_verification")
+    # **첫 운영자 부트스트랩** (`config.bootstrap_owner_email`). 없으면 어드민 API
+    # 전체가 아무도 못 쓰는 상태로 뜬다. 신규 가입에만 적용되고 기존 계정은
+    # 승격하지 않는다 — 환경변수만으로 남의 계정을 운영자로 만들 수 있으면
+    # 그게 곧 권한 상승 경로다
+    if settings.bootstrap_owner_email and email == settings.bootstrap_owner_email.lower():
+        user.platform_role = "owner"
     session.add(user)
     await session.flush()
 
@@ -180,7 +187,13 @@ async def signup(
     # 무료 구독은 **조직**에 붙는다. 과금 단위가 조직이라서다
     session.add(Subscription(org_id=org.id, plan_code="free", status="active"))
     await _send_verify_mail(session, user)
-    await audit.record(session, action="user.signup", actor_id=user.id, ip=ip)
+    await audit.record(
+        session,
+        action="user.signup",
+        actor_id=user.id,
+        detail={"platform_role": user.platform_role},
+        ip=ip,
+    )
 
     return await _issue_tokens(
         session, response, settings, user, user_agent=request.headers.get("user-agent")
@@ -220,7 +233,9 @@ async def login(
         identity.secret_hash = rehashed  # 비용을 올렸으면 로그인 성공 시점에 재해싱
 
     user = await session.get(User, identity.user_id)
-    if user is None or user.status in ("deleted", "purged"):
+    # **`deleted` 는 로그인시킨다.** 30일 유예 안에 스스로 되돌릴 수 있어야 하고,
+    # 그 경로가 `POST /v1/me/restore` 다. 완전히 파기된 `purged` 만 막는다
+    if user is None or user.status == "purged":
         raise Unauthorized("이메일 또는 비밀번호가 올바르지 않습니다", code="invalid_credentials")
 
     user.last_seen_at = datetime.now(UTC)
@@ -442,20 +457,33 @@ async def google_start(
     return {"authorization_url": url, "state": state}
 
 
-@router.get("/google/callback", response_model=TokenOut)
+@router.get("/google/callback")
 async def google_callback(
     request: Request,
-    response: Response,
     session: Db,
     settings: Config,
     code: Annotated[str | None, Query(max_length=2000)] = None,
     state: Annotated[str | None, Query(max_length=500)] = None,
     error: Annotated[str | None, Query(max_length=200)] = None,
-) -> TokenOut:
-    """구글이 되돌려 보내는 곳. 여기서 우리 세션이 만들어진다"""
+) -> RedirectResponse:
+    """구글이 되돌려 보내는 곳. **여기는 브라우저의 최상위 이동이다.**
+
+    그래서 JSON 을 돌려주면 안 된다 — 사용자 화면에 액세스 토큰이 적힌 날 JSON 이
+    뜨고, SPA 는 그걸 받을 방법이 없다. 한때 그렇게 돼 있었다.
+
+    **토큰을 URL 에 싣지도 않는다.** 쿼리스트링이든 프래그먼트든 브라우저 히스토리·
+    리퍼러·프록시 로그에 남는다. 대신:
+
+        구글 → 콜백에서 **리프레시 쿠키만 심고** 앱으로 리다이렉트
+        → SPA 가 `POST /v1/auth/refresh` 로 액세스 토큰을 받는다
+
+    이미 있는 회전·재사용 감지 장치를 그대로 타므로 새로 만들 것이 없다.
+    """
+    target = f"{settings.app_base_url.rstrip('/')}"
+
     if error or not code or not state:
         # 사용자가 취소한 경우도 여기로 온다. 내부 사정을 노출하지 않는다
-        raise Unauthorized("구글 로그인이 완료되지 않았습니다", code="oauth_canceled")
+        return RedirectResponse(f"{target}/login?error=oauth_canceled", status_code=303)
 
     stored = await google_oauth.consume_state(state)
     id_token = await google_oauth.exchange(code, stored["verifier"])
@@ -463,9 +491,17 @@ async def google_callback(
 
     user = await _link_or_create_google_user(session, profile, ip=client_ip(request))
     user.last_seen_at = datetime.now(UTC)
-    return await _issue_tokens(
+
+    next_path = stored.get("next") or "/"
+    if not next_path.startswith("/") or next_path.startswith("//"):
+        next_path = "/"
+
+    response = RedirectResponse(f"{target}{next_path}?login=google", status_code=303)
+    # 쿠키만 심는다. 액세스 토큰은 SPA 가 refresh 로 받아 간다
+    await _issue_tokens(
         session, response, settings, user, user_agent=request.headers.get("user-agent")
     )
+    return response
 
 
 async def _link_or_create_google_user(session: Db, profile, *, ip: str | None) -> User:

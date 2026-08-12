@@ -140,6 +140,84 @@ async def expire_impersonations() -> None:
             log.warning("impersonation_force_ended", extra={"count": res.rowcount})
 
 
+async def purge_deleted_users() -> None:
+    """탈퇴 요청 30일 뒤 **실제 파기** (`SERVER_ACCOUNTS.md` 1절, `SERVER_DATA.md` 4-2).
+
+    개인정보는 지우되 **돈과 감사의 근거는 남긴다.** 둘을 같이 지우면 분쟁이
+    났을 때 우리도 사용자도 아무것도 증명할 수 없다:
+
+      - 지운다: 이메일·표시이름·로그인 수단·세션·토큰, 개인 워크스페이스와 그 곡
+      - 남긴다: 결제 이벤트, 사용량 원장, 감사 로그 — 단 **식별자를 끊는다**
+                (`actor_id`/`user_id` 를 NULL 로, 계정은 익명 표식으로)
+
+    남이 있는 팀은 건드리지 않는다 — 탈퇴는 그 사람 것만 정리하는 것이지 남의
+    작업물을 지우는 일이 아니다. 그래서 탈퇴 요청 단계에서 마지막 owner 는 막는다.
+    """
+    async with session_scope() as session:
+        cutoff = datetime.now(UTC) - SOFT_DELETE_GRACE
+        rows = (
+            await session.execute(
+                text(
+                    "SELECT id FROM users WHERE status = 'deleted' AND deleted_at < :cutoff "
+                    "LIMIT 50"
+                ),
+                {"cutoff": cutoff},
+            )
+        ).scalars().all()
+
+        for user_id in rows:
+            # 개인 워크스페이스만 지운다 (CASCADE 로 그 안의 곡·에셋이 함께 간다)
+            await session.execute(
+                text(
+                    """
+                    DELETE FROM organizations o
+                    USING org_members m
+                    WHERE o.id = m.org_id AND m.user_id = :uid AND o.kind = 'personal'
+                    """
+                ),
+                {"uid": user_id},
+            )
+            # 식별자를 끊는다. 행 자체는 남겨 근거를 보존한다
+            await session.execute(
+                text("UPDATE audit_log SET actor_id = NULL WHERE actor_id = :uid"),
+                {"uid": user_id},
+            )
+            await session.execute(
+                text("UPDATE audit_log SET on_behalf_of = NULL WHERE on_behalf_of = :uid"),
+                {"uid": user_id},
+            )
+            await session.execute(
+                text("UPDATE usage_events SET user_id = NULL WHERE user_id = :uid"),
+                {"uid": user_id},
+            )
+            await session.execute(
+                text("DELETE FROM auth_identities WHERE user_id = :uid"), {"uid": user_id}
+            )
+            await session.execute(
+                text("DELETE FROM refresh_tokens WHERE user_id = :uid"), {"uid": user_id}
+            )
+            await session.execute(
+                text("DELETE FROM email_tokens WHERE user_id = :uid"), {"uid": user_id}
+            )
+            # **행은 남긴다.** 지우면 남은 FK 가 끊기고, "이 사용자였다"는 사실조차
+            # 사라져서 결제 분쟁을 풀 수 없다. 개인정보만 없앤다
+            # `email` 은 NOT NULL 이고 UNIQUE 라 지울 수 없다 → **익명 값으로 덮는다.**
+            # `.invalid` 는 예약 TLD 라 절대 배달되지 않는다. 같은 주소로 다시
+            # 가입할 수 있어야 하므로 원래 주소를 비워 주는 것이 중요하다
+            await session.execute(
+                text(
+                    "UPDATE users SET status = 'purged', "
+                    "    email = 'purged-' || id::text || '@purged.invalid', "
+                    "    display_name = '', email_verified_at = NULL "
+                    "WHERE id = :uid"
+                ),
+                {"uid": user_id},
+            )
+
+        if rows:
+            log.info("purged_users", extra={"count": len(rows)})
+
+
 async def sweep_expired_tokens() -> None:
     async with session_scope() as session:
         await session.execute(
@@ -165,6 +243,7 @@ async def trim_audit_log() -> None:
 TASKS = [
     ("sweep_pending_assets", 3600, sweep_pending_assets),
     ("purge_soft_deleted", 3600, purge_soft_deleted),
+    ("purge_deleted_users", 3600, purge_deleted_users),
     ("roll_up_usage", 3600, roll_up_usage),
     ("expire_impersonations", 60, expire_impersonations),
     ("sweep_expired_tokens", 3600, sweep_expired_tokens),

@@ -122,6 +122,41 @@ async def test_start_returns_a_proper_authorization_url(client):
     assert params["scope"] == ["openid email profile"]
 
 
+async def test_callback_redirects_to_the_app_without_leaking_tokens(client, fake_exchange):
+    """**브라우저의 최상위 이동이다.** JSON 을 돌려주면 사용자 화면에 액세스 토큰이
+    적힌 날 JSON 이 뜨고 SPA 는 그걸 받을 방법이 없다 — 한때 그랬다.
+
+    토큰을 URL 에 싣지도 않는다. 쿼리든 프래그먼트든 히스토리·리퍼러·프록시 로그에
+    남는다. 쿠키만 심고 SPA 가 refresh 로 받아 간다.
+    """
+    email = f"g-{uuid.uuid4().hex[:8]}@example.com"
+    state, nonce = await start_login(client)
+    fake_exchange["id_token"] = make_id_token(nonce=nonce, email=email)
+
+    res = await client.get(
+        f"/v1/auth/google/callback?code=abc&state={state}", follow_redirects=False
+    )
+    assert res.status_code == 303
+    location = res.headers["location"]
+    assert location.startswith("http")
+    # **토큰이 URL 어디에도 없어야 한다**
+    assert "token" not in location.lower()
+    assert client.cookies.get("resona_refresh"), "리프레시 쿠키를 심어야 한다"
+
+    # SPA 는 쿠키로 액세스 토큰을 받아 간다 — 기존 회전 장치를 그대로 탄다
+    refreshed = await client.post("/v1/auth/refresh")
+    assert refreshed.status_code == 200
+    assert refreshed.json()["status"] == "active"
+
+
+async def test_canceled_login_redirects_with_an_error(client):
+    res = await client.get(
+        "/v1/auth/google/callback?error=access_denied", follow_redirects=False
+    )
+    assert res.status_code == 303
+    assert "error=oauth_canceled" in res.headers["location"]
+
+
 async def test_new_google_user_gets_personal_workspace(client, db, fake_exchange):
     """구글로 가입해도 **개인 워크스페이스가 똑같이 생긴다** — 경로가 갈리면 안 된다"""
     email = f"g-{uuid.uuid4().hex[:8]}@example.com"
@@ -129,9 +164,9 @@ async def test_new_google_user_gets_personal_workspace(client, db, fake_exchange
     fake_exchange["id_token"] = make_id_token(nonce=nonce, email=email)
 
     res = await client.get(f"/v1/auth/google/callback?code=abc&state={state}")
-    assert res.status_code == 200, res.text
+    assert res.status_code in (200, 303), res.text
     # 구글이 확인해 준 주소라 확인 메일 단계를 건너뛴다
-    assert res.json()["status"] == "active"
+    assert (await client.post("/v1/auth/refresh")).json()["status"] == "active"
 
     user = (await db.execute(select(User).where(User.email == email))).scalar_one()
     org, role = (
@@ -158,7 +193,9 @@ async def test_token_from_another_app_is_rejected(client, fake_exchange):
     fake_exchange["id_token"] = make_id_token(
         nonce=nonce, email="victim@example.com", aud="attacker-app.apps.googleusercontent.com"
     )
-    res = await client.get(f"/v1/auth/google/callback?code=abc&state={state}")
+    res = await client.get(
+        f"/v1/auth/google/callback?code=abc&state={state}", follow_redirects=False
+    )
     assert res.status_code == 401
     assert res.json()["error"]["code"] == "oauth_token_invalid"
 
@@ -188,7 +225,7 @@ async def test_state_is_single_use(client, fake_exchange):
     fake_exchange["id_token"] = make_id_token(nonce=nonce, email=email)
 
     first = await client.get(f"/v1/auth/google/callback?code=abc&state={state}")
-    assert first.status_code == 200
+    assert first.status_code in (200, 303)
 
     second = await client.get(f"/v1/auth/google/callback?code=abc&state={state}")
     assert second.status_code == 401
@@ -199,12 +236,6 @@ async def test_unknown_state_is_rejected(client, fake_exchange):
     fake_exchange["id_token"] = make_id_token(nonce="n", email="x@example.com")
     res = await client.get("/v1/auth/google/callback?code=abc&state=made-up-state")
     assert res.status_code == 401
-
-
-async def test_canceled_login_does_not_leak_details(client):
-    res = await client.get("/v1/auth/google/callback?error=access_denied")
-    assert res.status_code == 401
-    assert res.json()["error"]["code"] == "oauth_canceled"
 
 
 async def test_links_to_existing_password_account(client, db, unique_email, fake_exchange):
@@ -229,9 +260,9 @@ async def test_links_to_existing_password_account(client, db, unique_email, fake
         nonce=nonce, email=unique_email, sub=f"sub-{uuid.uuid4().hex[:8]}"
     )
     res = await client.get(f"/v1/auth/google/callback?code=abc&state={state}")
-    assert res.status_code == 200
+    assert res.status_code in (200, 303)
 
-    google_token = res.json()["access_token"]
+    google_token = (await client.post("/v1/auth/refresh")).json()["access_token"]
     # **같은 계정이다** — 구글로 들어와도 이전 곡이 그대로 보인다
     seen = await client.get(f"/v1/projects/{project['id']}", headers=auth(google_token))
     assert seen.status_code == 200
@@ -276,13 +307,13 @@ async def test_email_change_at_google_keeps_the_same_account(client, db, fake_ex
 
     state, nonce = await start_login(client)
     fake_exchange["id_token"] = make_id_token(nonce=nonce, email=old_email, sub=sub)
-    first = await client.get(f"/v1/auth/google/callback?code=abc&state={state}")
-    first_user_id = first.json()["user_id"]
+    await client.get(f"/v1/auth/google/callback?code=abc&state={state}")
+    first_user_id = (await client.post("/v1/auth/refresh")).json()["user_id"]
 
     state, nonce = await start_login(client)
     fake_exchange["id_token"] = make_id_token(nonce=nonce, email=new_email, sub=sub)
-    second = await client.get(f"/v1/auth/google/callback?code=abc&state={state}")
-    assert second.json()["user_id"] == first_user_id
+    await client.get(f"/v1/auth/google/callback?code=abc&state={state}")
+    assert (await client.post("/v1/auth/refresh")).json()["user_id"] == first_user_id
 
 
 async def test_google_login_issues_a_refresh_cookie(client, fake_exchange):

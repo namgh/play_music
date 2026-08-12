@@ -232,3 +232,90 @@ async def test_status_values_are_constrained(client, unique_email, db, status_va
         headers=auth(admin),
     )
     assert res.status_code == 422
+
+
+async def test_bootstrap_owner_is_created_on_signup(client, unique_email, monkeypatch, db):
+    """**첫 운영자를 만들 방법이 없으면 어드민 API 전체가 아무도 못 쓴다.**
+
+    권한 부여 엔드포인트가 owner 를 요구하는데 owner 는 가입으로도
+    마이그레이션으로도 생기지 않았다 — 첫 남용 신고가 들어오면 운영자가
+    프로덕션 DB 에 직접 UPDATE 를 쳐야 하고 그건 감사 로그에도 안 남는다.
+    """
+    from app.config import get_settings
+
+    monkeypatch.setenv("BOOTSTRAP_OWNER_EMAIL", unique_email)
+    get_settings.cache_clear()
+    try:
+        token = await signup(client, unique_email)
+        res = await client.get("/v1/admin/users", headers=auth(token))
+        assert res.status_code == 200, "부트스트랩 운영자가 어드민을 열 수 있어야 한다"
+
+        user = (
+            await db.execute(select(User).where(User.email == unique_email))
+        ).scalar_one()
+        assert user.platform_role == "owner"
+    finally:
+        get_settings.cache_clear()
+
+
+async def test_bootstrap_does_not_promote_an_existing_account(client, unique_email, db):
+    """**환경변수만으로 남의 계정이 운영자가 되면 그게 곧 권한 상승 경로다**"""
+    from app.config import get_settings
+
+    await signup(client, unique_email)  # 먼저 평범하게 가입
+
+    import os
+
+    os.environ["BOOTSTRAP_OWNER_EMAIL"] = unique_email
+    get_settings.cache_clear()
+    try:
+        # 같은 주소로 다시 가입 시도 → 409 이고 승격도 없다
+        again = await client.post(
+            "/v1/auth/signup", json={"email": unique_email, "password": "correct-horse-battery"}
+        )
+        assert again.status_code == 409
+
+        user = (
+            await db.execute(select(User).where(User.email == unique_email))
+        ).scalar_one()
+        await db.refresh(user)
+        assert user.platform_role == "user"
+    finally:
+        os.environ.pop("BOOTSTRAP_OWNER_EMAIL", None)
+        get_settings.cache_clear()
+
+
+async def test_user_search_returns_plan_and_project_count(client, unique_email, db):
+    """**조직 마이그레이션 이후 이 엔드포인트는 500 이었다.**
+
+    구독이 사용자에서 조직으로 옮겨 갔는데 조인이 옛날 그대로였다.
+    어드민 엔드포인트에 테스트가 없어서 아무도 몰랐다.
+    """
+    from tests.test_projects import DOC
+
+    token = await signup(client, unique_email)
+    await client.post(
+        "/v1/projects", json={"name": "곡", "document": DOC}, headers=auth(token)
+    )
+
+    admin = await _make(client, db, f"admin-{unique_email}", "admin")
+    res = await client.get(f"/v1/admin/users?q={unique_email}", headers=auth(admin))
+    assert res.status_code == 200, res.text
+
+    row = next(r for r in res.json() if r["email"] == unique_email)
+    assert row["plan_code"] == "free"
+    assert row["project_count"] == 1
+
+
+async def test_user_usage_endpoint_works(client, unique_email, db):
+    """여기도 같은 드리프트가 있었다 — `resolve(user_id)` 는 이제 org_id 를 받는다"""
+    token = await signup(client, unique_email)
+    admin = await _make(client, db, f"admin-{unique_email}", "admin")
+    user = (await db.execute(select(User).where(User.email == unique_email))).scalar_one()
+
+    res = await client.get(f"/v1/admin/users/{user.id}/usage", headers=auth(admin))
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["plan_code"] == "free"
+    assert body["limits"]["projects"] == 5
+    assert token  # 사용

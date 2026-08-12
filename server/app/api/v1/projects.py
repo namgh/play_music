@@ -16,7 +16,7 @@ from sqlalchemy import select, text
 
 from app.api.deps import ActiveUser, CurrentUser, Db, client_ip
 from app.core import audit
-from app.core.errors import Conflict, NotFound, Unprocessable
+from app.core.errors import Conflict, Forbidden, NotFound, Unprocessable
 from app.core.idempotency import begin as idem_begin
 from app.core.idempotency import complete as idem_complete
 from app.core.ratelimit import check as rate_check
@@ -201,6 +201,30 @@ async def create_project(
     return detail
 
 
+# **고정 경로는 파라미터 경로보다 먼저 등록해야 한다.**
+# FastAPI 는 등록 순서대로 매칭하므로, `/{project_id}` 가 먼저 있으면
+# `GET /projects/trash` 가 그쪽에 걸려 UUID 파싱 실패로 422 가 난다 — 실제로 그랬다.
+@router.get("/trash", response_model=list[ProjectSummary])
+async def list_trash(
+    session: Db,
+    user: ReadUser,
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    org_id: uuid.UUID | None = None,
+) -> list[ProjectSummary]:
+    """**30일 유예를 두는 이유가 되돌리기인데 되돌리는 문이 없었다.**"""
+    stmt = (
+        select(Project)
+        .join(OrgMember, OrgMember.org_id == Project.org_id)
+        .where(OrgMember.user_id == user.id, Project.deleted_at.is_not(None))
+        .order_by(Project.deleted_at.desc())
+        .limit(limit)
+    )
+    if org_id is not None:
+        await orgs.require_member(session, org_id=org_id, user_id=user.id)
+        stmt = stmt.where(Project.org_id == org_id)
+    return [_summary(p) for p in (await session.execute(stmt)).scalars()]
+
+
 @router.get("/{project_id}", response_model=ProjectDetail)
 async def get_detail(project_id: uuid.UUID, session: Db, user: ReadUser) -> ProjectDetail:
     project = await get_project(session, project_id, user.id)
@@ -314,3 +338,156 @@ async def delete_project(
         ip=client_ip(request),
     )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# --- 휴지통 · 이름변경 · 복제 -------------------------------------------------
+
+
+class RenameIn(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+
+
+@router.patch("/{project_id}", response_model=ProjectSummary)
+async def rename_project(
+    project_id: uuid.UUID,
+    body: RenameIn,
+    request: Request,
+    session: Db,
+    user: ActiveUser,
+) -> ProjectSummary:
+    """**이름만 바꾼다.**
+
+    이게 없으면 이름 하나 고치는 데 문서 전체를 내려받아 다시 올려야 하고,
+    그 왕복 동안 다른 탭이 저장하면 낙관적 잠금에 걸린다 — 이름 바꾸기가
+    충돌을 만드는 기능이 된다.
+    """
+    project = await get_project(session, project_id, user.id, need=orgs.EDIT)
+    project.name = body.name
+    project.updated_at = datetime.now(UTC)
+    await audit.record(
+        session,
+        action="project.rename",
+        actor_id=user.id,
+        target_type="project",
+        target_id=project.id,
+        ip=client_ip(request),
+    )
+    return _summary(project)
+
+
+@router.post("/{project_id}/restore", response_model=ProjectSummary)
+async def restore_project(
+    project_id: uuid.UUID, request: Request, session: Db, user: ActiveUser
+) -> ProjectSummary:
+    """휴지통에서 되살린다. `get_project` 는 삭제된 것을 안 보므로 직접 찾는다"""
+    row = (
+        await session.execute(
+            select(Project, OrgMember.role)
+            .join(OrgMember, OrgMember.org_id == Project.org_id)
+            .where(
+                Project.id == project_id,
+                OrgMember.user_id == user.id,
+                Project.deleted_at.is_not(None),
+            )
+        )
+    ).first()
+    if row is None:
+        raise NotFound("프로젝트를 찾을 수 없습니다", code="project_not_found")
+
+    project, role = row
+    if orgs.ROLE_RANK[role] < orgs.ROLE_RANK[orgs.EDIT]:
+        raise Forbidden("권한이 없습니다", code="insufficient_org_role")
+
+    # **한도를 다시 본다.** 지운 뒤 새로 만들어 한도를 채운 상태에서 복구하면
+    # 한도를 넘게 된다 — 복구는 생성과 같은 비용이다
+    ent = await entitlements.resolve(session, project.org_id)
+    limit = ent.limits.get("projects")
+    if limit is not None:
+        alive = len(
+            list(
+                (
+                    await session.execute(
+                        select(Project.id).where(
+                            Project.org_id == project.org_id, Project.deleted_at.is_(None)
+                        )
+                    )
+                ).scalars()
+            )
+        )
+        if alive >= limit:
+            from app.core.errors import LimitReached
+
+            raise LimitReached(
+                f"현재 플랜은 프로젝트 {limit}개까지입니다. 자리를 비운 뒤 복구해 주세요",
+                code="project_limit_reached",
+                details={"limit": limit, "plan": ent.plan_code},
+            )
+
+    project.deleted_at = None
+    project.updated_at = datetime.now(UTC)
+    await audit.record(
+        session,
+        action="project.restore",
+        actor_id=user.id,
+        target_type="project",
+        target_id=project.id,
+        ip=client_ip(request),
+    )
+    return _summary(project)
+
+
+@router.post("/{project_id}/duplicate", response_model=ProjectDetail, status_code=201)
+async def duplicate_project(
+    project_id: uuid.UUID, request: Request, session: Db, user: ActiveUser
+) -> ProjectDetail:
+    """**복제는 새 곡의 시작점이다.**
+
+    이력은 가져오지 않는다 — 사본의 1번 버전이 원본의 현재 상태다. 이력까지
+    복사하면 "누가 언제 만든 버전인가"가 두 곡에 갈라져 되돌리기가 헷갈린다.
+    """
+    source = await get_project(session, project_id, user.id, need=orgs.EDIT)
+    if source.head_version_id is None:
+        raise Conflict("아직 저장된 내용이 없습니다", code="no_version")
+    head = await load_version(session, source.head_version_id)
+
+    ent = await entitlements.resolve(session, source.org_id)
+    limit = ent.limits.get("projects")
+    if limit is not None:
+        alive = len(
+            list(
+                (
+                    await session.execute(
+                        select(Project.id).where(
+                            Project.org_id == source.org_id, Project.deleted_at.is_(None)
+                        )
+                    )
+                ).scalars()
+            )
+        )
+        if alive >= limit:
+            from app.core.errors import LimitReached
+
+            raise LimitReached(
+                f"현재 플랜은 프로젝트 {limit}개까지입니다",
+                code="project_limit_reached",
+                details={"limit": limit, "plan": ent.plan_code},
+            )
+
+    copy = Project(org_id=source.org_id, owner_id=user.id, name=f"{source.name} 사본")
+    session.add(copy)
+    await session.flush()
+    version, _ = await save_document(
+        session, project=copy, doc=head.doc or {}, author_id=user.id, expected_head=None
+    )
+    await audit.record(
+        session,
+        action="project.duplicate",
+        actor_id=user.id,
+        target_type="project",
+        target_id=copy.id,
+        detail={"source": str(source.id)},
+        ip=client_ip(request),
+    )
+    return ProjectDetail(
+        **_summary(copy).model_dump(), document=version.doc, seq=version.seq
+    )

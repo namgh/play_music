@@ -9,6 +9,8 @@
 
 from __future__ import annotations
 
+import uuid
+
 from sqlalchemy import select
 
 from app.db.models import EmailOutbox, OrgInvite
@@ -336,3 +338,98 @@ async def test_invite_row_is_created_and_scoped(client, unique_email, db):
     assert row.accepted_at is None
     # 원문 토큰은 DB 에 없다
     assert len(row.token_hash) == 64
+
+
+async def test_storage_quota_is_per_workspace_not_per_person(client, unique_email, db):
+    """**두 방향으로 틀렸던 버그의 회귀 테스트.**
+
+    에셋 한도를 개인 기준으로 세면 (1) 팀이 Pro 를 결제해도 올리는 사람의 무료
+    한도에 막히고 (2) 반대로 무료 조직에 여러 명을 초대하면 같은 워크스페이스에
+    인원수만큼 올릴 수 있다 — 스토리지 비용이 사람 수에 비례해 샌다.
+    """
+    import hashlib
+
+    from app.db.models import Asset
+
+    owner = await signup(client, unique_email)
+    team = await _team(client, owner)
+    mate_email = f"mate-{unique_email}"
+    mate = await signup(client, mate_email)
+    await client.post(
+        f"/v1/orgs/{team['id']}/invites", json={"email": mate_email}, headers=auth(owner)
+    )
+    await client.post(
+        "/v1/orgs/invites/accept",
+        json={"token": await _invite_token(db, mate_email)},
+        headers=auth(mate),
+    )
+
+    body = {
+        "kind": "export",
+        "content_type": "audio/wav",
+        "size_bytes": 1024,
+        "sha256": hashlib.sha256(b"x").hexdigest(),
+        "org_id": team["id"],
+    }
+    a = (await client.post("/v1/assets", json=body, headers=auth(owner))).json()
+    b = (await client.post("/v1/assets", json=body, headers=auth(mate))).json()
+
+    rows = (
+        await db.execute(
+            select(Asset).where(Asset.id.in_([uuid.UUID(a["id"]), uuid.UUID(b["id"])]))
+        )
+    ).scalars().all()
+    assert {str(r.org_id) for r in rows} == {team["id"]}, "누가 올렸든 팀 소유여야 한다"
+
+
+async def test_cannot_upload_into_a_workspace_you_are_not_in(client, unique_email):
+    owner = await signup(client, unique_email)
+    team = await _team(client, owner)
+    outsider = await signup(client, f"out-{unique_email}")
+
+    import hashlib
+
+    res = await client.post(
+        "/v1/assets",
+        json={
+            "kind": "export",
+            "content_type": "audio/wav",
+            "size_bytes": 1024,
+            "sha256": hashlib.sha256(b"x").hexdigest(),
+            "org_id": team["id"],
+        },
+        headers=auth(outsider),
+    )
+    assert res.status_code == 404
+
+
+async def test_viewer_cannot_upload(client, unique_email, db):
+    owner = await signup(client, unique_email)
+    team = await _team(client, owner)
+    viewer_email = f"v-{unique_email}"
+    viewer = await signup(client, viewer_email)
+    await client.post(
+        f"/v1/orgs/{team['id']}/invites",
+        json={"email": viewer_email, "role": "viewer"},
+        headers=auth(owner),
+    )
+    await client.post(
+        "/v1/orgs/invites/accept",
+        json={"token": await _invite_token(db, viewer_email)},
+        headers=auth(viewer),
+    )
+
+    import hashlib
+
+    res = await client.post(
+        "/v1/assets",
+        json={
+            "kind": "export",
+            "content_type": "audio/wav",
+            "size_bytes": 1024,
+            "sha256": hashlib.sha256(b"x").hexdigest(),
+            "org_id": team["id"],
+        },
+        headers=auth(viewer),
+    )
+    assert res.status_code == 403

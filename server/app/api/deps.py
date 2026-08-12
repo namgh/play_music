@@ -53,7 +53,10 @@ async def current_user(
         raise Unauthorized("토큰이 올바르지 않습니다", code="invalid_token") from None
 
     user = await session.get(User, uuid.UUID(payload["sub"]))
-    if user is None or user.deleted_at is not None:
+    # **`deleted` 는 통과시킨다.** 30일 유예 안에 스스로 되돌릴 수 있어야 하는데,
+    # 여기서 401 로 끊으면 복구 엔드포인트(`POST /v1/me/restore`)조차 못 부른다.
+    # 편집을 막는 것은 `active_user` 의 일이다 — 인증과 권한을 섞지 않는다
+    if user is None or user.status == "purged":
         raise Unauthorized("계정을 찾을 수 없습니다", code="account_not_found")
 
     # 대리 접속이면 담당자 id 를 함께 들고 다닌다. 감사 로그가 둘 다 남겨야 한다

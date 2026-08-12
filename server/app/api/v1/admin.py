@@ -20,8 +20,17 @@ from sqlalchemy import func, select
 from app.api.deps import Db, client_ip, require_platform_role
 from app.core import audit
 from app.core.errors import NotFound, Unprocessable
-from app.db.models import AuditLog, ImpersonationSession, Project, Subscription, UsageEvent, User
-from app.services import entitlements
+from app.db.models import (
+    AuditLog,
+    ImpersonationSession,
+    Organization,
+    OrgMember,
+    Project,
+    Subscription,
+    UsageEvent,
+    User,
+)
+from app.services import entitlements, orgs
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -50,15 +59,25 @@ async def search_users(
     q: Annotated[str | None, Query(max_length=320)] = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 25,
 ) -> list[UserRow]:
+    # **조직 마이그레이션 이후 구독은 조직에 붙는다.** 사용자의 플랜은 그 사람의
+    # 개인 워크스페이스 구독이다 — 예전 조인(`Subscription.user_id`)이 그대로 남아
+    # 있어서 이 엔드포인트는 500 이었고, 테스트가 없어서 아무도 몰랐다
+    personal = (
+        select(OrgMember.user_id.label("uid"), Subscription.plan_code.label("plan"))
+        .join(Organization, Organization.id == OrgMember.org_id)
+        .join(Subscription, Subscription.org_id == Organization.id, isouter=True)
+        .where(Organization.kind == "personal")
+        .subquery()
+    )
     stmt = (
         select(
             User,
-            Subscription.plan_code,
+            personal.c.plan,
             func.count(Project.id).filter(Project.deleted_at.is_(None)).label("projects"),
         )
-        .join(Subscription, Subscription.user_id == User.id, isouter=True)
+        .join(personal, personal.c.uid == User.id, isouter=True)
         .join(Project, Project.owner_id == User.id, isouter=True)
-        .group_by(User.id, Subscription.plan_code)
+        .group_by(User.id, personal.c.plan)
         .order_by(User.created_at.desc())
         .limit(limit)
     )
@@ -106,11 +125,16 @@ async def user_usage(
     if target is None:
         raise NotFound("사용자를 찾을 수 없습니다", code="user_not_found")
 
-    ent = await entitlements.resolve(session, user_id)
-    kinds = (await session.execute(
-        select(UsageEvent.kind).where(UsageEvent.user_id == user_id).group_by(UsageEvent.kind)
-    )).scalars()
-    used = {k: await entitlements.usage_in_period(session, user_id, k) for k in kinds}
+    # 사용량도 **조직 단위**다. 사용자의 것은 그 사람의 개인 워크스페이스 것을 본다 —
+    # 팀 사용량은 그 팀의 owner 가 볼 일이지 플랫폼 운영자가 들여다볼 것이 아니다
+    org = await orgs.personal_org(session, user_id)
+    ent = await entitlements.resolve(session, org.id)
+    kinds = (
+        await session.execute(
+            select(UsageEvent.kind).where(UsageEvent.org_id == org.id).group_by(UsageEvent.kind)
+        )
+    ).scalars()
+    used = {k: await entitlements.usage_in_period(session, org.id, k) for k in kinds}
 
     await audit.record(
         session,

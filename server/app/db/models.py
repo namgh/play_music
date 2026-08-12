@@ -323,6 +323,13 @@ class Asset(Base):
     __tablename__ = "assets"
 
     id: Mapped[uuid.UUID] = uuid_pk()
+    # **용량 한도를 세는 단위는 조직이다.** 개인 기준으로 세면 두 방향으로 틀린다 —
+    # 팀이 Pro 를 결제해도 올리는 사람의 무료 한도에 막히고, 반대로 무료 조직에
+    # 5명을 초대하면 같은 워크스페이스에 5배를 올릴 수 있다 (비용이 인원수만큼 샌다)
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+    # 올린 사람. 권한 판단에는 안 쓰고 표시와 감사에만 쓴다
     owner_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
@@ -344,6 +351,13 @@ class Asset(Base):
             "status",
             "created_at",
             postgresql_where=text("status = 'pending'"),
+        ),
+        # 용량 합계를 조직으로 낸다 — 그 쿼리가 매 업로드마다 돈다
+        Index(
+            "ix_assets_org_id_status",
+            "org_id",
+            "status",
+            postgresql_where=text("status = 'ready'"),
         ),
     )
 

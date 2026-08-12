@@ -61,6 +61,9 @@ LIMITS: dict[str, Limit] = {
     # 로그인 시작은 비밀번호 검증이 없어 싸다. 공유 NAT 뒤 사용자를 막지 않게
     # login 보다 넉넉히 준다 — 대신 콜백에서 state 가 진짜 방어선이다
     "oauth_start": Limit(60 / 3600, 30),
+    # 현재 비밀번호를 맞혀 보는 것을 막는다 (토큰이 있어도 무제한이면 안 된다)
+    "password_change": Limit(10 / 3600, 5, fail_closed=True),
+    "preset_write": Limit(60 / 3600, 30),
     "ai_submit": Limit(10 / 3600, 10),                     # 플랜 한도와 별개인 남용 방어
 }
 

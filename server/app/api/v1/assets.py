@@ -35,6 +35,8 @@ router = APIRouter(tags=["assets"])
 
 class AssetCreateIn(BaseModel):
     kind: str = Field(pattern="^(export|sample|ir)$")
+    # 없으면 개인 워크스페이스. 팀에 올리려면 그 조직 id 를 준다
+    org_id: uuid.UUID | None = None
     content_type: str
     size_bytes: int = Field(gt=0, le=storage.MAX_UPLOAD_BYTES)
     # 클라이언트가 계산해 보낸다. 완료 단계에서 스토리지가 준 ETag 와 대조할 수 있고,
@@ -89,16 +91,19 @@ async def create_asset(
             details={"allowed": sorted(storage.ALLOWED_CONTENT_TYPES[body.kind])},
         )
 
-    # 용량 한도는 **올리기 전에** 본다. 올린 뒤 거절하면 대역폭은 이미 썼다.
-    # 한도는 개인이 아니라 **워크스페이스** 것이다
-    org = await orgs.personal_org(session, user.id)
+    # 한도는 **워크스페이스** 것이다. 개인 기준으로 세면 두 방향으로 틀린다 —
+    # 팀이 Pro 를 결제해도 올리는 사람의 무료 한도에 막히고, 반대로 무료 조직에
+    # 여러 명을 초대하면 인원수만큼 올릴 수 있다
+    org = await orgs.resolve_org(session, user=user, org_id=body.org_id, need=orgs.EDIT)
+
+    # 용량 한도는 **올리기 전에** 본다. 올린 뒤 거절하면 대역폭은 이미 썼다
     ent = await entitlements.resolve(session, org.id)
     limit_mb = ent.limits.get("storage_mb")
     if limit_mb is not None:
         used = (
             await session.execute(
                 select(func.coalesce(func.sum(Asset.size_bytes), 0)).where(
-                    Asset.owner_id == user.id, Asset.status == "ready"
+                    Asset.org_id == org.id, Asset.status == "ready"
                 )
             )
         ).scalar_one()
@@ -108,16 +113,22 @@ async def create_asset(
             raise LimitReached(
                 "저장 공간이 부족합니다",
                 code="storage_limit_reached",
-                details={"limit_mb": limit_mb, "used_mb": round(used / 1024 / 1024, 1)},
+                details={
+                "limit_mb": limit_mb,
+                "used_mb": round(used / 1024 / 1024, 1),
+                "org_id": str(org.id),
+            },
             )
 
     asset_id = uuid.uuid4()
     ext = body.filename.rsplit(".", 1)[-1] if "." in body.filename else "bin"
-    key = storage.storage_key(owner_id=user.id, kind=body.kind, asset_id=asset_id, ext=ext)
+    # 키에 **조직**을 넣는다. 버킷 정책으로 워크스페이스 단위 격리를 걸 수 있다
+    key = storage.storage_key(owner_id=org.id, kind=body.kind, asset_id=asset_id, ext=ext)
 
     session.add(
         Asset(
             id=asset_id,
+            org_id=org.id,
             owner_id=user.id,
             kind=body.kind,
             storage_key=key,
@@ -141,8 +152,10 @@ async def complete_asset(
     asset_id: uuid.UUID, request: Request, session: Db, user: ActiveUser
 ) -> AssetOut:
     asset = await session.get(Asset, asset_id)
-    if asset is None or asset.owner_id != user.id:
+    if asset is None:
         raise NotFound("에셋을 찾을 수 없습니다", code="asset_not_found")
+    # **조직 구성원이면 된다.** 올린 사람만 완료할 수 있게 하면 팀 작업이 막힌다
+    await orgs.require_member(session, org_id=asset.org_id, user_id=user.id, need=orgs.EDIT)
 
     # **멱등하다.** 네트워크가 끊겨 재시도해도 같은 응답을 준다
     if asset.status != "ready":
@@ -176,7 +189,8 @@ async def create_export(
         raise NotFound("버전을 찾을 수 없습니다", code="version_not_found")
 
     asset = await session.get(Asset, body.asset_id)
-    if asset is None or asset.owner_id != user.id:
+    if asset is None or asset.org_id != project.org_id:
+        # 다른 워크스페이스의 파일을 내 곡에 붙일 수 없다
         raise NotFound("에셋을 찾을 수 없습니다", code="asset_not_found")
     if asset.status != "ready":
         raise Conflict("업로드가 아직 끝나지 않았습니다", code="asset_not_ready")
