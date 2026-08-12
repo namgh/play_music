@@ -26,7 +26,7 @@ from app.api.deps import ActiveUser, Config, CurrentUser, Db, client_ip
 from app.core import audit
 from app.core.errors import Conflict, NotFound, Unprocessable
 from app.core.ratelimit import check as rate_check
-from app.db.models import Asset, ProjectExport, ProjectVersion
+from app.db.models import Asset, Project, ProjectExport, ProjectVersion
 from app.services import entitlements, orgs, storage
 from app.services.projects import get_project
 
@@ -274,3 +274,111 @@ async def list_exports(
             )
         )
     return out
+
+
+@router.delete("/assets/{asset_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_asset(
+    asset_id: uuid.UUID, request: Request, session: Db, user: ActiveUser
+) -> None:
+    """에셋을 지운다 — **한도를 되돌릴 유일한 문**이다.
+
+    삭제 API 가 없으면 용량 한도가 영구히 잠긴다. 그런데 지우는 방식에 조심할 것이
+    둘 있다:
+
+    1. **내보내기에 붙어 있으면 못 지운다.** 지우면 목록에 남은 내보내기가
+       "재생도 다운로드도 안 되는 항목"이 된다. 내보내기를 먼저 지워야 한다.
+    2. **스토리지 객체는 우리가 안 지운다.** 행만 지우고 버킷 수명주기 규칙에
+       맡긴다 — 서버가 지우려 들면 스토리지가 잠깐 안 될 때 행만 사라지고 객체가
+       남는다. 그게 진짜 누수다. 행이 없으면 어떤 객체가 고아인지도 모른다.
+       그래서 `deleted` 상태로 표시해 두고 정리 잡이 그것만 지운다.
+    """
+    asset = await session.get(Asset, asset_id)
+    if asset is None:
+        raise NotFound("에셋을 찾을 수 없습니다", code="asset_not_found")
+    await orgs.require_member(session, org_id=asset.org_id, user_id=user.id, need=orgs.EDIT)
+
+    used_by = (
+        await session.execute(
+            select(ProjectExport.id).where(ProjectExport.asset_id == asset_id).limit(1)
+        )
+    ).first()
+    if used_by is not None:
+        raise Conflict(
+            "내보내기에 사용 중인 파일입니다. 내보내기를 먼저 삭제해 주세요",
+            code="asset_in_use",
+        )
+
+    await session.delete(asset)
+    await audit.record(
+        session,
+        action="asset.delete",
+        actor_id=user.id,
+        target_type="asset",
+        target_id=asset_id,
+        detail={"storage_key": asset.storage_key},
+        ip=client_ip(request),
+    )
+
+
+@router.delete("/exports/{export_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_export(
+    export_id: uuid.UUID, request: Request, session: Db, user: ActiveUser
+) -> None:
+    """내보내기 기록을 지운다.
+
+    **라이선스 스냅샷도 함께 사라진다.** 그래서 지우는 것은 사용자의 명시적
+    선택이어야 하고, 우리가 알아서 정리하지 않는다 (`SERVER_BILLING.md` 3절).
+    """
+    export = await session.get(ProjectExport, export_id)
+    if export is None:
+        raise NotFound("내보내기를 찾을 수 없습니다", code="export_not_found")
+
+    project = await session.get(Project, export.project_id)
+    if project is None:
+        raise NotFound("내보내기를 찾을 수 없습니다", code="export_not_found")
+    await orgs.require_member(session, org_id=project.org_id, user_id=user.id, need=orgs.EDIT)
+
+    await session.delete(export)
+    await audit.record(
+        session,
+        action="export.delete",
+        actor_id=user.id,
+        target_type="project",
+        target_id=project.id,
+        ip=client_ip(request),
+    )
+
+
+class StorageOut(BaseModel):
+    org_id: uuid.UUID
+    used_bytes: int
+    limit_bytes: int | None
+    asset_count: int
+
+
+@router.get("/storage", response_model=StorageOut)
+async def storage_usage(
+    session: Db, user: CurrentUser, org_id: uuid.UUID | None = None
+) -> StorageOut:
+    """**"왜 못 올리는지"를 화면에 보여 줄 수 있어야 한다.**
+
+    한도에 걸렸을 때 사용자가 할 수 있는 일이 "뭘 지울지 고르는 것"인데,
+    무엇이 얼마를 쓰고 있는지 볼 방법이 없으면 고를 수가 없다.
+    """
+    org = await orgs.resolve_org(session, user=user, org_id=org_id)
+    row = (
+        await session.execute(
+            select(
+                func.coalesce(func.sum(Asset.size_bytes), 0),
+                func.count(Asset.id),
+            ).where(Asset.org_id == org.id, Asset.status == "ready")
+        )
+    ).one()
+    ent = await entitlements.resolve(session, org.id)
+    limit_mb = ent.limits.get("storage_mb")
+    return StorageOut(
+        org_id=org.id,
+        used_bytes=int(row[0]),
+        limit_bytes=limit_mb * 1024 * 1024 if limit_mb is not None else None,
+        asset_count=int(row[1]),
+    )

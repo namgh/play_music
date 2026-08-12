@@ -345,3 +345,189 @@ async def test_presign_is_deterministic_for_fixed_time(settings):
         access_key="AK", secret_key="SK", now=at,
     )
     assert c != a  # 키가 다르면 서명도 달라야 한다
+
+
+# --- 삭제와 용량 ------------------------------------------------------------
+
+
+async def test_delete_asset_frees_the_quota(client, unique_email):
+    """**삭제 API 가 없으면 용량 한도가 영구히 잠긴다**"""
+    token = await signup(client, unique_email)
+    asset = await _ready_asset(client, token)
+
+    before = (await client.get("/v1/storage", headers=auth(token))).json()
+    assert before["used_bytes"] == 4_000_000
+    assert before["asset_count"] == 1
+
+    res = await client.delete(f"/v1/assets/{asset['id']}", headers=auth(token))
+    assert res.status_code == 204
+
+    after = (await client.get("/v1/storage", headers=auth(token))).json()
+    assert after["used_bytes"] == 0
+    assert after["asset_count"] == 0
+
+
+async def test_cannot_delete_an_asset_an_export_depends_on(client, unique_email):
+    """지우면 목록에 **재생도 다운로드도 안 되는 내보내기**가 남는다"""
+    token = await signup(client, unique_email)
+    project = await _project(client, token)
+    asset = await _ready_asset(client, token)
+    await client.post(
+        "/v1/exports",
+        json={
+            "project_id": project["id"],
+            "version_id": project["head_version_id"],
+            "asset_id": asset["id"],
+            "format": "wav",
+        },
+        headers=auth(token),
+    )
+
+    res = await client.delete(f"/v1/assets/{asset['id']}", headers=auth(token))
+    assert res.status_code == 409
+    assert res.json()["error"]["code"] == "asset_in_use"
+
+
+async def test_deleting_the_export_first_unblocks_it(client, unique_email):
+    token = await signup(client, unique_email)
+    project = await _project(client, token)
+    asset = await _ready_asset(client, token)
+    export = (
+        await client.post(
+            "/v1/exports",
+            json={
+                "project_id": project["id"],
+                "version_id": project["head_version_id"],
+                "asset_id": asset["id"],
+                "format": "wav",
+            },
+            headers=auth(token),
+        )
+    ).json()
+
+    assert (
+        await client.delete(f"/v1/exports/{export['id']}", headers=auth(token))
+    ).status_code == 204
+    assert (
+        await client.delete(f"/v1/assets/{asset['id']}", headers=auth(token))
+    ).status_code == 204
+
+
+async def test_storage_endpoint_shows_the_limit(client, unique_email):
+    """한도에 걸렸을 때 **무엇이 얼마를 쓰는지** 못 보면 뭘 지울지 고를 수가 없다"""
+    token = await signup(client, unique_email)
+    res = await client.get("/v1/storage", headers=auth(token))
+    assert res.status_code == 200
+    assert res.json()["limit_bytes"] == 500 * 1024 * 1024
+
+
+async def test_outsider_cannot_delete_assets(client, unique_email):
+    token = await signup(client, unique_email)
+    asset = await _ready_asset(client, token)
+    other = await signup(client, f"other-{unique_email}")
+    assert (
+        await client.delete(f"/v1/assets/{asset['id']}", headers=auth(other))
+    ).status_code in (403, 404)
+
+
+# --- 유료 전환 --------------------------------------------------------------
+
+
+async def test_plans_are_public(client):
+    """**가격표는 가입 전에 보여 줘야 하는 것이다**"""
+    res = await client.get("/v1/billing/plans")
+    assert res.status_code == 200
+    codes = {p["code"] for p in res.json()}
+    assert "free" in codes and "pro" in codes
+
+
+async def test_only_owner_can_start_checkout(client, unique_email, db):
+    """**editor 가 결제를 시작할 수 있으면 팀원 아무나 조직에 청구를 만든다**"""
+    from tests.test_orgs import _invite_token, _team
+
+    owner = await signup(client, unique_email)
+    team = await _team(client, owner)
+    editor_email = f"ed-{unique_email}"
+    editor = await signup(client, editor_email)
+    await client.post(
+        f"/v1/orgs/{team['id']}/invites",
+        json={"email": editor_email, "role": "editor"},
+        headers=auth(owner),
+    )
+    await client.post(
+        "/v1/orgs/invites/accept",
+        json={"token": await _invite_token(db, editor_email)},
+        headers=auth(editor),
+    )
+
+    res = await client.post(
+        "/v1/billing/checkout",
+        json={"plan_code": "pro", "org_id": team["id"]},
+        headers=auth(editor),
+    )
+    assert res.status_code == 403
+
+
+async def test_checkout_rejects_unknown_and_free_plans(client, unique_email):
+    token = await signup(client, unique_email)
+
+    unknown = await client.post(
+        "/v1/billing/checkout", json={"plan_code": "unicorn"}, headers=auth(token)
+    )
+    assert unknown.status_code == 404
+
+    free = await client.post(
+        "/v1/billing/checkout", json={"plan_code": "free"}, headers=auth(token)
+    )
+    assert free.status_code == 422
+    assert free.json()["error"]["code"] == "plan_not_payable"
+
+
+async def test_checkout_reports_unavailable_without_a_key(client, unique_email):
+    """로컬에서 결제 없이 나머지를 개발할 수 있어야 한다 —
+    **다만 조용히 성공한 척하지는 않는다**"""
+    token = await signup(client, unique_email)
+    res = await client.post(
+        "/v1/billing/checkout", json={"plan_code": "pro"}, headers=auth(token)
+    )
+    assert res.status_code == 503
+    assert res.json()["error"]["code"] == "payments_unavailable"
+
+
+async def test_webhook_attaches_payment_to_the_org_from_metadata(client, unique_email, db):
+    """**팀 결제가 결제한 사람의 개인 워크스페이스에 붙으면 안 된다.**
+
+    체크아웃을 만들 때 실어 보낸 `client_reference_id`/메타데이터를 읽어야 한다 —
+    이메일로 추측하면 정확히 그 사고가 난다.
+    """
+    from tests.test_orgs import _team
+
+    token = await signup(client, unique_email)
+    team = await _team(client, token)
+
+    await _webhook(
+        client,
+        {
+            "id": f"evt_{uuid.uuid4().hex}",
+            "type": "subscription.created",
+            "created": 1_800_100_000,
+            "data": {
+                "customer_email": unique_email,
+                "client_reference_id": team["id"],
+                "metadata": {"org_id": team["id"], "plan_code": "pro"},
+                "status": "active",
+                "customer": "cus_test_123",
+            },
+        },
+    )
+
+    sub = (
+        await db.execute(select(Subscription).where(Subscription.org_id == uuid.UUID(team["id"])))
+    ).scalar_one()
+    assert sub.plan_code == "pro"
+    assert sub.commercial_license is True
+    assert sub.external_ref == "cus_test_123"
+
+    # **개인 워크스페이스는 그대로 무료다**
+    personal = await _subscription(db, unique_email)
+    assert personal.plan_code == "free"

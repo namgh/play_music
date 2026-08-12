@@ -80,6 +80,7 @@ class Settings(BaseSettings):
 
     # --- 결제 ---
     billing_webhook_secret: SecretStr = SecretStr("")
+    stripe_secret_key: SecretStr = SecretStr("")
 
     # **첫 플랫폼 운영자.** 이 주소로 가입하면 `owner` 로 승격된다.
     #
@@ -168,6 +169,8 @@ class Settings(BaseSettings):
             problems.append("KEY_PREFIX 는 'production:' 으로 시작해야 한다")
         if not self.billing_webhook_secret.get_secret_value():
             problems.append("BILLING_WEBHOOK_SECRET 이 없으면 웹훅 서명을 검증할 수 없다")
+        if not self.stripe_secret_key.get_secret_value():
+            problems.append("STRIPE_SECRET_KEY 가 없으면 유료 전환이 불가능하다")
         if not self.storage_access_key.get_secret_value():
             problems.append("STORAGE_ACCESS_KEY 가 없다")
         if not self.storage_secret_key.get_secret_value():

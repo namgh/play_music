@@ -24,15 +24,15 @@ from datetime import UTC, datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Header, Request, Response, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
-from app.api.deps import Config, CurrentUser, Db
+from app.api.deps import ActiveUser, Config, CurrentUser, Db, client_ip
 from app.core import audit
-from app.core.errors import Unauthorized
-from app.db.models import BillingEvent, Subscription, User
-from app.services import entitlements, orgs
+from app.core.errors import Conflict, NotFound, Unauthorized, Unprocessable
+from app.db.models import BillingEvent, Plan, Subscription, User
+from app.services import entitlements, orgs, payments
 
 log = logging.getLogger(__name__)
 
@@ -154,9 +154,11 @@ async def _apply(session: Db, event: dict[str, Any], occurred_at: datetime) -> N
         log.error("billing_event_unknown_customer", extra={"event_id": event.get("id")})
         return
 
-    # **어느 워크스페이스에 붙일 결제인가.** 결제사 payload 에 org 가 있으면 그것,
-    # 없으면 그 사람의 개인 워크스페이스다 — 팀 결제는 반드시 org 를 실어 보낸다
-    raw_org = data.get("org_id")
+    # **어느 워크스페이스에 붙일 결제인가.** 체크아웃을 만들 때 `client_reference_id`
+    # 와 메타데이터에 org_id 를 실어 보냈다(`services/payments.py`) — 그걸 읽는다.
+    # 이메일로 추측하면 팀 결제가 결제한 사람의 개인 워크스페이스에 붙는다
+    metadata = data.get("metadata") or {}
+    raw_org = data.get("org_id") or data.get("client_reference_id") or metadata.get("org_id")
     if raw_org:
         org_id = uuid.UUID(str(raw_org))
     else:
@@ -179,11 +181,13 @@ async def _apply(session: Db, event: dict[str, Any], occurred_at: datetime) -> N
         return
 
     sub.status = mapped or data.get("status", sub.status)
-    if plan := data.get("plan_code"):
+    if plan := (data.get("plan_code") or metadata.get("plan_code")):
         sub.plan_code = plan
     if period_end := data.get("current_period_end"):
         sub.current_period_end = datetime.fromtimestamp(float(period_end), tz=UTC)
-    sub.external_ref = data.get("subscription_id") or sub.external_ref
+    sub.external_ref = (
+        data.get("customer") or data.get("subscription_id") or sub.external_ref
+    )
     sub.last_event_at = occurred_at
 
     # 상업 이용 권리는 **유료가 살아 있는 동안만 새로 부여된다.** 이미 내보낸
@@ -203,3 +207,118 @@ async def _apply(session: Db, event: dict[str, Any], occurred_at: datetime) -> N
     )
     # 캐시를 즉시 무효화한다. 안 그러면 결제 직후 60초 동안 무료 한도가 걸린다
     await entitlements.invalidate(org_id)
+
+
+# --- 유료 전환 --------------------------------------------------------------
+#
+# **결제사 연동은 어댑터 뒤에 둔다.** 지금은 Stripe 를 전제하지만, 결제사를 바꾸는
+# 일은 실제로 일어나고(수수료·지원 국가·심사) 그때 도메인 코드까지 흔들리면 안 된다.
+# 그래서 이 라우터는 "체크아웃 세션을 만들어 URL 을 돌려준다"까지만 알고,
+# 어떻게 만드는지는 `services/payments.py` 가 안다.
+
+
+class CheckoutIn(BaseModel):
+    plan_code: str = Field(min_length=1, max_length=50)
+    org_id: uuid.UUID | None = None
+    # 결제 후 돌아올 곳. **우리 앱 경로만 받는다** (열린 리다이렉트 방지)
+    return_path: str = Field(default="/", max_length=200)
+
+
+class CheckoutOut(BaseModel):
+    checkout_url: str
+    plan_code: str
+    org_id: uuid.UUID
+
+
+@router.post("/billing/checkout", response_model=CheckoutOut)
+async def start_checkout(
+    body: CheckoutIn, request: Request, session: Db, settings: Config, user: ActiveUser
+) -> CheckoutOut:
+    """유료 전환 시작. **과금 단위가 조직이라 owner 만 시작할 수 있다.**
+
+    editor 가 결제를 시작할 수 있으면 팀원 아무나 조직에 청구를 만들 수 있다.
+    """
+    org = await orgs.resolve_org(session, user=user, org_id=body.org_id, need=orgs.BILLING)
+
+    plan = await session.get(Plan, body.plan_code)
+    if plan is None or not plan.active:
+        raise NotFound("플랜을 찾을 수 없습니다", code="plan_not_found")
+    if plan.code == "free":
+        raise Unprocessable("무료 플랜은 결제가 필요 없습니다", code="plan_not_payable")
+
+    sub = await session.get(Subscription, org.id)
+    if sub is not None and sub.plan_code == plan.code and sub.status == "active":
+        raise Conflict("이미 이 플랜을 쓰고 있습니다", code="already_subscribed")
+
+    return_path = body.return_path
+    if not return_path.startswith("/") or return_path.startswith("//"):
+        return_path = "/"
+
+    url = await payments.create_checkout_session(
+        settings,
+        org_id=org.id,
+        org_name=org.name,
+        plan=plan,
+        customer_email=user.email,
+        return_url=f"{settings.app_base_url.rstrip('/')}{return_path}",
+    )
+
+    await audit.record(
+        session,
+        action="billing.checkout_start",
+        actor_id=user.id,
+        target_type="org",
+        target_id=org.id,
+        detail={"plan": plan.code},
+        ip=client_ip(request),
+    )
+    return CheckoutOut(checkout_url=url, plan_code=plan.code, org_id=org.id)
+
+
+class PortalOut(BaseModel):
+    portal_url: str
+
+
+@router.post("/billing/portal", response_model=PortalOut)
+async def billing_portal(
+    request: Request, session: Db, settings: Config, user: ActiveUser,
+    org_id: uuid.UUID | None = None,
+) -> PortalOut:
+    """결제수단 변경·영수증·해지. **우리가 직접 만들지 않는다** —
+    카드 정보를 우리 화면에서 받는 순간 PCI 범위가 통째로 넘어온다"""
+    org = await orgs.resolve_org(session, user=user, org_id=org_id, need=orgs.BILLING)
+    sub = await session.get(Subscription, org.id)
+    if sub is None or not sub.external_ref:
+        raise Conflict("결제 내역이 없습니다", code="no_subscription")
+
+    url = await payments.create_portal_session(
+        settings,
+        external_ref=sub.external_ref,
+        return_url=settings.app_base_url.rstrip("/"),
+    )
+    await audit.record(
+        session,
+        action="billing.portal",
+        actor_id=user.id,
+        target_type="org",
+        target_id=org.id,
+        ip=client_ip(request),
+    )
+    return PortalOut(portal_url=url)
+
+
+class PlanOut(BaseModel):
+    code: str
+    display_name: str
+    limits: dict[str, int]
+
+
+@router.get("/billing/plans", response_model=list[PlanOut])
+async def list_plans(session: Db) -> list[PlanOut]:
+    """**인증 없이 연다.** 가격표는 가입 전에 보여 줘야 하는 것이다"""
+    rows = (
+        await session.execute(select(Plan).where(Plan.active.is_(True)).order_by(Plan.code))
+    ).scalars()
+    return [
+        PlanOut(code=p.code, display_name=p.display_name, limits=dict(p.limits)) for p in rows
+    ]

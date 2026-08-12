@@ -489,6 +489,8 @@ class Plan(Base):
     display_name: Mapped[str] = mapped_column(Text, nullable=False)
     limits: Mapped[dict] = mapped_column(JSONB, nullable=False)
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
+    # 결제사의 가격 ID. **코드에 박지 않는다** — 가격을 바꿀 때마다 배포하게 된다
+    external_price_id: Mapped[str | None] = mapped_column(Text)
 
 
 class Subscription(Base):
