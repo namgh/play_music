@@ -1,0 +1,15 @@
+# 빌드 컨텍스트에서 뺀다. **`.env` 와 `.venv` 가 이미지에 실리는 것을 막는 것이
+# 이 파일의 존재 이유다** — 시크릿이 레이어에 굳으면 이미지를 지우기 전에는
+# 되돌릴 수 없다.
+.env
+.env.*
+!.env.example
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+tests/
+docker-compose.yml
+README.md

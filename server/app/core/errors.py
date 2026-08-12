@@ -6,10 +6,13 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from fastapi import Request, status
 from fastapi.responses import JSONResponse
+
+log = logging.getLogger(__name__)
 
 
 class AppError(Exception):
@@ -89,22 +92,40 @@ def error_body(
 
 async def app_error_handler(request: Request, exc: Exception) -> JSONResponse:
     assert isinstance(exc, AppError)
+    request_id = getattr(request.state, "request_id", "-")
     return JSONResponse(
         status_code=exc.status_code,
-        content=error_body(
-            exc.code, exc.message, getattr(request.state, "request_id", "-"), exc.details
-        ),
-        headers=exc.headers,
+        content=error_body(exc.code, exc.message, request_id, exc.details),
+        headers={**exc.headers, "X-Request-Id": request_id},
     )
 
 
 async def unhandled_error_handler(request: Request, exc: Exception) -> JSONResponse:
-    """**내부 사정을 밖으로 내보내지 않는다.** 스택은 로그에만 남긴다"""
+    """**내부 사정을 밖으로 내보내지 않는다.** 스택은 로그에만 남긴다.
+
+    여기서 반드시 로깅한다 — **요청과 예외를 동시에 아는 유일한 지점**이다.
+    예전에는 아무것도 안 남겨서, uvicorn 이 찍는 트레이스백에 request_id·경로·
+    사용자가 빠진 채로만 남았다. 같은 버그가 1000번 터져도 묶을 방법이 없었다.
+    """
+    request_id = getattr(request.state, "request_id", "-")
+    log.exception(
+        "unhandled_error",
+        extra={
+            "request_id": request_id,
+            "method": request.method,
+            "path": request.url.path,
+            "user_id": str(getattr(request.state, "user_id", "") or ""),
+        },
+        exc_info=exc,
+    )
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content=error_body(
             "internal_error",
             "일시적인 오류입니다. 잠시 후 다시 시도해 주세요",
-            getattr(request.state, "request_id", "-"),
+            request_id,
         ),
+        # **500 에도 헤더를 붙인다.** 사용자가 화면의 request_id 를 들고 문의할 때
+        # 클라이언트가 헤더로도 같은 값을 로깅할 수 있어야 한다
+        headers={"X-Request-Id": request_id},
     )

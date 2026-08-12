@@ -25,7 +25,6 @@ import base64
 import hashlib
 import json
 import logging
-import os
 import secrets
 from dataclasses import dataclass
 from typing import Any
@@ -35,6 +34,7 @@ import httpx
 import jwt
 from jwt import PyJWKClient
 
+from app.config import get_settings
 from app.core import redis as r
 from app.core.errors import Unauthorized
 
@@ -64,11 +64,9 @@ class GoogleProfile:
 
 
 def credentials() -> tuple[str, str, str]:
-    return (
-        os.environ.get("GOOGLE_CLIENT_ID", ""),
-        os.environ.get("GOOGLE_CLIENT_SECRET", ""),
-        os.environ.get("GOOGLE_REDIRECT_URI", "http://localhost:8000/v1/auth/google/callback"),
-    )
+    """**`Settings` 한 곳에서만 온다** — `os.environ` 직접 읽기는 `.env` 를 못 본다"""
+    s = get_settings()
+    return (s.google_client_id, s.google_client_secret.get_secret_value(), s.google_redirect_uri)
 
 
 def is_configured() -> bool:

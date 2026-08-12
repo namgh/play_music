@@ -14,6 +14,22 @@ from app.core import redis as r
 
 router = APIRouter(tags=["health"])
 
+# **드레인 플래그.** SIGTERM 을 받으면 `/readyz` 가 먼저 실패로 바뀌어 LB 가 이
+# 인스턴스를 뺀다. 그 다음에야 종료로 넘어간다 (`SERVER_OPS.md` 4절).
+#
+# 이게 없으면 롤링 배포마다 LB 는 죽는 중인 인스턴스로 계속 트래픽을 보내고,
+# 사용자는 **저장 실패(5xx)** 를 본다. 저장 p95 SLO 이전의 문제다.
+_draining = False
+
+
+def begin_drain() -> None:
+    global _draining
+    _draining = True
+
+
+def is_draining() -> bool:
+    return _draining
+
 
 @router.get("/healthz")
 async def healthz() -> dict[str, str]:
@@ -24,7 +40,14 @@ async def healthz() -> dict[str, str]:
 
 @router.get("/readyz")
 async def readyz(session: Db, response: Response) -> dict[str, object]:
-    """트래픽을 받을 준비가 됐는가. DB·Redis·**마이그레이션 리비전**까지 본다"""
+    """트래픽을 받을 준비가 됐는가. DB·Redis·**마이그레이션 리비전**까지 본다.
+
+    종료 중이면 **가장 먼저** 실패로 답한다 — 나머지 검사가 성공해도 의미가 없다.
+    """
+    if is_draining():
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+        return {"status": "draining", "checks": {}}
+
     checks: dict[str, object] = {}
     ok = True
 

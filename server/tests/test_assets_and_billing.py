@@ -11,7 +11,6 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
-import os
 import uuid
 from datetime import UTC, datetime
 from urllib.parse import parse_qs, urlparse
@@ -243,7 +242,10 @@ async def _subscription(db, email: str):
 async def _webhook(client, event: dict, *, secret: str | None = None):
     raw = json.dumps(event).encode()
     headers = {"content-type": "application/json"}
-    secret = secret if secret is not None else os.environ.get("BILLING_WEBHOOK_SECRET", "")
+    if secret is None:
+        from app.config import get_settings
+
+        secret = get_settings().billing_webhook_secret.get_secret_value()
     if secret:
         headers["X-Signature"] = hmac.new(secret.encode(), raw, hashlib.sha256).hexdigest()
     return await client.post("/v1/billing/webhook", content=raw, headers=headers)
@@ -294,7 +296,11 @@ async def test_webhook_out_of_order_is_ignored(client, unique_email, db):
 
 
 async def test_webhook_signature_is_verified(client, unique_email, monkeypatch):
+    """설정이 `Settings` 로 모였으므로 캐시를 비워야 반영된다"""
+    from app.config import get_settings
+
     monkeypatch.setenv("BILLING_WEBHOOK_SECRET", "whsec_test")
+    get_settings.cache_clear()
     event = {
         "id": f"evt_{uuid.uuid4().hex}",
         "type": "subscription.created",
@@ -317,6 +323,7 @@ async def test_webhook_signature_is_verified(client, unique_email, monkeypatch):
     # 맞는 서명
     ok = await _webhook(client, event, secret="whsec_test")
     assert ok.status_code == 204
+    get_settings.cache_clear()
 
 
 async def test_presign_is_deterministic_for_fixed_time(settings):

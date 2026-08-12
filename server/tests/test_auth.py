@@ -54,6 +54,57 @@ async def test_signup_enqueues_verification_mail(client, unique_email, db):
     assert row.payload["link"].startswith("http")
 
 
+async def test_signup_with_existing_email_never_issues_tokens(client, unique_email, db):
+    """**계정 탈취 회귀 테스트.**
+
+    한때 이 경로가 "계정 열거 방지"라며 기존 계정의 액세스 토큰과 리프레시 쿠키를
+    그대로 내줬다. 이메일 주소만 알면 아무 비밀번호로 남의 계정을 통째로 열 수 있었다.
+    열거 방지가 인증 우회가 된 것이다.
+    """
+    from app.db.models import EmailOutbox
+
+    await client.post("/v1/auth/signup", json={"email": unique_email, "password": PASSWORD})
+    cookie_before = client.cookies.get("resona_refresh")
+
+    res = await client.post(
+        "/v1/auth/signup", json={"email": unique_email, "password": "attacker-guess-9999"}
+    )
+    assert res.status_code == 409
+    assert res.json()["error"]["code"] == "email_taken"
+    # **토큰이 응답 어디에도 없어야 한다**
+    assert "access_token" not in res.text
+    # 리프레시 쿠키도 새로 발급되지 않는다
+    assert client.cookies.get("resona_refresh") == cookie_before
+
+    # 주소 주인에게는 알린다 — 본인이면 재설정으로 안내되고, 아니면 경고가 된다
+    mails = (
+        await db.execute(
+            select(EmailOutbox).where(
+                EmailOutbox.to_email == unique_email,
+                EmailOutbox.template == "signup_attempt",
+            )
+        )
+    ).scalars().all()
+    assert len(mails) == 1
+
+
+async def test_signup_attempt_does_not_change_the_password(client, unique_email):
+    """가입 시도가 기존 비밀번호를 덮어쓰지 않는다"""
+    await client.post("/v1/auth/signup", json={"email": unique_email, "password": PASSWORD})
+    await client.post(
+        "/v1/auth/signup", json={"email": unique_email, "password": "attacker-guess-9999"}
+    )
+
+    assert (
+        await client.post(
+            "/v1/auth/login", json={"email": unique_email, "password": "attacker-guess-9999"}
+        )
+    ).status_code == 401
+    assert (
+        await client.post("/v1/auth/login", json={"email": unique_email, "password": PASSWORD})
+    ).status_code == 200
+
+
 async def test_login_does_not_reveal_whether_account_exists(client, unique_email):
     """존재 여부를 응답으로도 시간으로도 흘리지 않는다"""
     missing = await client.post(
@@ -65,6 +116,29 @@ async def test_login_does_not_reveal_whether_account_exists(client, unique_email
     )
     assert missing.status_code == wrong.status_code == 401
     assert missing.json()["error"]["code"] == wrong.json()["error"]["code"] == "invalid_credentials"
+
+
+async def test_failed_login_is_actually_recorded(client, unique_email, db):
+    """**크리덴셜 스터핑을 볼 수 있어야 한다.**
+
+    한때 이 기록이 한 건도 안 남고 있었다 — 401 이 트랜잭션을 롤백해서
+    `audit.record` 가 통째로 사라졌다. "기록하고 있다고 믿는" 상태가 제일 나쁘다.
+    """
+    from app.db.models import AuditLog
+
+    await client.post("/v1/auth/signup", json={"email": unique_email, "password": PASSWORD})
+    for _ in range(3):
+        await client.post(
+            "/v1/auth/login", json={"email": unique_email, "password": "wrong-password-xx"}
+        )
+
+    rows = (
+        await db.execute(
+            select(AuditLog).where(AuditLog.action == "user.login_failed")
+        )
+    ).scalars().all()
+    mine = [r for r in rows if (r.detail or {}).get("email") == unique_email]
+    assert len(mine) == 3, "실패한 로그인이 감사 로그에 남지 않았다"
 
 
 async def test_refresh_rotates_token(client, unique_email, db):

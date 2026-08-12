@@ -148,13 +148,11 @@ def upload_url(settings: Settings, key: str, *, ttl_sec: int = 900) -> str:
 
 
 def _creds(settings: Settings) -> tuple[str, str]:
-    import os
-
-    ak = os.environ.get("STORAGE_ACCESS_KEY", "")
-    sk = os.environ.get("STORAGE_SECRET_KEY", "")
+    """운영에서 키가 비어 있으면 **부팅 자체가 막힌다** (`config.Settings` 검증).
+    그래서 여기 폴백은 로컬 개발 전용이고, 조용한 사고가 되지 않는다."""
+    ak = settings.storage_access_key.get_secret_value()
+    sk = settings.storage_secret_key.get_secret_value()
     if not ak or not sk:
-        # 로컬에서 스토리지 없이 나머지를 개발할 수 있어야 한다. 운영에서는
-        # 배포 시 환경변수 검사로 막는다 (`SERVER_OPS.md` 1절)
         return ("local-dev-key", "local-dev-secret")
     return (ak, sk)
 

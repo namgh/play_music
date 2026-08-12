@@ -28,7 +28,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
-from app.api.deps import CurrentUser, Db
+from app.api.deps import Config, CurrentUser, Db
 from app.core import audit
 from app.core.errors import Unauthorized
 from app.db.models import BillingEvent, Subscription, User
@@ -96,16 +96,20 @@ def verify_signature(*, secret: str, payload: bytes, header: str | None) -> None
 async def webhook(
     request: Request,
     session: Db,
+    settings: Config,
     signature: Annotated[str | None, Header(alias="X-Signature")] = None,
 ) -> Response:
-    import os
-
     raw = await request.body()
-    secret = os.environ.get("BILLING_WEBHOOK_SECRET", "")
+    secret = settings.billing_webhook_secret.get_secret_value()
     if secret:
         verify_signature(secret=secret, payload=raw, header=signature)
+    elif settings.is_production:
+        # **fail-open 을 막는다.** 이 주소는 인증 없는 공개 엔드포인트라, 검증을
+        # 건너뛰면 누구나 자기 조직을 Pro 로 올릴 수 있다. 운영에서는 애초에
+        # 부팅이 막히지만(`config`), 방어선을 여기에도 둔다
+        raise Unauthorized("웹훅 서명 검증이 설정되지 않았습니다", code="webhook_not_configured")
     else:
-        log.warning("billing_webhook_secret_missing")  # 로컬 개발용 경로
+        log.warning("billing_webhook_secret_missing")  # 로컬 개발 전용 경로
 
     import json
 

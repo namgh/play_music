@@ -79,3 +79,99 @@ jobs:
 
       - name: 프로덕션 빌드
         run: npm run build
+
+  # --- 서버 -----------------------------------------------------------------
+  #
+  # **이 잡이 없어서 사고가 났다.** server/README.md 는 "깨면 CI 가 잡는다"고
+  # 적혀 있었지만 사실이 아니었고, 그 사이 스케줄러 정리 작업 6개가 통째로
+  # 죽어 있는 상태로 테스트 105개가 통과하고 있었다.
+  #
+  # 프론트 잡과 **병렬로** 돈다. 서로 기다릴 이유가 없다.
+  server:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: server
+
+    # 테스트는 **진짜 Postgres·Redis** 를 쓴다. SQLite 로 대체하지 않는다 —
+    # JSONB·부분 인덱스·자문 락·SKIP LOCKED 가 전부 다르게 동작해서,
+    # 통과해도 아무것도 보장하지 못한다
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: resona
+          POSTGRES_PASSWORD: resona
+          POSTGRES_DB: resona
+        ports: ['55432:5432']
+        options: >-
+          --health-cmd "pg_isready -U resona"
+          --health-interval 2s --health-timeout 3s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports: ['56379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 2s --health-timeout 3s --health-retries 20
+
+    env:
+      ENV: local
+      KEY_PREFIX: 'ci:v1'
+      DATABASE_URL: postgresql+asyncpg://resona:resona@localhost:55432/resona
+      REDIS_CACHE_URL: redis://localhost:56379/8
+      REDIS_CORE_URL: redis://localhost:56379/9
+      JWT_SECRET: ci-secret-not-used-in-production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: server/pyproject.toml
+
+      - run: pip install -e ".[dev]"
+
+      # --- 마이그레이션 ------------------------------------------------------
+
+      # **헤드는 항상 하나여야 한다** (`SERVER_DATA.md` 1-3).
+      # 브랜치 둘에서 각각 리비전을 만들면 머지 뒤 `upgrade head` 가 터지는데,
+      # 그때는 이미 배포 중이다
+      - name: Alembic 헤드가 하나인지
+        run: |
+          heads=$(alembic heads | grep -c . || true)
+          test "$heads" -eq 1 || { echo "헤드가 $heads 개다"; alembic heads; exit 1; }
+
+      - name: 마이그레이션 적용
+        run: alembic upgrade head
+
+      # 모델을 고치고 마이그레이션을 안 만들면 로컬에서는 통과하고 운영에서는
+      # 컬럼이 없어서 500 이 난다. **빈 diff 여야 통과한다**
+      - name: 모델 드리프트 검사
+        run: |
+          out=$(alembic check 2>&1) || { echo "$out"; exit 1; }
+          echo "$out"
+          echo "$out" | grep -q "No new upgrade operations detected"
+
+      # --- 검사 -------------------------------------------------------------
+
+      - name: 린트
+        run: ruff check app tests
+
+      - name: 테스트
+        run: pytest -q --timeout=120
+
+      # `cp .env.example .env` 가 실제로 뜨는지. 한때 여기서 부팅이 깨졌고,
+      # 그 실패는 배포 현장에서야 드러났다
+      - name: 예시 설정으로 부팅되는지
+        run: |
+          cp .env.example .env
+          python -c "from app.config import Settings; Settings(); print('부팅 설정 OK')"
+          rm .env
+
+      # 운영은 이 이미지로 프로세스 4종을 돌린다. 빌드가 깨지는 것을
+      # 배포 시점에 알면 늦다
+      - name: 도커 이미지 빌드
+        run: docker build -t resona-server:ci .

@@ -15,6 +15,7 @@ import asyncio
 import contextlib
 import logging
 import signal
+import uuid
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import text
@@ -37,14 +38,20 @@ IDEMPOTENCY_TTL = timedelta(days=1)
 
 
 async def _with_lock(name: str, ttl_sec: int, coro) -> None:
-    """스케줄러가 둘 떠도 한 번만 돈다"""
-    token = await r.acquire_lock(r.key("sched", name), ttl_sec)
-    if token is None:
+    """스케줄러가 둘 떠도 한 번만 돈다.
+
+    **토큰은 부르는 쪽이 만든다.** 그래야 반납할 때 "내가 잡은 락인지"를 확인할 수
+    있다 — 만료된 뒤 남이 잡은 락을 지우면 두 프로세스가 같이 돈다.
+    """
+    key = r.key("sched", name)
+    token = uuid.uuid4().hex
+    if not await r.acquire_lock(key, token, ttl_sec * 1000):
+        coro.close()  # 안 돌릴 코루틴은 닫는다 (안 닫으면 RuntimeWarning)
         return
     try:
         await coro
     finally:
-        await r.release_lock(r.key("sched", name), token)
+        await r.release_lock(key, token)
 
 
 async def sweep_pending_assets() -> None:
@@ -97,13 +104,18 @@ async def roll_up_usage() -> None:
         await session.execute(
             text(
                 """
-                INSERT INTO usage_rollups (user_id, kind, period_start, quantity, rolled_at)
-                SELECT user_id, kind, date_trunc('month', occurred_at)::date,
-                       sum(quantity), now()
+                INSERT INTO usage_rollups
+                    (org_id, kind, period_start, period_end, quantity, rolled_at)
+                SELECT org_id,
+                       kind,
+                       date_trunc('month', occurred_at)::date,
+                       (date_trunc('month', occurred_at) + interval '1 month')::date,
+                       sum(quantity),
+                       now()
                 FROM usage_events
                 WHERE occurred_at < date_trunc('month', now())
-                GROUP BY 1, 2, 3
-                ON CONFLICT (user_id, kind, period_start)
+                GROUP BY 1, 2, 3, 4
+                ON CONFLICT (org_id, kind, period_start)
                 DO UPDATE SET quantity = excluded.quantity, rolled_at = excluded.rolled_at
                 """
             )
@@ -143,7 +155,7 @@ async def sweep_expired_tokens() -> None:
 async def trim_audit_log() -> None:
     async with session_scope() as session:
         await session.execute(
-            text("DELETE FROM audit_logs WHERE created_at < :cutoff"),
+            text("DELETE FROM audit_log WHERE occurred_at < :cutoff"),
             {"cutoff": datetime.now(UTC) - AUDIT_RETENTION},
         )
 

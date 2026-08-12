@@ -28,9 +28,15 @@ async def clean_outbox(app, db):
 
 @pytest.fixture
 def smtp_configured(monkeypatch):
+    """설정은 **`Settings` 한 곳**에서만 오므로 캐시를 비워야 반영된다"""
+    from app.config import get_settings
+
     monkeypatch.setenv("SMTP_USER", "noreply@example.com")
     monkeypatch.setenv("SMTP_PASSWORD", "app-password-1234")
     monkeypatch.setenv("APP_BASE_URL", "https://app.example.com")
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
 
 
 class FakeSMTP:
@@ -142,8 +148,11 @@ async def test_nothing_to_send_returns_false(client, smtp_configured, fake_smtp)
 
 async def test_unconfigured_smtp_keeps_mail_queued(client, unique_email, db, monkeypatch):
     """설정이 없다고 **failed 로 만들지 않는다** — 나중에 설정해도 안 나가게 된다"""
+    from app.config import get_settings
+
     monkeypatch.delenv("SMTP_USER", raising=False)
     monkeypatch.delenv("SMTP_PASSWORD", raising=False)
+    get_settings.cache_clear()
     await signup(client, unique_email)
 
     assert await mailer.send_one("test-worker") is False

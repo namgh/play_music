@@ -12,7 +12,7 @@ from sqlalchemy import select, update
 
 from app.api.deps import ActiveUser, Config, Db, client_ip
 from app.core import audit
-from app.core.errors import Unauthorized
+from app.core.errors import Conflict, Unauthorized
 from app.core.ratelimit import check as rate_check
 from app.core.security import (
     create_access_token,
@@ -131,11 +131,35 @@ async def signup(
         await session.execute(select(User).where(User.email == email))
     ).scalar_one_or_none()
     if existing is not None:
-        # **가입 여부를 알려주지 않는다.** 계정 열거를 막는다 — 대신 확인 메일을
-        # 보내고 같은 응답을 준다 (메일 발송은 워커가 한다)
-        await _send_verify_mail(session, existing)
-        return await _issue_tokens(
-            session, response, settings, existing, user_agent=request.headers.get("user-agent")
+        # **여기서 토큰을 발급하면 계정 탈취다.**
+        #
+        # 원래 이 자리에는 "계정 열거를 막으려고 신규 가입과 같은 응답을 준다"는
+        # 코드가 있었다. 그런데 그 '같은 응답'에 액세스 토큰과 리프레시 쿠키가
+        # 들어 있어서, **이메일 주소만 알면 아무 비밀번호로 가입을 시도해 그 계정을
+        # 통째로 열 수 있었다.** 열거 방지가 인증 우회가 된 것이다.
+        #
+        # 그래서 판단을 뒤집었다: **가입 단계의 열거는 받아들이고, 토큰은 절대
+        # 발급하지 않는다.** 근거는 셋이다.
+        #   1. 인증하지 않은 계정의 자격증명을 내주는 것은 어떤 이득과도 안 바꾼다
+        #   2. 가입에서 존재를 감춰도 실사용 제품에서는 결국 드러난다
+        #      (대부분의 서비스가 "이미 가입된 주소입니다"를 그대로 말한다)
+        #   3. **로그인 경로의 열거 방지는 그대로 유지한다** — 크리덴셜 스터핑이
+        #      실제로 일어나는 곳은 거기다 (`login` 참고)
+        #
+        # 대신 주소 주인에게 "누군가 이 주소로 가입을 시도했다"를 알린다. 본인이
+        # 비밀번호를 잊은 것이면 재설정으로 안내되고, 아니면 경고가 된다.
+        await mail.enqueue(
+            session,
+            to_email=existing.email,
+            template="signup_attempt",
+            payload={"link": mail.link("/login", ""), "expires_hours": RESET_TTL_HOURS},
+        )
+        await audit.record(
+            session, action="user.signup_existing_email", actor_id=existing.id, ip=ip
+        )
+        # 알림 메일과 감사 로그를 **커밋하고 나서** 거절한다 (`audit.persist_and_raise`)
+        await audit.persist_and_raise(
+            session, Conflict("이미 가입된 주소입니다. 로그인해 주세요", code="email_taken")
         )
 
     user = User(email=email, display_name=body.display_name, status="pending_verification")
@@ -184,8 +208,13 @@ async def login(
     # 사용자가 없어도 **같은 시간**을 쓴다 (`security.verify_password` 가 더미와 비교)
     ok, rehashed = verify_password(body.password, identity.secret_hash if identity else None)
     if not ok or identity is None:
+        # **여기가 비어 있었다.** 401 이 트랜잭션을 롤백해서 로그인 실패 기록이
+        # 한 건도 안 남고 있었다 — 크리덴셜 스터핑을 볼 방법이 없었다는 뜻이다
         await audit.record(session, action="user.login_failed", detail={"email": email}, ip=ip)
-        raise Unauthorized("이메일 또는 비밀번호가 올바르지 않습니다", code="invalid_credentials")
+        await audit.persist_and_raise(
+            session,
+            Unauthorized("이메일 또는 비밀번호가 올바르지 않습니다", code="invalid_credentials"),
+        )
 
     if rehashed:
         identity.secret_hash = rehashed  # 비용을 올렸으면 로그인 성공 시점에 재해싱
@@ -231,11 +260,12 @@ async def refresh(request: Request, response: Response, session: Db, settings: C
             actor_id=token.user_id,
             ip=client_ip(request),
         )
-        # **여기서 커밋해야 한다.** 아래 예외가 트랜잭션을 롤백하면 방금 건 폐기가
-        # 통째로 취소된다 — 보안 통제가 조용히 아무 일도 안 하게 된다.
-        # 테스트가 이걸 잡았다 (`tests/test_auth.py::test_refresh_reuse_kills_all_sessions`)
-        await session.commit()
-        raise Unauthorized("보안을 위해 모든 세션을 종료했습니다", code="refresh_token_reused")
+        # 폐기를 **커밋하고 나서** 거절한다. 그냥 raise 하면 롤백돼서 보안 통제가
+        # 조용히 아무 일도 안 한다 (`audit.persist_and_raise` 의 주석 참고)
+        await audit.persist_and_raise(
+            session,
+            Unauthorized("보안을 위해 모든 세션을 종료했습니다", code="refresh_token_reused"),
+        )
 
     if token.expires_at <= now:
         raise Unauthorized("리프레시 토큰이 만료됐습니다", code="refresh_token_expired")

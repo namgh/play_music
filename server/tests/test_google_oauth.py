@@ -34,9 +34,12 @@ _KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 
 @pytest.fixture(autouse=True)
 def google_configured(monkeypatch):
+    from app.config import get_settings
+
     monkeypatch.setenv("GOOGLE_CLIENT_ID", CLIENT_ID)
     monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "test-secret")
     monkeypatch.setenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/v1/auth/google/callback")
+    get_settings.cache_clear()
 
     class FakeJWKS:
         """서명 키만 돌려준다. **검증 로직은 실물 그대로 돈다**"""
@@ -48,6 +51,8 @@ def google_configured(monkeypatch):
             return K()
 
     monkeypatch.setattr(google_oauth, "_jwks", lambda: FakeJWKS())
+    yield
+    get_settings.cache_clear()
 
 
 def make_id_token(
@@ -308,7 +313,10 @@ async def test_next_parameter_cannot_redirect_offsite(client, target):
 
 
 async def test_start_is_rejected_when_not_configured(client, monkeypatch):
+    from app.config import get_settings
+
     monkeypatch.delenv("GOOGLE_CLIENT_ID", raising=False)
+    get_settings.cache_clear()
     res = await client.get("/v1/auth/google/start")
     assert res.status_code == 401
     assert res.json()["error"]["code"] == "google_not_configured"

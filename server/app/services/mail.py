@@ -16,7 +16,6 @@ Gmail 은 **앱 비밀번호**를 쓴다 (2단계 인증이 켜져 있어야 발
 from __future__ import annotations
 
 import logging
-import os
 import smtplib
 import ssl
 import uuid
@@ -27,22 +26,21 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
 from app.db.models import EmailOutbox
 
 log = logging.getLogger(__name__)
 
-SMTP_HOST = os.environ.get("SMTP_HOST", "smtp.gmail.com")
-SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
-SMTP_TIMEOUT_SEC = float(os.environ.get("SMTP_TIMEOUT_SEC", "15"))
-
 
 def _sender() -> tuple[str, str, str]:
-    """(주소, 비밀번호, 표시이름). **비밀번호는 코드에 없다** — 환경변수뿐"""
-    return (
-        os.environ.get("SMTP_USER", ""),
-        os.environ.get("SMTP_PASSWORD", ""),
-        os.environ.get("MAIL_FROM_NAME", "RESONA"),
-    )
+    """(주소, 비밀번호, 표시이름).
+
+    **설정은 `Settings` 한 곳에서만 온다.** 예전에는 여기서 `os.environ` 을 직접
+    읽었는데, pydantic 이 `.env` 를 읽어도 `os.environ` 에는 안 올라가서 **`.env` 에
+    넣은 값을 코드가 영영 못 봤다.** 설정 소스가 둘로 갈라지면 반드시 그런 일이 난다.
+    """
+    s = get_settings()
+    return (s.smtp_user, s.smtp_password.get_secret_value(), s.mail_from_name)
 
 
 def is_configured() -> bool:
@@ -63,6 +61,14 @@ _TEMPLATES: dict[str, tuple[str, str]] = {
         "{link}\n\n"
         "본인이 가입한 것이 아니라면 이 메일을 무시하시면 됩니다. "
         "링크를 열지 않는 한 아무 일도 일어나지 않습니다.\n",
+    ),
+    "signup_attempt": (
+        "[RESONA] 이미 가입된 주소로 가입 시도가 있었습니다",
+        "누군가 이 주소로 새로 가입을 시도했습니다. 이미 계정이 있어서 진행되지 않았습니다.\n\n"
+        "본인이라면 비밀번호를 잊으셨을 수 있습니다 — 로그인 화면의 '비밀번호 찾기'를 "
+        "이용해 주세요.\n\n{link}\n\n"
+        "**계정은 그대로 안전합니다.** 이 시도만으로는 아무도 로그인할 수 없습니다.\n"
+        "본인이 아니라면 무시하셔도 되지만, 반복된다면 비밀번호를 바꾸시길 권합니다.\n",
     ),
     "reset_password": (
         "[RESONA] 비밀번호 재설정",
@@ -157,12 +163,15 @@ def send_now(*, to_email: str, template: str, payload: dict[str, Any]) -> None:
     msg = build_message(to_email=to_email, template=template, payload=payload)
     context = ssl.create_default_context()
 
-    if SMTP_PORT == 465:
-        with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, timeout=SMTP_TIMEOUT_SEC, context=context) as s:
+    cfg = get_settings()
+    if cfg.smtp_port == 465:
+        with smtplib.SMTP_SSL(
+            cfg.smtp_host, cfg.smtp_port, timeout=cfg.smtp_timeout_sec, context=context
+        ) as s:
             s.login(user, password)
             s.send_message(msg)
     else:
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=SMTP_TIMEOUT_SEC) as s:
+        with smtplib.SMTP(cfg.smtp_host, cfg.smtp_port, timeout=cfg.smtp_timeout_sec) as s:
             s.ehlo()
             s.starttls(context=context)  # **평문으로 로그인하지 않는다**
             s.ehlo()
@@ -185,7 +194,7 @@ def is_permanent_failure(exc: Exception) -> bool:
 
 
 def link(path: str, token: str) -> str:
-    base = os.environ.get("APP_BASE_URL", "http://localhost:5173").rstrip("/")
+    base = get_settings().app_base_url.rstrip("/")
     return f"{base}{path}?token={token}"
 
 
