@@ -215,6 +215,25 @@ impl AnyVoice {
         self.play_noise.trigger(amount, velocity, decay_ms, level);
     }
 
+    /// 픽·프렛 노이즈의 씨앗도 음마다 고정한다.
+    ///
+    /// 줄의 여진과 **같은 이유**다 — 자유 난수를 쓰면 중간부터 미리듣기할 때
+    /// 내보내기와 다른 소리가 난다. 여진만 고치고 여기를 빼면 차이가 줄기만 하고
+    /// 남는다 (실측: RMS 0.5dB → 0.0002dB 로 줄었지만 파형은 여전히 달랐다).
+    ///
+    /// 씨앗을 한 번 더 섞는 이유: 여진과 **같은 값을 그대로 쓰면** 두 잡음이
+    /// 상관관계를 갖는다. 픽 소리가 줄 여진과 겹쳐 들려 부자연스러워진다
+    /// 신스·드럼의 노이즈 씨앗. 줄과 같은 이유로 음마다 고정한다
+    pub fn seed_voice_noise(&mut self, seed: u32) {
+        self.synth.seed_noise(seed);
+        self.drum.seed_noise(seed);
+    }
+
+    pub fn seed_play_noise(&mut self, seed: u32) {
+        self.play_noise.rng =
+            crate::string_voice::Lcg((seed ^ 0x85eb_ca6b).wrapping_mul(0xc2b2_ae35) | 1);
+    }
+
     pub fn kind(&self) -> VoiceKind {
         self.kind
     }
@@ -237,6 +256,13 @@ impl AnyVoice {
             VoiceKind::WaveguideString => self.string.freq_hz(),
             _ => 0.0,
         }
+    }
+
+    /// 여진 씨앗을 두 편광 모두에 심는다 — **같은 씨앗을 써야 한다.**
+    /// 다르게 주면 두 편광의 위상이 어긋나 음정이 흔들린다 (`HANDOFF.md` 의 2.7센트 함정)
+    pub fn seed_string_excitation(&mut self, seed: u32) {
+        self.string.seed_excitation(seed);
+        self.string_b.seed_excitation(seed);
     }
 
     pub fn note_on_string(

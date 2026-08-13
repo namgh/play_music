@@ -421,6 +421,30 @@ mod tests {
         }
     }
 
+    /// **여유를 숫자로 남긴다.** -60dB 통과와 최상급(-90dB)은 다른 이야기다
+    #[test]
+    fn report_distortion_aliasing_margin() {
+        let params = AmpParams {
+            character: AmpCharacter::Fuzz,
+            drive: 1.0,
+            cabinet: false,
+            level: 1.0,
+            ..Default::default()
+        };
+        let mut chain = chain_with(params, 4000.0);
+        let mut buffer = sine(4000.0, 0.8, 16384);
+        chain.process(&mut buffer);
+        let analyzed = &buffer[4096..];
+        let fundamental = magnitude_at(analyzed, 4000.0);
+        let mut worst = -200.0_f64;
+        for folded in [2000.0, 6000.0, 10000.0, 14000.0, 18000.0, 22000.0] {
+            let db = 20.0 * (magnitude_at(analyzed, folded) / fundamental).log10();
+            println!("  앰프(퍼즈 최대) {folded:7.0}Hz : {db:7.1} dB");
+            worst = worst.max(db);
+        }
+        println!("앰프 최악 에일리어싱: {worst:.1} dB");
+    }
+
     #[test]
     fn distortion_aliasing_stays_below_60db() {
         // `sound.md` 11-2: 특히 디스토션 최대치에서 측정할 것.

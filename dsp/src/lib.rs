@@ -688,7 +688,10 @@ pub extern "C" fn note_on(freq_hz: f32, velocity: f32, gain: f32, variation_seed
     e.pan_l[index] = pan_l;
     e.pan_r[index] = pan_r;
 
-    // 픽·프렛 노이즈. 음정이 없어야 하므로 보이스 밖에서 더한다 (`ROADMAP.md` S2-2)
+    // 픽·프렛 노이즈. 음정이 없어야 하므로 보이스 밖에서 더한다 (`ROADMAP.md` S2-2).
+    // 씨앗을 심어 **음마다 결정론적**으로 만든다 (`voice::seed_play_noise`)
+    engine().voices[index].seed_play_noise(variation_seed);
+    engine().voices[index].seed_voice_noise(variation_seed);
     engine().voices[index].trigger_play_noise(
         read_play_noise_amount(),
         velocity as f64,
@@ -700,6 +703,10 @@ pub extern "C" fn note_on(freq_hz: f32, velocity: f32, gain: f32, variation_seed
     match read_voice_kind() {
         VoiceKind::WaveguideString => {
             let curve = read_curve();
+            // **여진 잡음도 음마다 결정론적이어야 한다.** 이게 없으면 같은 음이라도
+            // 앞에 무엇을 쳤느냐에 따라 달라져서, 중간부터 미리듣기하면 내보내기와
+            // 다른 소리가 난다 (`string_voice::seed_excitation` 참고)
+            engine().voices[index].seed_string_excitation(variation_seed);
             engine().voices[index].note_on_string(freq_hz as f64, velocity as f64, &params, &curve);
         }
         VoiceKind::Modal => {

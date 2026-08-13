@@ -267,6 +267,24 @@ mod tests {
         assert!(third > fundamental * 0.05, "3차 하모닉이 없다: {third}");
     }
 
+    /// **여유가 얼마나 있는지 숫자로 남긴다.** 기준(-60dB)을 통과하는 것과
+    /// 최상급(-90dB)인 것은 다른 이야기다 — "상~최상" 을 말하려면 여유를 알아야 한다
+    #[test]
+    fn report_actual_aliasing_margin() {
+        let mut os = Oversampler::new(FS);
+        let mut buffer = sine(5000.0, 0.7, 16384);
+        os.process(&mut buffer, hard_drive);
+        let analyzed = &buffer[4096..];
+        let fundamental = magnitude_at(analyzed, 5000.0, FS);
+        let mut worst = -200.0_f64;
+        for folded in [23000.0, 21000.0, 18000.0, 16000.0, 13000.0, 11000.0, 8000.0] {
+            let db = 20.0 * (magnitude_at(analyzed, folded, FS) / fundamental).log10();
+            println!("  {folded:7.0}Hz : {db:7.1} dB");
+            worst = worst.max(db);
+        }
+        println!("오버샘플 최악 에일리어싱: {worst:.1} dB");
+    }
+
     #[test]
     fn aliasing_is_below_60db() {
         // `sound.md` 11-2 의 기준: 하모닉 대비 에일리어싱 성분 -60dB 이하.
@@ -364,3 +382,4 @@ mod tests {
         assert!(buffer.iter().all(|v| v.is_finite()));
     }
 }
+

@@ -22,7 +22,8 @@
     "check:server": "cd server && .venv/bin/ruff check app tests && .venv/bin/python -m pytest -q --timeout=120",
     "quality": "node --experimental-strip-types tools/quality-report.mjs",
     "quality:compare": "node --experimental-strip-types tools/quality-compare.mjs",
-    "test:quality": "node --experimental-strip-types --test 'src/audio/quality.test.ts'"
+    "test:quality": "node --experimental-strip-types --test 'src/audio/quality.test.ts'",
+    "quality:sweep": "node --experimental-strip-types tools/quality-sweep.mjs"
   },
   "dependencies": {
     "react": "^19.2.8",

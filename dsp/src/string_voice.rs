@@ -239,6 +239,12 @@ pub fn compute_loop(freq_hz: f64, params: &StringParams, sample_rate: f64) -> Lo
 pub struct Lcg(pub u32);
 
 impl Lcg {
+    /// 0~1 균등. 위상 초기화처럼 **결정적이면서 어긋난 값**이 필요할 때 쓴다
+    pub fn next_unit(&mut self) -> f64 {
+        self.0 = self.0.wrapping_mul(1664525).wrapping_add(1013904223);
+        self.0 as f64 / 4294967296.0
+    }
+
     pub fn next_bipolar(&mut self) -> f64 {
         self.0 = self.0.wrapping_mul(1664525).wrapping_add(1013904223);
         (self.0 as f64 / 4294967296.0) * 2.0 - 1.0
@@ -332,6 +338,20 @@ impl StringVoice {
 
     pub fn note_on(&mut self, freq_hz: f64, velocity: f64, params: &StringParams) {
         self.note_on_curved(freq_hz, velocity, params, &PitchCurve::default());
+    }
+
+    /// **여진 잡음의 씨앗을 음마다 고정한다.**
+    ///
+    /// 이게 없으면 여진 RNG 가 보이스마다 계속 흘러서, 같은 음이라도 **앞에 몇 음을
+    /// 쳤느냐에 따라 다른 소리가 난다.** 처음부터 렌더하면 같은 순서라 결과가 같지만,
+    /// **중간부터 미리듣기하면 내보내기와 달라진다** — `note_on` 주석이 막으려던 바로
+    /// 그 상황인데 변주(이득·밝기·감쇠)만 씨앗을 쓰고 여진은 빠져 있었다.
+    ///
+    /// 실측: 하프 같은 음을 사이에 다른 음을 두고 두 번 렌더하면 RMS 가 0.5dB,
+    /// 7.3kHz 성분이 35dB 어긋났다. 들리는 차이다.
+    pub fn seed_excitation(&mut self, seed: u32) {
+        // 0 은 LCG 에서 고정점이라 피한다. 씨앗을 섞어 이웃한 값이 비슷해지지 않게
+        self.rng = Lcg((seed ^ 0x9e37_79b9).wrapping_mul(2_654_435_761) | 1);
     }
 
     /// 음정 곡선이 있는 발음. 곡선이 비어 있으면 검증된 올패스 경로를 그대로 쓴다.
@@ -486,8 +506,17 @@ impl StringVoice {
             *v -= mean;
             peak = peak.max(v.abs());
         }
+        // **0.5 였던 것을 0.42 로 내렸다 (-1.5dB).**
+        //
+        // 근거: 전 악기 × 전 음역 × 씨앗 6개로 트루 피크를 쟀더니 뜯는 줄의
+        // **최고음**에서 넘쳤다 — 만돌린 +0.28 dBTP, 우쿨렐레 0.00, 기타 -0.48.
+        // 고음일수록 딜레이 라인이 짧아 루프가 더 세게 공진한다.
+        //
+        // 샘플 피크는 1.0 아래였지만 트루 피크가 0 을 넘으면 **mp3·AAC 로 바꿀 때
+        // 실제로 깎인다** — 우리 파일은 멀쩡한데 사용자가 올린 곳에서 찌그러진다.
+        // 스트리밍 권장선(-1 dBTP)을 지키려고 1.5dB 를 양보했다.
         let scale = if peak > 1e-12 {
-            0.5 * velocity / peak
+            0.42 * velocity / peak
         } else {
             0.0
         };
@@ -698,5 +727,60 @@ impl StringVoice {
     pub fn reset(&mut self) {
         self.reset_states();
         self.active = false;
+    }
+}
+
+#[cfg(test)]
+mod excitation_seed_tests {
+    use super::*;
+
+    const FS: f64 = 48000.0;
+
+    fn render(seed: u32, warm_up: bool) -> Vec<f32> {
+        let mut v = StringVoice::new(FS, 0x1234);
+        let params = StringParams::default();
+        if warm_up {
+            // 앞에 다른 음을 친다 — 이게 뒤 음을 바꾸면 안 된다
+            v.note_on(330.0, 0.5, &params);
+            let mut scratch = vec![0.0f32; 4096];
+            v.process(&mut scratch);
+        }
+        v.seed_excitation(seed);
+        v.note_on(220.0, 1.0, &params);
+        let mut out = vec![0.0f32; 8192];
+        v.process(&mut out);
+        out
+    }
+
+    /// **미리듣기 = 내보내기.**
+    ///
+    /// 여진 RNG 가 보이스마다 흐르면 같은 음이라도 앞에 몇 음을 쳤느냐에 따라
+    /// 달라진다. 처음부터 렌더하면 순서가 같아 결과가 같지만, **중간부터
+    /// 미리듣기하면 내보내기와 다른 소리가 난다.** 실측으로 RMS 0.5dB,
+    /// 7.3kHz 성분 35dB 차이였다 — 들리는 차이다.
+    #[test]
+    fn same_seed_gives_the_same_sound_regardless_of_history() {
+        let fresh = render(42, false);
+        let after_another_note = render(42, true);
+        for (i, (a, b)) in fresh.iter().zip(after_another_note.iter()).enumerate() {
+            assert!(
+                (a - b).abs() < 1e-9,
+                "{i}번째 샘플이 다르다: {a} vs {b} — 앞 음이 뒤 음을 바꿨다"
+            );
+        }
+    }
+
+    /// 반대쪽도 지켜야 한다 — **씨앗이 다르면 달라야 한다.**
+    /// 안 그러면 같은 음을 반복할 때 머신건처럼 들린다
+    #[test]
+    fn different_seeds_give_different_sound() {
+        let a = render(1, false);
+        let b = render(2, false);
+        let diff: f32 = a
+            .iter()
+            .zip(b.iter())
+            .map(|(x, y)| (x - y).abs())
+            .fold(0.0, f32::max);
+        assert!(diff > 1e-3, "씨앗이 달라도 같은 소리가 난다 (최대차 {diff})");
     }
 }

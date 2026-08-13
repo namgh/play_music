@@ -213,6 +213,16 @@ impl DrumVoice {
 
     /// `freq_hz` 는 음정이 있는 드럼(킥·탐)에만 쓰인다.
     /// 하이햇을 반음 올려 봐야 하이햇이 아니므로 무시한다.
+    /// 노이즈 씨앗을 음마다 고정한다. **하이햇 16분이 가장 중요한 경우다** —
+    /// 씨앗이 음마다 다르면 변주가 살아 있고(머신건이 아니고), 같은 음이면
+    /// 언제 렌더해도 같은 소리가 난다
+    pub fn seed_noise(&mut self, seed: u32) {
+        // **`clap_left` 는 건드리지 않는다.** 난수처럼 보이지만 클랩이 몇 번 더
+        // 튈지 세는 카운터다 — 여기에 해시를 넣었더니 40억 번 재타격하며
+        // 노이즈가 끝없이 되살아났다 (내가 넣은 버그다)
+        self.noise = Noise((seed ^ 0x165667b1).wrapping_mul(0x85eb_ca6b) | 1);
+    }
+
     pub fn note_on(&mut self, freq_hz: f64, velocity: f64, params: &DrumParams) {
         self.kind = params.kind;
         self.velocity = velocity.clamp(0.0, 1.0);
@@ -417,7 +427,16 @@ impl DrumVoice {
                 self.noise_env = flush(self.noise_env * self.noise_decay);
             }
 
-            *slot += (value * self.velocity * 0.6) as f32;
+            // **헤드룸.** 0.6 이던 것을 0.42 로 내렸다.
+            //
+            // 근거: 씨앗 40개를 돌려 최악 피크를 쟀더니 스네어가 **+1.50 dBTP** 로
+            // 넘쳤다(샘플 피크 +0.77 dBFS). 노이즈 실현값에 따라 몸통·줄·노이즈가
+            // 겹치는 순간이 있고, 그때 잘린다 — 한 음만 쳐도 넘으면 화음을 못 친다.
+            //
+            // 0.42 면 스네어 최악이 -1.6 dBTP 로 들어오고, 나머지 드럼도
+            // 스트리밍 권장선(-1 dBTP)을 지킨다. 드럼만 조용해지는 것은 트랙
+            // 게인으로 올리면 되지만, **잘린 소리는 되돌릴 수 없다**
+            *slot += (value * self.velocity * 0.42) as f32;
         }
 
         if self.body_env <= 1e-5 && self.noise_env <= 1e-5 {

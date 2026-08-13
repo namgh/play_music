@@ -369,9 +369,42 @@ impl SynthVoice {
         self.freq_hz = freq_hz.clamp(8.0, self.sample_rate * 0.45);
         self.velocity = velocity.clamp(0.0, 1.0);
 
-        // 두 오실레이터의 위상을 다르게 시작해 디튠이 바로 들리게 한다
-        self.osc_a.reset(0.0);
-        self.osc_b.reset(0.37);
+        // **위상을 씨앗에서 뽑는다.** 두 가지를 동시에 지켜야 한다:
+        //
+        //   1. *결정적이어야 한다* — 안 그러면 같은 음이 앞에 무엇을 쳤느냐에 따라
+        //      달라지고, 중간부터 미리듣기하면 내보내기와 다른 소리가 난다
+        //   2. *음마다 어긋나야 한다* — 고정값으로 초기화했더니 동시에 울리는
+        //      보이스들의 위상이 정렬돼 피크가 그대로 더해졌다. **7트랙 합주가
+        //      +0.5dBFS 로 잘렸다** (그 전까지 통과하던 테스트다)
+        //
+        // 자유 난수는 1번을, 고정값은 2번을 깬다. 씨앗에서 뽑으면 둘 다 지킨다
+        // 음마다 다른 출발점 하나를 뽑고, 나머지는 **그 기준에서 상대적으로** 배치한다
+        let mut phase_rng = crate::string_voice::Lcg(self.noise | 1);
+        let base = phase_rng.next_unit();
+        self.osc_a.reset(base);
+        self.osc_b.reset((base + 0.37) % 1.0);
+
+        // **유니즌은 균등하게 편다.** 무작위로 흩으면 서로 겹치거나 상쇄돼서
+        // 음량이 씨앗마다 달라진다 (실측 0.22배 — "유니즌은 두꺼워지되 커지지
+        // 않는다"는 테스트가 깨졌다). 균등 배치는 결정적이면서 합이 일정하다
+        // **유니즌은 같은 위상에서 출발해 디튠으로 벌어진다.** 그게 슈퍼소가
+        // 두꺼워지는 원리다.
+        //
+        // 한 주기에 고르게 펴 봤더니 서로 상쇄돼서 7보이스가 1보이스의 0.27배로
+        // 작아졌다 — 주기 파형을 균등 분산하면 합이 거의 0 이 된다. 위상을 흩는
+        // 것은 *동시에 울리는 다른 음* 사이에 필요한 것이지 한 음 안에서가 아니다
+        for osc in self.unison.iter_mut() {
+            osc.reset(base);
+        }
+        self.sub.reset(base);
+        // **LFO 는 0 에서 시작한다.** 오실레이터와 달리 피크를 더하는 성분이 아니라
+        // 흔드는 성분이라 어긋나게 할 이유가 없고, 무작위로 시작하면 비브라토의
+        // 깊이·속도가 지정값과 안 맞는다 (그렇게 테스트를 깨뜨렸다)
+        self.lfo_phase = 0.0;
+        // DC 차단기 상태도 남으면 안 된다 — 앞 음의 잔여 DC 가 새 음의 첫 순간을
+        // 밀어 놓는다. 크지 않지만 "같은 음이 같은 소리"를 깨는 마지막 조각이었다
+        self.dc_x1 = 0.0;
+        self.dc_y1 = 0.0;
         self.filter.reset();
         self.oversampler.reset();
 
@@ -415,6 +448,13 @@ impl SynthVoice {
     }
 
     /// `out` 에 **더한다**
+    /// 노이즈 씨앗을 음마다 고정한다 — 줄·픽 노이즈와 같은 이유
+    /// (`string_voice::seed_excitation`). 자유 난수면 중간부터 미리듣기할 때
+    /// 내보내기와 다른 소리가 난다
+    pub fn seed_noise(&mut self, seed: u32) {
+        self.noise = (seed ^ 0x27d4_eb2f).wrapping_mul(0x9e37_79b9) | 1;
+    }
+
     pub fn process(&mut self, out: &mut [f32]) {
         if !self.active {
             return;
@@ -756,6 +796,54 @@ mod tests {
             assert!(
                 at_f > off * 5.0,
                 "{freq}Hz 에 에너지가 없다: {at_f} vs {off}"
+            );
+        }
+    }
+
+    /// **여유를 숫자로 남긴다.** 톱니는 하모닉이 무한히 뻗어 에일리어싱이
+    /// 가장 나기 쉬운 파형이라, 여기 값이 신스의 실질적인 한계다
+    #[test]
+    fn report_oscillator_aliasing_margin() {
+        for freq in [2093.0, 4186.0, 1046.5] {
+            let params = SynthParams {
+                waveform: Waveform::Saw,
+                cutoff_hz: 20000.0,
+                resonance: 0.0,
+                filter_env: 0.0,
+                attack_ms: 1.0,
+                decay_ms: 5000.0,
+                sustain: 1.0,
+                detune_cents: 0.0,
+                drive: 0.0,
+                release_ms: 200.0,
+                ..Default::default()
+            };
+            let banded = render(params, freq, 16384);
+            let naive = naive_saw(freq, 16384);
+            let fund = magnitude_at(&banded[2048..], freq);
+            let naive_fund = magnitude_at(&naive[2048..], freq);
+
+            // 접혀 들어오는 자리를 여러 개 본다
+            let mut worst = -200.0_f64;
+            let mut worst_naive = -200.0_f64;
+            for h in 12..24 {
+                let up = freq * h as f64;
+                if up <= 24000.0 {
+                    continue;
+                }
+                let folded = (48000.0 - up).abs();
+                if !(20.0..20000.0).contains(&folded) {
+                    continue;
+                }
+                let db =
+                    20.0 * (magnitude_at(&banded[2048..], folded) / fund).log10();
+                let nb =
+                    20.0 * (magnitude_at(&naive[2048..], folded) / naive_fund).log10();
+                worst = worst.max(db);
+                worst_naive = worst_naive.max(nb);
+            }
+            println!(
+                "  톱니 {freq:6.0}Hz : PolyBLEP {worst:6.1} dB  (대역제한 없으면 {worst_naive:6.1} dB)"
             );
         }
     }

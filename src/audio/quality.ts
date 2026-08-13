@@ -441,6 +441,61 @@ export function thdPlusN(
   };
 }
 
+/**
+ * 에일리어싱 — **기준 렌더와 견주어 잰다.**
+ *
+ * "하모닉이 아닌 곳의 최대 성분"으로 재려다 실패했다. 피아노의 비조화(의도한
+ * 설계)와 벨의 모달 부분음이 전부 에일리어싱으로 세어져서, 멀쩡한 악기가
+ * **+21dB** 로 읽혔다 — 기본파보다 에일리어싱이 크다는 물리적으로 불가능한 값이라
+ * 계기가 틀렸다는 것이 바로 드러났다.
+ *
+ * 그래서 방식을 바꿨다. 같은 소리를 **높은 표본율로도 렌더해** 두 스펙트럼을
+ * 견준다. 높은 쪽은 접힘이 없으므로, **낮은 쪽에만 있는 에너지가 곧 접힌 성분**이다.
+ * 비조화든 모달이든 양쪽에 똑같이 있으므로 저절로 상쇄된다.
+ *
+ * 반환은 기본파 대비 dB. 낮을수록 좋다.
+ */
+export function aliasingVsReferenceDb(
+  low: Float32Array,
+  lowRate: number,
+  reference: Float32Array,
+  referenceRate: number,
+  fundamentalHz: number,
+  { size = 32768, maxHz = 20000 } = {},
+): number {
+  const kind: WindowKind = 'blackman-harris';
+  const magLow = spectrum(low, size, kind);
+  // 기준 쪽은 표본율이 높으므로 같은 Hz 해상도가 되도록 창을 비례해서 키운다
+  const refSize = size * Math.round(referenceRate / lowRate);
+  const magRef = spectrum(reference, refSize, kind);
+
+  const lowBin = (hz: number) => (hz * size) / lowRate;
+  const refBin = (hz: number) => (hz * refSize) / referenceRate;
+
+  const fundLow = componentAmplitude(magLow, lowBin(fundamentalHz), 8, ENBW[kind]);
+  const fundRef = componentAmplitude(magRef, refBin(fundamentalHz), 8, ENBW[kind]);
+  if (fundLow <= EPS || fundRef <= EPS) return -Infinity;
+
+  // 두 렌더의 절대 크기가 다를 수 있으므로 기본파로 정규화해서 견준다
+  let worst = 0;
+  const binWidth = lowRate / size;
+  for (let k = Math.ceil(20 / binWidth); k < Math.min(magLow.length, maxHz / binWidth); k += 1) {
+    const hz = binToHz(k, lowRate, size);
+    const a = magLow[k]! / fundLow;
+    // 기준 쪽에서 같은 주파수 주변의 최대값 — 미세한 주파수 차이를 흡수한다
+    const c = Math.round(refBin(hz));
+    let b = 0;
+    for (let j = Math.max(0, c - 6); j <= Math.min(magRef.length - 1, c + 6); j += 1) {
+      b = Math.max(b, magRef[j]!);
+    }
+    b /= fundRef;
+    // 낮은 쪽에만 있는 만큼이 접힌 성분이다
+    const excess = a - b;
+    if (excess > worst) worst = excess;
+  }
+  return 20 * Math.log10(Math.max(worst, EPS));
+}
+
 /** 무음 구간의 잡음 바닥 (dBFS). 24bit 를 쓰는 의미가 여기 있다 */
 export function noiseFloorDbfs(x: Float32Array): number {
   return dbfs(rms(x));

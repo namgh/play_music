@@ -14,6 +14,7 @@ import assert from 'node:assert/strict';
 
 import {
   ENBW,
+  aliasingVsReferenceDb,
   attackMs,
   componentAmplitude,
   dbfs,
@@ -281,4 +282,72 @@ test('LUFS — 아주 짧은 소리도 값을 준다', () => {
   const v = integratedLufs([short, short], FS);
   assert.ok(Number.isFinite(v), `유한한 값이어야 하는데 ${v}`);
   assert.ok(v > -30 && v < 0, `그럴듯한 범위여야 하는데 ${v.toFixed(1)}`);
+});
+
+// --- 에일리어싱 --------------------------------------------------------------
+
+/** 대역 제한 없는 톱니 — **일부러 에일리어싱을 만든다** */
+function naiveSaw(hz: number, seconds: number, rate: number): Float32Array {
+  const n = Math.round(seconds * rate);
+  const x = new Float32Array(n);
+  let phase = 0;
+  const inc = hz / rate;
+  for (let i = 0; i < n; i += 1) {
+    x[i] = 2 * phase - 1;
+    phase += inc;
+    if (phase >= 1) phase -= 1;
+  }
+  return x;
+}
+
+/** 나이퀴스트 아래 하모닉만 더한 톱니 — 에일리어싱이 원리적으로 없다 */
+function bandlimitedSaw(hz: number, seconds: number, rate: number): Float32Array {
+  const n = Math.round(seconds * rate);
+  const x = new Float32Array(n);
+  const harmonics = Math.floor(rate / 2 / hz);
+  for (let h = 1; h <= harmonics; h += 1) {
+    const amp = 2 / (Math.PI * h);
+    for (let i = 0; i < n; i += 1) {
+      x[i]! += amp * Math.sin((2 * Math.PI * h * hz * i) / rate);
+    }
+  }
+  return x;
+}
+
+test('에일리어싱 — 대역제한 톱니는 깨끗하다고 읽는다', () => {
+  // **정답을 아는 신호.** 하모닉을 나이퀴스트 아래로만 쌓았으니 접힌 성분이 없다
+  const hz = 2000;
+  const low = bandlimitedSaw(hz, 1, FS);
+  const ref = bandlimitedSaw(hz, 1, FS * 4);
+  const db = aliasingVsReferenceDb(low, FS, ref, FS * 4, hz);
+  assert.ok(db < -60, `깨끗한 신호인데 ${db.toFixed(1)}dB 로 읽혔다`);
+});
+
+test('에일리어싱 — 순진한 톱니의 접힘을 잡아낸다', () => {
+  // 같은 파형을 4배 표본율로 만들면 접힘이 훨씬 적다. 그 차이가 곧 에일리어싱이다
+  const hz = 2000;
+  const low = naiveSaw(hz, 1, FS);
+  const ref = naiveSaw(hz, 1, FS * 4);
+  const db = aliasingVsReferenceDb(low, FS, ref, FS * 4, hz);
+  assert.ok(db > -40, `접힘이 큰 신호인데 ${db.toFixed(1)}dB 로 읽혔다`);
+});
+
+test('에일리어싱 — 비조화 부분음을 접힘으로 오해하지 않는다', () => {
+  // **여기서 이전 계기가 틀렸다.** 피아노의 비조화(의도한 설계)와 벨의 모달
+  // 부분음을 전부 에일리어싱으로 세어서, 멀쩡한 악기가 +21dB 로 읽혔다 —
+  // 기본파보다 접힘이 크다는 물리적으로 불가능한 값이었다
+  const f0 = 220;
+  const make = (rate: number) => {
+    const n = Math.round(1 * rate);
+    const x = new Float32Array(n);
+    // 비조화 부분음: 1, 2.04, 3.13, 4.28배 (피아노의 강성 분산과 비슷하게)
+    for (const [ratio, amp] of [[1, 0.5], [2.04, 0.4], [3.13, 0.3], [4.28, 0.2]]) {
+      for (let i = 0; i < n; i += 1) {
+        x[i]! += amp * Math.sin((2 * Math.PI * f0 * ratio * i) / rate);
+      }
+    }
+    return x;
+  };
+  const db = aliasingVsReferenceDb(make(FS), FS, make(FS * 4), FS * 4, f0);
+  assert.ok(db < -60, `비조화 부분음을 접힘으로 셌다: ${db.toFixed(1)}dB`);
 });
