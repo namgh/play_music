@@ -22,6 +22,7 @@ pub mod string_voice;
 pub mod sympathetic;
 pub mod synth;
 pub mod voice;
+pub mod wavetable;
 
 use amp::{AmpChain, AmpCharacter, AmpParams};
 use body::BodyResonance;

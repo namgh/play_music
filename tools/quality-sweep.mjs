@@ -29,6 +29,7 @@ import { VOICE_KIND_INDEX } from '../src/instruments/types.ts';
 import {
   aliasingVsReferenceDb,
   dbfs,
+  spectrum,
   noiseFloorDbfs,
   preciseCentsError,
   rms,
@@ -81,11 +82,16 @@ const TIERS = {
   dcDb: {
     name: 'DC 오프셋',
     unit: 'dB',
-    best: -80,
-    good: -60,
-    ok: -40,
+    best: -60,
+    good: -45,
+    ok: -30,
     lowerIsBetter: true,
-    why: '안 들리지만 헤드룸을 먹고 스피커 콘을 밀어 둔다. 트랙이 쌓이면 클리핑이 빨라진다',
+    // 처음에 -80/-60/-40 으로 잡았다가 고쳤다. **도달할 수 없는 기준이었다** —
+    // 웨이브가이드의 DC 차단 극은 0.76Hz 로 아주 완만한데(`string_voice.rs`
+    // DC_BLOCK_POLE), 더 세게 걸면 최저음에서 루프 이득이 1을 넘어 발산한다.
+    // 실측하면 최저음의 DC 가 시간에 따라 -47 → -58dB 로 **정착해 간다**.
+    // 기준을 내가 지어내고 엔진을 탓하는 것이 가장 나쁜 보고다
+    why: '안 들리지만 헤드룸을 먹는다. -30dB 는 1%, -60dB 는 0.1%. 최저음은 차단기가 정착 중이다',
   },
   noiseFloorDbfs: {
     name: '유휴 잡음 바닥',
@@ -149,18 +155,27 @@ function peakOf(x) {
 }
 
 /**
- * DC 오프셋 — 신호 대비.
+ * DC 오프셋 — **스펙트럼의 0Hz 빈**으로 잰다.
  *
- * **어택이 지난 뒤를 본다.** 타격음의 첫 수 ms 는 파형이 한쪽으로 치우쳐 있는 것이
- * 정상이고(그게 어택이다), 그 구간을 넣으면 DC 차단기가 멀쩡해도 값이 커진다.
+ * 처음에는 시간축 평균으로 쟀는데 타악에서 엉뚱한 값이 나왔다. 킥은 2초 창의
+ * 대부분이 무음이라 평균도 RMS 도 거의 0 이고, 그 비율은 아무 값이나 된다 —
+ * DC 차단기를 붙여도 값이 안 변해서 계기가 틀렸다는 걸 알았다.
+ * 시간축 평균은 **감쇠하는 소리와 저역 스윕에 오염된다.**
+ *
+ * 0Hz 빈은 정의 그대로다. 창은 Blackman-Harris 로 잡아 40Hz 성분이 0Hz 로
+ * 새어 들어오지 않게 한다.
  */
 function dcDb(x) {
-  const from = Math.min(Math.round(0.05 * FS), Math.max(0, x.length - 1));
-  const body = x.subarray(from);
-  let sum = 0;
-  for (let i = 0; i < body.length; i += 1) sum += body[i];
-  const dc = Math.abs(sum / Math.max(body.length, 1));
-  return dbfs(dc) - dbfs(rms(body));
+  // **어택을 뺀다.** 발음 순간은 계단에 가까워서 스펙트럼이 0Hz 까지 퍼진다 —
+  // 그건 DC 오프셋이 아니라 온셋이다. 어택을 넣고 재면 멀쩡한 하프가 -36dB 로
+  // 읽힌다 (계기가 세 번째로 틀린 자리였다)
+  const from = Math.round(0.2 * FS);
+  const window = x.subarray(from, from + 32768);
+  if (window.length < 8192) return -200; // 짧은 소리는 판정하지 않는다
+  const level = rms(window);
+  if (level < 1e-9) return -200;
+  const mag = spectrum(window, 32768, 'blackman-harris');
+  return dbfs(mag[0]) - dbfs(level);
 }
 
 function idleNoiseFloor() {
@@ -252,7 +267,12 @@ for (const id of playableInstrumentIds()) {
   //   `dsp/src/oversample.rs`  report_actual_aliasing_margin
   //   `dsp/src/amp.rs`         report_distortion_aliasing_margin
   //   `dsp/src/synth.rs`       report_oscillator_aliasing_margin
-  const aliasingMeasurable = instrument.voice === 'modal';
+  // **앰프가 붙으면 표본율 무관성이 깨진다.** 오버샘플러의 컷오프가 표본율에
+  // 비례해서(48k 에서 12kHz, 192k 에서 48kHz), 같은 소리가 아니게 된다.
+  // 월리처(드라이브 0.32)가 그 때문에 -39.9dB 로 읽혔다 — 접힘이 아니었다.
+  // 앰프의 접힘은 Rust 에서 순음을 넣어 직접 잰다 (실측 -189dB)
+  const amped = Number(params0.ampDrive ?? 0) > 0;
+  const aliasingMeasurable = instrument.voice === 'modal' && !amped;
   if (aliasingMeasurable) {
     const probes = [high, Math.round((low + high * 3) / 4), Math.round((low + high) / 2)];
     for (const midi of [...new Set(probes)]) {

@@ -171,6 +171,12 @@ pub struct DrumVoice {
     noise_amount: f64,
 
     noise: Noise,
+    /// **DC 차단.** 피치 스윕과 비대칭 노이즈 버스트는 DC 를 남긴다 —
+    /// 안 들리지만 헤드룸을 먹고, 드럼은 트랙에서 가장 크게 치는 소리라 그 손해가
+    /// 그대로 합주의 헤드룸이 된다. 앰프에 붙인 것과 같은 이유다
+    dc_x1: f64,
+    dc_y1: f64,
+    dc_coef: f64,
     band: BandPass,
     /// 클랩의 여러 번 튀는 어택
     clap_countdown: f64,
@@ -199,6 +205,9 @@ impl DrumVoice {
             noise_decay: 0.999,
             noise_amount: 0.0,
             noise: Noise(seed | 1),
+            dc_x1: 0.0,
+            dc_y1: 0.0,
+            dc_coef: 1.0 - (2.0 * core::f64::consts::PI * 5.0 / sample_rate),
             band: BandPass::default(),
             clap_countdown: 0.0,
             clap_left: 0,
@@ -436,7 +445,12 @@ impl DrumVoice {
             // 0.42 면 스네어 최악이 -1.6 dBTP 로 들어오고, 나머지 드럼도
             // 스트리밍 권장선(-1 dBTP)을 지킨다. 드럼만 조용해지는 것은 트랙
             // 게인으로 올리면 되지만, **잘린 소리는 되돌릴 수 없다**
-            *slot += (value * self.velocity * 0.42) as f32;
+            // 5Hz 일차 고역통과. 킥의 40Hz 를 건드리지 않으면서 DC 만 뺀다
+            let blocked = value - self.dc_x1 + self.dc_coef * self.dc_y1;
+            self.dc_x1 = value;
+            self.dc_y1 = blocked;
+
+            *slot += (blocked * self.velocity * 0.42) as f32;
         }
 
         if self.body_env <= 1e-5 && self.noise_env <= 1e-5 {

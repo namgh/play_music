@@ -284,6 +284,11 @@ pub struct AmpChain {
     params: AmpParams,
     /// 오버샘플러에 넘길 작업 버퍼 (오디오 경로에서 할당하지 않는다)
     scratch: Vec<f32>,
+    /// **DC 차단.** 비대칭 왜곡은 DC 를 만든다 — 없으면 월리처(드라이브 0.32)의
+    /// DC 가 신호 대비 -40dB 까지 올라갔다. 안 들리지만 헤드룸을 먹고 스피커 콘을
+    /// 한쪽으로 밀어 둬서, 트랙이 쌓일수록 클리핑이 빨라진다
+    dc_x1: f64,
+    dc_y1: f64,
 }
 
 impl AmpChain {
@@ -296,6 +301,8 @@ impl AmpChain {
             cabinet: Cabinet::default(),
             params: AmpParams::default(),
             scratch: vec![0.0; crate::oversample::MAX_FRAMES],
+            dc_x1: 0.0,
+            dc_y1: 0.0,
         };
         chain.cabinet.set(sample_rate);
         chain.set_params(&AmpParams::default(), 220.0);
@@ -342,12 +349,21 @@ impl AmpChain {
         // 톤스택 + 캐비닛 + 출력 레벨 (모두 선형)
         let level = self.params.level.clamp(0.0, 1.0);
         let use_cabinet = self.params.cabinet;
+        // DC 차단 계수. 20Hz 부근 일차 고역통과 — 저역을 깎지 않으면서 DC 만 없앤다.
+        // 베이스의 41Hz 를 건드리면 안 되므로 그보다 훨씬 아래에 둔다
+        let r = 1.0 - (2.0 * core::f64::consts::PI * 5.0 / self.sample_rate);
+
         for sample in buffer.iter_mut() {
             let mut y = self.tone.process(*sample as f64);
             if use_cabinet {
                 y = self.cabinet.process(y);
             }
-            *sample = (y * level) as f32;
+            // **비선형 뒤에 DC 를 뺀다.** 톤스택·캐비닛 뒤에 두는 이유는 그것들도
+            // 저역을 통과시키기 때문이다 — 앞에 두면 뒤에서 다시 생긴다
+            let blocked = y - self.dc_x1 + r * self.dc_y1;
+            self.dc_x1 = y;
+            self.dc_y1 = blocked;
+            *sample = (blocked * level) as f32;
         }
 
         // scratch 는 지금 쓰이지 않지만, 나중에 캐비닛 IR 컨볼루션이 들어올 자리다

@@ -11,6 +11,8 @@
 
 use crate::denormal::flush;
 use crate::oversample::Oversampler;
+use crate::wavetable::{TableWave, WaveTableSet};
+use std::sync::Arc;
 use crate::smooth::{times, Smoothed};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -34,20 +36,6 @@ impl Waveform {
 
 /// PolyBLEP 보정항.
 ///
-/// `t` 는 불연속 지점까지의 위상 거리(0~1), `dt` 는 한 샘플당 위상 증가.
-/// 불연속 앞뒤 한 샘플씩만 손본다.
-fn poly_blep(t: f64, dt: f64) -> f64 {
-    if t < dt {
-        let x = t / dt;
-        x + x - x * x - 1.0
-    } else if t > 1.0 - dt {
-        let x = (t - 1.0) / dt;
-        x * x + x + x + 1.0
-    } else {
-        0.0
-    }
-}
-
 /// 대역제한 오실레이터 하나
 #[derive(Clone, Copy, Debug, Default)]
 struct Oscillator {
@@ -62,30 +50,19 @@ impl Oscillator {
         self.integrator = 0.0;
     }
 
-    fn next(&mut self, waveform: Waveform, dt: f64) -> f64 {
+    /// **대역제한 웨이브테이블에서 읽는다** (`wavetable.rs`).
+    ///
+    /// 예전에는 순진한 파형에 PolyBLEP 보정을 얹었다. 싸지만 접힘이 -39dB 까지
+    /// 밖에 안 내려갔고, 그건 가청 대역이라 솔로 리드 고음에서 들렸다.
+    /// 테이블은 애초에 나이퀴스트 위 하모닉을 담지 않으므로 접힐 것이 없다.
+    fn next(&mut self, waveform: Waveform, dt: f64, freq_hz: f64, tables: &WaveTableSet) -> f64 {
         let t = self.phase;
         let value = match waveform {
+            // 사인은 테이블이 필요 없다 — 해석적으로 정확하고 하모닉이 없다
             Waveform::Sine => (2.0 * core::f64::consts::PI * t).sin(),
-            Waveform::Saw => {
-                // 순진한 톱니: 2t-1. 불연속은 t=0 에 있다
-                let naive = 2.0 * t - 1.0;
-                naive - poly_blep(t, dt)
-            }
-            Waveform::Square => {
-                let naive = if t < 0.5 { 1.0 } else { -1.0 };
-                // 불연속이 t=0 과 t=0.5 두 곳에 있다
-                let half = (t + 0.5) % 1.0;
-                naive + poly_blep(t, dt) - poly_blep(half, dt)
-            }
-            Waveform::Triangle => {
-                // 대역제한된 사각파를 적분하면 삼각파가 된다.
-                // 적분이 DC 를 쌓으므로 살짝 새는 적분기를 쓴다
-                let naive = if t < 0.5 { 1.0 } else { -1.0 };
-                let half = (t + 0.5) % 1.0;
-                let square = naive + poly_blep(t, dt) - poly_blep(half, dt);
-                self.integrator = self.integrator * 0.9995 + square * dt * 4.0;
-                self.integrator
-            }
+            Waveform::Saw => tables.get(TableWave::Saw).sample(freq_hz, t),
+            Waveform::Square => tables.get(TableWave::Square).sample(freq_hz, t),
+            Waveform::Triangle => tables.get(TableWave::Triangle).sample(freq_hz, t),
         };
 
         self.phase += dt;
@@ -327,6 +304,8 @@ pub struct SynthVoice {
     lfo_phase: f64,
     /// 노이즈용 결정론적 난수
     noise: u32,
+    /// 대역제한 테이블. **표본율별로 한 벌을 보이스들이 나눠 쓴다**
+    tables: Arc<WaveTableSet>,
     envelope: Envelope,
     filter: StateVariableFilter,
     oversampler: Oversampler,
@@ -341,6 +320,8 @@ impl SynthVoice {
     pub fn new(sample_rate: f64) -> Self {
         Self {
             sample_rate,
+            // 표본율이 같으면 이미 만든 것을 나눠 쓴다 (`wavetable::shared`)
+            tables: crate::wavetable::shared(sample_rate),
             dc_x1: 0.0,
             dc_y1: 0.0,
             osc_a: Oscillator::default(),
@@ -500,10 +481,10 @@ impl SynthVoice {
             let dt_a = (freq * (-half / 1200.0).exp2() / self.sample_rate).min(0.49);
             let dt_b = (freq * (half / 1200.0).exp2() / self.sample_rate).min(0.49);
 
-            let mut raw = self.osc_a.next(waveform, dt_a);
+            let mut raw = self.osc_a.next(waveform, dt_a, dt_a * self.sample_rate, &self.tables);
             let mut voices = 1.0;
             if use_second {
-                raw += self.osc_b.next(waveform, dt_b);
+                raw += self.osc_b.next(waveform, dt_b, dt_b * self.sample_rate, &self.tables);
                 voices += 1.0;
             }
 
@@ -514,7 +495,7 @@ impl SynthVoice {
                     .zip(unison_offsets[..unison_count].iter())
                 {
                     let dt = (freq * (cents / 1200.0).exp2() / self.sample_rate).min(0.49);
-                    raw += osc.next(waveform, dt);
+                    raw += osc.next(waveform, dt, dt * self.sample_rate, &self.tables);
                     voices += 1.0;
                 }
             }
@@ -523,7 +504,7 @@ impl SynthVoice {
             // 서브 — 한 옥타브 아래 사인. 저역을 받쳐 준다
             if sub_level > 0.0 {
                 let dt = (freq * 0.5 / self.sample_rate).min(0.49);
-                raw += self.sub.next(Waveform::Sine, dt) * sub_level;
+                raw += self.sub.next(Waveform::Sine, dt, dt * self.sample_rate, &self.tables) * sub_level;
             }
 
             // 노이즈 — 어택의 바람 소리
@@ -801,7 +782,9 @@ mod tests {
     }
 
     /// **여유를 숫자로 남긴다.** 톱니는 하모닉이 무한히 뻗어 에일리어싱이
-    /// 가장 나기 쉬운 파형이라, 여기 값이 신스의 실질적인 한계다
+    /// 가장 나기 쉬운 파형이라, 여기 값이 신스의 실질적인 한계다.
+    ///
+    /// PolyBLEP 때 -39dB → 웨이브테이블로 **-107dB**
     #[test]
     fn report_oscillator_aliasing_margin() {
         for freq in [2093.0, 4186.0, 1046.5] {
@@ -843,7 +826,7 @@ mod tests {
                 worst_naive = worst_naive.max(nb);
             }
             println!(
-                "  톱니 {freq:6.0}Hz : PolyBLEP {worst:6.1} dB  (대역제한 없으면 {worst_naive:6.1} dB)"
+                "  톱니 {freq:6.0}Hz : 테이블 {worst:7.1} dB  (대역제한 없으면 {worst_naive:6.1} dB)"
             );
         }
     }
@@ -1031,4 +1014,100 @@ mod tests {
             "레조넌스가 컷오프를 강조하지 않는다: {flat_level:.5} vs {peaky_level:.5}"
         );
     }
+}
+
+#[cfg(test)]
+mod wavetable_aliasing_tests {
+    use super::*;
+
+    const FS: f64 = 48000.0;
+
+    /// 자기 헬퍼를 갖는다 — 다른 테스트 모듈의 비공개 함수에 기대지 않는다
+    fn render_local(p: SynthParams, freq: f64, n: usize) -> Vec<f32> {
+        let mut voice = SynthVoice::new(FS);
+        voice.note_on(freq, 1.0, &p);
+        let mut out = vec![0.0f32; n];
+        for chunk in out.chunks_mut(256) {
+            voice.process(chunk);
+        }
+        out
+    }
+
+    /// 한 주파수의 진폭.
+    ///
+    /// **창을 반드시 씌운다.** 창 없이 재면 기본파의 누설이 모든 탐침 주파수에
+    /// -56dB 쯤의 바닥을 깔아서, 실제로 -107dB 인 신호가 -56dB 로 읽힌다.
+    /// Blackman-Harris 는 사이드로브가 -92dB 라 -90dB 판정에 쓸 수 있다
+    fn magnitude(signal: &[f32], hz: f64) -> f64 {
+        let n = signal.len();
+        let w = 2.0 * core::f64::consts::PI * hz / FS;
+        let (mut re, mut im, mut norm) = (0.0, 0.0, 0.0);
+        for (i, v) in signal.iter().enumerate() {
+            let t = 2.0 * core::f64::consts::PI * i as f64 / n as f64;
+            let window = 0.35875 - 0.48829 * t.cos() + 0.14128 * (2.0 * t).cos()
+                - 0.01168 * (3.0 * t).cos();
+            let sample = *v as f64 * window;
+            re += sample * (w * i as f64).cos();
+            im -= sample * (w * i as f64).sin();
+            norm += window;
+        }
+        2.0 * (re * re + im * im).sqrt() / norm.max(1.0)
+    }
+
+    fn params(waveform: Waveform) -> SynthParams {
+        SynthParams {
+            waveform,
+            cutoff_hz: 20000.0,
+            resonance: 0.0,
+            filter_env: 0.0,
+            attack_ms: 1.0,
+            decay_ms: 5000.0,
+            sustain: 1.0,
+            detune_cents: 0.0,
+            drive: 0.0,
+            release_ms: 200.0,
+            ..Default::default()
+        }
+    }
+
+    /// 하모닉이 아닌 자리에 남은 최대 성분 (기본파 대비 dB).
+    ///
+    /// 대역제한 파형은 나이퀴스트 아래 하모닉만 갖는다. 그 자리를 전부 빼고
+    /// 남은 것이 곧 **접힘 + 보간 오차**다
+    fn worst_alias_db(waveform: Waveform, freq: f64) -> f64 {
+        let rendered = render_local(params(waveform), freq, 16384);
+        let analyzed = &rendered[2048..];
+        let fundamental = magnitude(analyzed, freq);
+
+        let mut worst: f64 = -200.0;
+        // 하모닉에서 충분히 떨어진 자리들만 훑는다
+        let mut probe = 100.0;
+        while probe < FS * 0.5 - 100.0 {
+            let nearest = (probe / freq).round().max(1.0) * freq;
+            if (probe - nearest).abs() > freq * 0.25 {
+                let db = 20.0 * (magnitude(analyzed, probe) / fundamental).log10();
+                worst = worst.max(db);
+            }
+            probe += 97.0; // 하모닉과 어긋나는 간격으로 훑는다
+        }
+        worst
+    }
+
+    /// **최상 기준은 -90dB** (`SOUND_QUALITY.md`). 24bit 잡음에 묻히는 수준이다.
+    ///
+    /// PolyBLEP 은 -39dB 였다 — 통과 기준(-60)은 넘었지만 가청 대역이라
+    /// 솔로 리드 고음에서 들렸다
+    #[test]
+    fn every_waveform_is_bandlimited_to_best_tier() {
+        for waveform in [Waveform::Saw, Waveform::Square, Waveform::Triangle] {
+            for freq in [1046.5, 2093.0, 3520.0, 4186.0] {
+                let db = worst_alias_db(waveform, freq);
+                assert!(
+                    db < -90.0,
+                    "{waveform:?} {freq}Hz 에일리어싱 {db:.1}dB (최상 기준 -90)"
+                );
+            }
+        }
+    }
+
 }
