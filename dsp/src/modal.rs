@@ -151,6 +151,14 @@ pub struct ModalVoice {
     count: usize,
     active: bool,
     gain: Smoothed,
+    /// **DC 차단.** 감쇠하는 사인은 수학적으로 DC 가 0 이 아니다 —
+    /// ∫e^(-at)sin(ωt)dt = ω/(a²+ω²) 이고, 빨리 죽는 모드일수록 크다.
+    /// 안 들리지만 헤드룸을 먹는다. 앰프·드럼에 붙인 것과 같은 이유다
+    dc_x1: f64,
+    dc_y1: f64,
+    dc_x2: f64,
+    dc_y2: f64,
+    dc_coef: f64,
 }
 
 impl ModalVoice {
@@ -160,6 +168,12 @@ impl ModalVoice {
             modes: [Mode::default(); MAX_MODES],
             count: 0,
             active: false,
+            dc_x1: 0.0,
+            dc_y1: 0.0,
+            dc_x2: 0.0,
+            dc_y2: 0.0,
+            // 5Hz 일차 고역통과. 가장 낮은 모달 악기(로즈 저음 ~55Hz)도 안 건드린다
+            dc_coef: 1.0 - (2.0 * core::f64::consts::PI * 5.0 / sample_rate),
             gain: Smoothed::new(1.0, times::GAIN_MS, sample_rate),
         }
     }
@@ -169,6 +183,10 @@ impl ModalVoice {
     }
 
     pub fn note_on(&mut self, freq_hz: f64, velocity: f64, params: &ModalParams) {
+        self.dc_x1 = 0.0;
+        self.dc_y1 = 0.0;
+        self.dc_x2 = 0.0;
+        self.dc_y2 = 0.0;
         let table = params.material.modes();
         let nyquist = self.sample_rate * 0.49;
         let hardness = params.strike_hardness.clamp(0.0, 1.0);
@@ -243,6 +261,12 @@ impl ModalVoice {
     pub fn reset(&mut self) {
         self.count = 0;
         self.active = false;
+        // 상태를 남기면 같은 음이 앞에 친 것에 따라 달라진다
+        // (`reproducibility.test.ts` 가 앰프·드럼에서 그걸 잡았다)
+        self.dc_x1 = 0.0;
+        self.dc_y1 = 0.0;
+        self.dc_x2 = 0.0;
+        self.dc_y2 = 0.0;
     }
 
     /// `out` 에 **더한다**
@@ -256,7 +280,16 @@ impl ModalVoice {
             for mode in self.modes[..self.count].iter_mut() {
                 sum += mode.advance();
             }
-            *sample += sum as f32;
+            // **2차로 건다** (1차 두 단). 감쇠하는 사인의 DC 는 정적 오프셋이 아니라
+            // 0Hz 부근에 퍼진 성분이라, 기울기가 가팔라야 더 깎인다.
+            // 1차만으로는 -46dB 였다
+            let stage1 = sum - self.dc_x1 + self.dc_coef * self.dc_y1;
+            self.dc_x1 = sum;
+            self.dc_y1 = stage1;
+            let blocked = stage1 - self.dc_x2 + self.dc_coef * self.dc_y2;
+            self.dc_x2 = stage1;
+            self.dc_y2 = blocked;
+            *sample += blocked as f32;
         }
 
         if self.modes[..self.count].iter().all(Mode::silent) {

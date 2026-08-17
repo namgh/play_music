@@ -155,27 +155,101 @@ function peakOf(x) {
 }
 
 /**
- * DC 오프셋 — **스펙트럼의 0Hz 빈**으로 잰다.
+ * DC 오프셋 — **소리가 완전히 잦아들 때까지 렌더해 전 구간 평균을 낸다.**
  *
- * 처음에는 시간축 평균으로 쟀는데 타악에서 엉뚱한 값이 나왔다. 킥은 2초 창의
- * 대부분이 무음이라 평균도 RMS 도 거의 0 이고, 그 비율은 아무 값이나 된다 —
- * DC 차단기를 붙여도 값이 안 변해서 계기가 틀렸다는 걸 알았다.
- * 시간축 평균은 **감쇠하는 소리와 저역 스윕에 오염된다.**
+ * 이 측정은 다섯 번 틀렸다. 마지막 형태만 맞다.
  *
- * 0Hz 빈은 정의 그대로다. 창은 Blackman-Harris 로 잡아 40Hz 성분이 0Hz 로
- * 새어 들어오지 않게 한다.
+ *   1. 시간축 평균, 2초 창        → 킥 -40dB (감쇠한 소리는 창 대부분이 무음)
+ *   2. 소리 나는 구간만            → -42dB
+ *   3. 스펙트럼 0Hz 빈             → 하프 -36dB
+ *   4. 어택 제외 + 0Hz 빈          → 하프 -36dB
+ *   5. 기본파의 정수 주기로 자름     → 로즈 -46dB (**모달은 부분음이 비조화라
+ *      기본파 주기로 잘라도 안 지워진다.** 직접 재면 -92dB 였다)
+ *
+ * **양 끝이 0 이면 평균이 정확하다.** 잘라서 생기는 오차가 아예 없다.
+ * 그래서 소리가 -80dB 아래로 떨어질 때까지 렌더한 뒤 통째로 평균을 낸다.
+ * 그 안에 안 끝나면 **숫자를 지어내지 않고 판정하지 않는다.**
  */
-function dcDb(x) {
-  // **어택을 뺀다.** 발음 순간은 계단에 가까워서 스펙트럼이 0Hz 까지 퍼진다 —
-  // 그건 DC 오프셋이 아니라 온셋이다. 어택을 넣고 재면 멀쩡한 하프가 -36dB 로
-  // 읽힌다 (계기가 세 번째로 틀린 자리였다)
-  const from = Math.round(0.2 * FS);
-  const window = x.subarray(from, from + 32768);
-  if (window.length < 8192) return -200; // 짧은 소리는 판정하지 않는다
-  const level = rms(window);
-  if (level < 1e-9) return -200;
-  const mag = spectrum(window, 32768, 'blackman-harris');
-  return dbfs(mag[0]) - dbfs(level);
+function dcDb(render, maxSec = 10) {
+  for (const seconds of [2, 5, 10]) {
+    if (seconds > maxSec) break;
+    const x = render(seconds);
+    const peak = peakOf(x);
+    if (peak < 1e-9) return -200;
+
+    // 끝이 충분히 조용한가 — 아니면 더 길게 렌더한다
+    const tail = rms(x.subarray(x.length - Math.round(0.2 * FS)));
+    if (tail > peak * 1e-4) continue;
+
+    let sum = 0;
+    for (let i = 0; i < x.length; i += 1) sum += x[i];
+    const level = rms(x);
+    if (level < 1e-9) return -200;
+    return dbfs(Math.abs(sum / x.length)) - dbfs(level);
+  }
+  return null; // 판정하지 않는다
+}
+
+/**
+ * **계기 자체를 매 실행 검증한다.**
+ *
+ * DC 가 0인 사인이 0 으로 읽히지 않으면 그 뒤 숫자는 전부 의미가 없다.
+ * `spike/m0-karplus/test-pitch.mjs` 가 음정 측정기에 하는 것과 같은 장치다.
+ */
+function verifyDcMeter() {
+  const worst = [];
+  // 감쇠하는 사인 — 양 끝이 0 이라 평균이 정확해야 한다
+  for (const hz of [32.7, 55, 220, 440]) {
+    const read = dcDb((seconds) => {
+      const n = Math.round(seconds * FS);
+      const x = new Float32Array(n);
+      // 고역통과로 DC 를 정확히 0 으로 만든다 (평균을 빼면 꼬리에 오프셋이 남는다)
+      const r = 1 - (2 * Math.PI * 5) / FS;
+      let x1 = 0;
+      let y1 = 0;
+      for (let i = 0; i < n; i += 1) {
+        const t = i / FS;
+        const raw = 0.5 * Math.sin((2 * Math.PI * hz * i) / FS) * Math.exp(-t * 3);
+        const y = raw - x1 + r * y1;
+        x1 = raw;
+        y1 = y;
+        x[i] = y;
+      }
+      return x;
+    });
+    if (read === null || read > -90) worst.push(`${hz}Hz → ${read === null ? '판정불가' : read.toFixed(1) + 'dB'}`);
+  }
+  // 감쇠 버스트 — 드럼처럼 끝나는 경우. 피치가 스윕해도 DC 는 0 이어야 한다
+  {
+    // **감쇠 사인은 수학적으로 DC 가 0 이 아니다** (∫e^(-at)sin(ωt)dt = ω/(a²+ω²)).
+    // 그래서 그대로 쓰면 계기가 아니라 신호를 재게 된다.
+    //
+    // 평균을 빼는 것으로는 안 된다 — 꼬리에 상수 오프셋이 남고 **그게 곧 DC** 다.
+    // DC 없는 버스트는 고역통과로만 만들어진다(실제 드럼의 DC 차단기가 하는 일).
+    const n = Math.round(2 * FS);
+    const burst = new Float32Array(n);
+    let phase = 0;
+    for (let i = 0; i < n; i += 1) {
+      const t = i / FS;
+      const hz = 120 * Math.exp(-t * 8) + 45; // 킥처럼 아래로 쓸어내린다
+      phase += (2 * Math.PI * hz) / FS;
+      burst[i] = Math.sin(phase) * Math.exp(-t * 12);
+    }
+    // 5Hz 일차 고역통과 — DC 이득이 정확히 0 이다
+    const r = 1 - (2 * Math.PI * 5) / FS;
+    let x1 = 0;
+    let y1 = 0;
+    for (let i = 0; i < n; i += 1) {
+      const y = burst[i] - x1 + r * y1;
+      x1 = burst[i];
+      y1 = y;
+      burst[i] = y;
+    }
+
+    const read = dcDb(() => burst);
+    if (read === null || read > -90) worst.push(`감쇠 버스트 → ${read === null ? '판정불가' : read.toFixed(1) + 'dB'}`);
+  }
+  return worst;
 }
 
 function idleNoiseFloor() {
@@ -219,6 +293,7 @@ for (const id of playableInstrumentIds()) {
     truePeakDbtp: -Infinity,
     truePeakAt: null,
     dcDb: -Infinity,
+    dcAt: null,
     nonFinite: [],
   };
 
@@ -241,8 +316,11 @@ for (const id of playableInstrumentIds()) {
         worst.truePeakDbtp = tp;
         worst.truePeakAt = `midi=${midi} vel=${vel}`;
       }
-      const dc = dcDb(x);
-      if (dc > worst.dcDb) worst.dcDb = dc;
+      const dc = dcDb((seconds) => renderNote(instrument, midi, seconds, vel));
+      if (dc !== null && dc > worst.dcDb) {
+        worst.dcDb = dc;
+        worst.dcAt = `midi=${midi} vel=${vel}`;
+      }
 
       if (tonal) {
         const hz = midiToHz(midi);
@@ -320,6 +398,13 @@ const pad = (s, n) => String(s).padEnd(n);
 const numCol = (v, d, n = 10) =>
   (v === null || !Number.isFinite(v) ? '—' : v.toFixed(d)).padStart(n);
 
+const meterProblems = verifyDcMeter();
+console.log('');
+console.log(
+  meterProblems.length
+    ? `⚠ DC 측정기 자체 검증 실패: ${meterProblems.join(', ')} (0 이어야 한다)`
+    : '계기 자체 검증: DC 가 없는 사인이 -90dB 이하로 읽힌다 ✓',
+);
 console.log('');
 console.log(`전수 측정 — 악기 ${results.length}개 · ${noteCount}음 (${STEP}반음 간격 × 세기 3종)`);
 console.log('='.repeat(100));
@@ -359,7 +444,7 @@ const summary = [
   ['pitchCents', Math.abs(worstPitch.pitchCents), `${worstPitch.instrument} ${worstPitch.pitchAt}`],
   ['aliasingDb', worstAlias.aliasingDb, `${worstAlias.instrument} ${worstAlias.aliasingAt}`],
   ['truePeakDbtp', worstTp.truePeakDbtp, `${worstTp.instrument} ${worstTp.truePeakAt}`],
-  ['dcDb', worstDc.dcDb, worstDc.instrument],
+  ['dcDb', worstDc.dcDb, `${worstDc.instrument} ${worstDc.dcAt ?? ''}`],
   ['noiseFloorDbfs', idleNoise, '음을 끈 상태'],
 ];
 

@@ -176,6 +176,8 @@ pub struct DrumVoice {
     /// 그대로 합주의 헤드룸이 된다. 앰프에 붙인 것과 같은 이유다
     dc_x1: f64,
     dc_y1: f64,
+    dc_x2: f64,
+    dc_y2: f64,
     dc_coef: f64,
     band: BandPass,
     /// 클랩의 여러 번 튀는 어택
@@ -207,6 +209,8 @@ impl DrumVoice {
             noise: Noise(seed | 1),
             dc_x1: 0.0,
             dc_y1: 0.0,
+            dc_x2: 0.0,
+            dc_y2: 0.0,
             dc_coef: 1.0 - (2.0 * core::f64::consts::PI * 5.0 / sample_rate),
             band: BandPass::default(),
             clap_countdown: 0.0,
@@ -242,6 +246,8 @@ impl DrumVoice {
         // 음이라도 앞에 무엇을 쳤느냐에 따라 달라진다 (`reproducibility.test.ts`)
         self.dc_x1 = 0.0;
         self.dc_y1 = 0.0;
+        self.dc_x2 = 0.0;
+        self.dc_y2 = 0.0;
 
         let rate = |sec: f64| (-1.0 / (sec.max(0.002) * self.sample_rate)).exp();
         let decay = params.decay_sec.clamp(0.01, 4.0);
@@ -450,9 +456,13 @@ impl DrumVoice {
             // 스트리밍 권장선(-1 dBTP)을 지킨다. 드럼만 조용해지는 것은 트랙
             // 게인으로 올리면 되지만, **잘린 소리는 되돌릴 수 없다**
             // 5Hz 일차 고역통과. 킥의 40Hz 를 건드리지 않으면서 DC 만 뺀다
-            let blocked = value - self.dc_x1 + self.dc_coef * self.dc_y1;
+            // 2차 (1차 두 단) — 근접-DC 성분까지 깎는다
+            let stage1 = value - self.dc_x1 + self.dc_coef * self.dc_y1;
             self.dc_x1 = value;
-            self.dc_y1 = blocked;
+            self.dc_y1 = stage1;
+            let blocked = stage1 - self.dc_x2 + self.dc_coef * self.dc_y2;
+            self.dc_x2 = stage1;
+            self.dc_y2 = blocked;
 
             *slot += (blocked * self.velocity * 0.42) as f32;
         }

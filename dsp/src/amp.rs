@@ -289,6 +289,8 @@ pub struct AmpChain {
     /// 한쪽으로 밀어 둬서, 트랙이 쌓일수록 클리핑이 빨라진다
     dc_x1: f64,
     dc_y1: f64,
+    dc_x2: f64,
+    dc_y2: f64,
 }
 
 impl AmpChain {
@@ -303,6 +305,8 @@ impl AmpChain {
             scratch: vec![0.0; crate::oversample::MAX_FRAMES],
             dc_x1: 0.0,
             dc_y1: 0.0,
+            dc_x2: 0.0,
+            dc_y2: 0.0,
         };
         chain.cabinet.set(sample_rate);
         chain.set_params(&AmpParams::default(), 220.0);
@@ -337,6 +341,8 @@ impl AmpChain {
         // (`reproducibility.test.ts` 가 잡았다)
         self.dc_x1 = 0.0;
         self.dc_y1 = 0.0;
+        self.dc_x2 = 0.0;
+        self.dc_y2 = 0.0;
     }
 
     /// `buffer` 를 제자리에서 처리한다
@@ -366,9 +372,13 @@ impl AmpChain {
             }
             // **비선형 뒤에 DC 를 뺀다.** 톤스택·캐비닛 뒤에 두는 이유는 그것들도
             // 저역을 통과시키기 때문이다 — 앞에 두면 뒤에서 다시 생긴다
-            let blocked = y - self.dc_x1 + r * self.dc_y1;
+            // 2차 (1차 두 단)
+            let stage1 = y - self.dc_x1 + r * self.dc_y1;
             self.dc_x1 = y;
-            self.dc_y1 = blocked;
+            self.dc_y1 = stage1;
+            let blocked = stage1 - self.dc_x2 + r * self.dc_y2;
+            self.dc_x2 = stage1;
+            self.dc_y2 = blocked;
             *sample = (blocked * level) as f32;
         }
 
