@@ -331,6 +331,12 @@ impl AmpChain {
         self.oversampler.reset();
         self.tone.reset();
         self.cabinet.reset();
+        // **DC 차단기 상태도 지운다.** 안 지우면 앞 음의 잔여가 새 음의 첫 순간에
+        // 남아서, 같은 음이라도 앞에 무엇을 쳤느냐에 따라 달라진다 —
+        // 중간부터 미리듣기하면 내보내기와 달라지는 그 문제다
+        // (`reproducibility.test.ts` 가 잡았다)
+        self.dc_x1 = 0.0;
+        self.dc_y1 = 0.0;
     }
 
     /// `buffer` 를 제자리에서 처리한다

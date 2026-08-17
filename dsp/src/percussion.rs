@@ -238,6 +238,10 @@ impl DrumVoice {
         self.phase = 0.0;
         self.sweep = 1.0 + params.pitch_drop.clamp(0.0, 4.0) * 3.0;
         self.band.reset();
+        // **DC 차단기 상태를 지운다.** 안 지우면 앞 타격의 잔여가 남아서 같은
+        // 음이라도 앞에 무엇을 쳤느냐에 따라 달라진다 (`reproducibility.test.ts`)
+        self.dc_x1 = 0.0;
+        self.dc_y1 = 0.0;
 
         let rate = |sec: f64| (-1.0 / (sec.max(0.002) * self.sample_rate)).exp();
         let decay = params.decay_sec.clamp(0.01, 4.0);

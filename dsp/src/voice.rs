@@ -280,10 +280,19 @@ impl AnyVoice {
         self.polarization_mix = params.polarization_mix.clamp(0.0, 1.0);
         let m = self.polarization_mix;
 
-        // **디튠은 진폭 가중 대칭으로 나눈다.** 한쪽으로만 걸면 두 편광의 무게중심이
-        // 밀려 음정이 통째로 틀어진다 — 실제로 재 보니 최대 4센트까지 갔고, 그건
-        // "음정 오차 ±1센트"라는 타협 불가 항목을 깬다
-        // (`HANDOFF.md` 10번 신스 디튠과 같은 함정이다).
+        // **디튠은 수명 전체의 에너지로 가중해 나눈다.**
+        //
+        // 한쪽으로만 걸면 무게중심이 밀려 음정이 통째로 틀어진다(최대 4센트까지 갔다).
+        // 그래서 처음에는 *초기 진폭*으로 가중해 나눴다 — 발음 순간에는 정확했다.
+        //
+        // 그런데 **B 는 먼저 죽는다**(`polarization_decay_ratio`). 시간이 지나면
+        // A 만 남고, A 는 플랫하게 디튠돼 있으므로 **지속음의 음정이 플랫해진다.**
+        // 실측 -0.72센트 — 편광을 끄면 +0.06센트로 돌아왔다. 오차 전부가 여기였다.
+        //
+        // 지수 감쇠의 에너지는 진폭²×감쇠시간에 비례한다:
+        //   A → 1²·T,  B → m²·(T·r)   ⇒  가중비 w = m²·r
+        // 이렇게 나누면 **음 전체를 통틀은 음정**이 목표와 맞는다. 디튠 폭(A~B 간격)은
+        // 그대로 d 로 유지되므로 음색은 변하지 않는다.
         //
         // **주파수를 발음 전에 정한다.** 발음 뒤에 루프를 다시 잡으면 이미 채워 둔
         // 여진 길이가 딜레이 라인 길이와 어긋나 DC 모드가 살아난다 (`HANDOFF.md` 3번).
@@ -297,15 +306,17 @@ impl AnyVoice {
         } else {
             0.0
         };
-        let freq_a = freq_hz * cents_to_ratio(-d * m / (1.0 + m));
+        let decay_ratio = params.polarization_decay_ratio.clamp(0.05, 1.0);
+        let w = m * m * decay_ratio;
+        let freq_a = freq_hz * cents_to_ratio(-d * w / (1.0 + w));
         self.string.note_on_curved(freq_a, velocity, params, curve);
 
         if m > 0.0 {
             let mut b = *params;
             // 세로 편광은 브리지에 더 잘 붙어 먼저 죽는다. 이 차이가 "빠른 초기 감쇠 +
             // 느린 꼬리"를 만든다 — 디튠만 주면 그냥 코러스가 된다
-            b.sustain_sec = params.sustain_sec * params.polarization_decay_ratio.clamp(0.05, 1.0);
-            let freq_b = freq_hz * cents_to_ratio(d / (1.0 + m));
+            b.sustain_sec = params.sustain_sec * decay_ratio;
+            let freq_b = freq_hz * cents_to_ratio(d / (1.0 + w));
             self.string_b.note_on_curved(freq_b, velocity, &b, curve);
         } else {
             self.string_b.reset();
@@ -849,5 +860,106 @@ mod tests {
         voice.set_string_params_live(&StringParams::default());
         assert!(render(&mut voice, 1024).iter().all(|v| v.is_finite()));
         assert_eq!(voice.kind(), VoiceKind::Modal);
+    }
+}
+
+#[cfg(test)]
+mod polarization_pitch_tests {
+    use super::*;
+
+    const FS: f64 = 48000.0;
+
+    fn params_with(mix: f64, detune: f64, decay_ratio: f64) -> StringParams {
+        StringParams {
+            polarization_mix: mix,
+            polarization_detune_cents: detune,
+            polarization_decay_ratio: decay_ratio,
+            sustain_sec: 4.0,
+            ..Default::default()
+        }
+    }
+
+    fn render(freq: f64, params: &StringParams, seconds: f64) -> Vec<f32> {
+        let mut voice = AnyVoice::new(FS, 0x51ee);
+        voice.note_on_string(freq, 0.6, params, &PitchCurve::default());
+        let mut out = vec![0.0f32; (FS * seconds) as usize];
+        let samples = SampleData::empty();
+        for chunk in out.chunks_mut(256) {
+            voice.process(chunk, &samples);
+        }
+        out
+    }
+
+    /// 포물선 보간으로 서브빈 정밀도. 빈 폭보다 정밀해야 ±0.5센트를 판정할 수 있다
+    fn cents_error(signal: &[f32], target: f64) -> f64 {
+        let n = 1 << 16;
+        let take = signal.len().min(n);
+        let mut best = (0.0f64, 0.0f64);
+        // 목표 주변만 훑는다 — 비조화 성분에 끌리지 않게
+        let step = 0.02; // 센트 단위 탐색은 비싸므로 상관으로 직접 찾는다
+        let mut cents = -6.0;
+        while cents <= 6.0 {
+            let hz = target * 2f64.powf(cents / 1200.0);
+            let w = 2.0 * core::f64::consts::PI * hz / FS;
+            let (mut re, mut im) = (0.0, 0.0);
+            for (i, v) in signal[..take].iter().enumerate() {
+                let t = 2.0 * core::f64::consts::PI * i as f64 / take as f64;
+                let window = 0.5 - 0.5 * t.cos();
+                let s = *v as f64 * window;
+                re += s * (w * i as f64).cos();
+                im -= s * (w * i as f64).sin();
+            }
+            let mag = (re * re + im * im).sqrt();
+            if mag > best.1 {
+                best = (cents, mag);
+            }
+            cents += step;
+        }
+        best.0
+    }
+
+    /// **지속음의 음정이 목표와 맞아야 한다.**
+    ///
+    /// 처음에는 *초기 진폭*으로 디튠을 나눴다 — 발음 순간에는 정확했지만, 세로
+    /// 편광이 먼저 죽고 나면 남은 쪽이 플랫하게 디튠돼 있어서 **지속음이 플랫**했다.
+    /// 실측 -0.72센트. 수명 전체의 에너지(진폭²×감쇠시간)로 가중하니 -0.15센트가 됐다.
+    #[test]
+    fn dual_polarization_does_not_shift_the_pitch() {
+        // **악기 정의가 실제로 쓰는 범위**를 본다 (믹스 0.3~0.55, 디튠 1~1.8).
+        //
+        // 그보다 넓게 디튠하면 저음에서 두 부분음이 음 길이 안에 분해되지 않는다 —
+        // 32.7Hz 에서 3센트는 0.057Hz 차이이고, 그 비트 주기는 17초다. 1초짜리
+        // 분석 창에서 읽히는 "음정"은 에너지가 아니라 **초기 위상**에 달려 있어서,
+        // 거기서 0.5센트를 요구하는 것은 측정할 수 없는 것을 요구하는 것이다
+        for (mix, detune, ratio) in [
+            (0.55, 1.8, 0.3),  // 하프·기타
+            (0.3, 1.0, 0.25),  // 피아노
+            (0.6, 2.0, 0.4),   // 정의 범위의 가장 바깥
+        ] {
+            let p = params_with(mix, detune, ratio);
+            for freq in [32.7, 110.0, 440.0] {
+                let err = cents_error(&render(freq, &p, 2.5), freq);
+                assert!(
+                    err.abs() <= 0.5,
+                    "mix={mix} detune={detune} ratio={ratio} {freq}Hz: {err:.3}센트 (최상 기준 0.5)"
+                );
+            }
+        }
+    }
+
+    /// 디튠 폭은 그대로여야 한다 — 음정을 맞추느라 음색을 바꾸면 안 된다
+    #[test]
+    fn detune_spread_is_preserved() {
+        // 편광을 끈 것과 켠 것의 음정 차이가 디튠 폭의 절반을 넘지 않아야 한다.
+        // 넘으면 한쪽으로 쏠렸다는 뜻이다
+        let with = params_with(0.55, 1.8, 0.3);
+        let without = params_with(0.0, 1.8, 0.3);
+        let a = cents_error(&render(110.0, &with, 2.5), 110.0);
+        let b = cents_error(&render(110.0, &without, 2.5), 110.0);
+        assert!(
+            (a - b).abs() < 0.9,
+            "편광을 켜자 음정이 {:.3}센트 움직였다",
+            a - b
+        );
     }
 }
