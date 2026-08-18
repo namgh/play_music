@@ -26,6 +26,7 @@ from app.api.v1 import (
     assets,
     auth,
     billing,
+    billing_toss,
     events,
     health,
     jobs,
@@ -202,6 +203,7 @@ def create_app() -> FastAPI:
     app.include_router(events.router, prefix="/v1")
     app.include_router(jobs.router, prefix="/v1")
     app.include_router(billing.router, prefix="/v1")
+    app.include_router(billing_toss.router, prefix="/v1")
     app.include_router(admin.router, prefix="/v1")
     return app
 

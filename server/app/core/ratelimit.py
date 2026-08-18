@@ -52,6 +52,8 @@ LIMITS: dict[str, Limit] = {
     "login": Limit(10 / 900, 10, fail_closed=True),        # 10회 / 15분
     "signup": Limit(5 / 3600, 5, fail_closed=True),        # 5회 / 시간
     "project_save": Limit(1.0, 60),                        # 60회 / 분
+    # 카드 등록은 자주 할 일이 아니다. 잦으면 authKey 를 긁어보는 시도다
+    "billing_issue": Limit(10 / 60, 5),                    # 10회 / 시간
     "upload_url": Limit(20 / 3600, 20),                    # 20회 / 시간
     "asset_create": Limit(30 / 3600, 30),                  # 서명 URL 발급 자체를 제한
     # 메일을 보내는 경로는 **남의 편지함을 괴롭히는 도구**가 될 수 있다. 세게 잠근다

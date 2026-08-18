@@ -82,6 +82,18 @@ class Settings(BaseSettings):
     billing_webhook_secret: SecretStr = SecretStr("")
     stripe_secret_key: SecretStr = SecretStr("")
 
+    # 토스페이먼츠 (국내). `client_key` 는 **브라우저로 나가는 공개 값**이고
+    # `secret_key` 는 서버 전용이다 — 둘을 바꿔 넣으면 결제창이 안 뜨거나
+    # 시크릿이 새므로 이름을 헷갈리지 않게 그대로 쓴다
+    toss_client_key: str = ""
+    toss_secret_key: SecretStr = SecretStr("")
+
+    # 빌링키를 암호화하는 대칭키 (base64, 32바이트).
+    #   python -c "import base64,os;print(base64.b64encode(os.urandom(32)).decode())"
+    # **이게 유출되면 빌링키를 복호화해 남의 카드에 청구할 수 있다.**
+    # 키를 바꾸면 기존 빌링키를 못 읽으므로 재등록을 받아야 한다
+    payment_enc_key: SecretStr = SecretStr("")
+
     # **첫 플랫폼 운영자.** 이 주소로 가입하면 `owner` 로 승격된다.
     #
     # 없으면 어드민 API 전체가 아무도 못 쓰는 상태로 뜬다 — 권한 부여
@@ -169,8 +181,18 @@ class Settings(BaseSettings):
             problems.append("KEY_PREFIX 는 'production:' 으로 시작해야 한다")
         if not self.billing_webhook_secret.get_secret_value():
             problems.append("BILLING_WEBHOOK_SECRET 이 없으면 웹훅 서명을 검증할 수 없다")
-        if not self.stripe_secret_key.get_secret_value():
-            problems.append("STRIPE_SECRET_KEY 가 없으면 유료 전환이 불가능하다")
+        toss = self.toss_secret_key.get_secret_value()
+        if not toss and not self.stripe_secret_key.get_secret_value():
+            problems.append(
+                "결제사 키가 하나도 없다 — TOSS_SECRET_KEY(국내) 또는 STRIPE_SECRET_KEY 가 필요하다"
+            )
+        if toss:
+            # **테스트 키로 운영을 띄우면 결제가 조용히 가짜가 된다.** 화면은 전부
+            # 성공으로 보이는데 돈은 한 푼도 안 들어온다 — 한참 뒤에야 알게 된다
+            if toss.startswith("test_"):
+                problems.append("TOSS_SECRET_KEY 가 테스트 키다 — 운영에서는 결제가 가짜가 된다")
+            if not self.payment_enc_key.get_secret_value():
+                problems.append("PAYMENT_ENC_KEY 가 없으면 빌링키를 평문으로 저장하게 된다")
         if not self.storage_access_key.get_secret_value():
             problems.append("STORAGE_ACCESS_KEY 가 없다")
         if not self.storage_secret_key.get_secret_value():
@@ -183,6 +205,23 @@ class Settings(BaseSettings):
         if problems:
             raise ValueError(
                 "운영 환경 설정이 완전하지 않다:\n  - " + "\n  - ".join(problems)
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _live_payment_keys_never_outside_production(self) -> Settings:
+        """**운영 키가 개발·테스트에 들어오는 것을 막는다.**
+
+        위 게이트의 반대 방향이다. 테스트를 돌리다 진짜 카드에 청구하는 사고는
+        되돌리기가 비싸고, 무엇보다 남의 돈이다. 로컬에서 실수로 운영 `.env` 를
+        복사해 오는 일은 흔하다.
+        """
+        if self.is_production:
+            return self
+        if self.toss_secret_key.get_secret_value().startswith("live_"):
+            raise ValueError(
+                "TOSS_SECRET_KEY 가 운영 키다 — 운영 환경이 아닌 곳에서는 쓸 수 없다. "
+                "테스트 키(test_ 로 시작)를 사용할 것"
             )
         return self
 

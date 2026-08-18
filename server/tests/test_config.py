@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import base64
 import re
 from pathlib import Path
 
@@ -31,9 +32,18 @@ BASE = {
     "jwt_secret": "x" * 40,
 }
 
+#: base64 32바이트. 문자열을 손으로 세지 않는다 — 길이가 틀리면 테스트가
+#: 엉뚱한 이유로 실패한다
+_ENC = base64.b64encode(b"e" * 32).decode()
+
 PRODUCTION = {
     **BASE,
     "env": "production",
+    # **환경변수를 기대지 않고 스스로 완결돼야 한다.** conftest 가 테스트용 결제
+    # 키를 넣어 두는데, 그게 새어 들어오면 "운영에 테스트 키" 게이트에 걸려
+    # 엉뚱한 곳에서 실패한다
+    "toss_secret_key": "live_sk_value",
+    "payment_enc_key": _ENC,
     "key_prefix": "production:v1",
     "billing_webhook_secret": "whsec_live_value",
     "stripe_secret_key": "sk_live_value",
@@ -105,7 +115,7 @@ def test_production_boots_when_fully_configured():
         ({"jwt_secret": "short"}, "32자"),
         ({"key_prefix": "local:v1"}, "KEY_PREFIX"),
         ({"billing_webhook_secret": ""}, "BILLING_WEBHOOK_SECRET"),
-        ({"stripe_secret_key": ""}, "STRIPE_SECRET_KEY"),
+        ({"stripe_secret_key": "", "toss_secret_key": ""}, "STRIPE_SECRET_KEY"),
         ({"storage_access_key": ""}, "STORAGE_ACCESS_KEY"),
         ({"storage_secret_key": ""}, "STORAGE_SECRET_KEY"),
         ({"cors_origins": ["http://localhost:5173"]}, "localhost"),
@@ -172,3 +182,51 @@ def test_env_example_file_actually_boots(tmp_path, monkeypatch):
 def test_key_prefix_must_have_a_version():
     with pytest.raises(ValidationError):
         Settings(**BASE, key_prefix="noversion")
+
+
+# --- 결제 키 ----------------------------------------------------------------
+
+@pytest.mark.parametrize(
+    ("override", "expected"),
+    [
+        # **테스트 키로 운영을 띄우면 결제가 조용히 가짜가 된다.** 화면은 전부
+        # 성공으로 보이는데 돈은 한 푼도 안 들어오고, 한참 뒤에야 알게 된다
+        (
+            {"stripe_secret_key": "", "toss_secret_key": "test_sk_abc", "payment_enc_key": _ENC},
+            "테스트 키",
+        ),
+        # 빌링키를 평문으로 저장하게 두면 DB 유출이 곧 카드 도용이 된다
+        ({"toss_secret_key": "live_sk_abc", "payment_enc_key": ""}, "PAYMENT_ENC_KEY"),
+    ],
+)
+def test_production_refuses_bad_payment_keys(override, expected):
+    with pytest.raises(ValidationError) as exc:
+        Settings(**{**PRODUCTION, **override})
+    assert expected in str(exc.value)
+
+
+def test_production_boots_with_only_toss():
+    """국내만 여는 단계라 **Stripe 없이도 떠야 한다** (`SERVER_PAYMENTS.md` 0절)"""
+    s = Settings(
+        **{
+            **PRODUCTION,
+            "stripe_secret_key": "",
+            "toss_secret_key": "live_sk_abc",
+            "payment_enc_key": _ENC,
+        }
+    )
+    assert s.toss_secret_key.get_secret_value() == "live_sk_abc"
+
+
+def test_live_payment_keys_are_refused_outside_production():
+    """**반대 방향의 게이트.** 테스트를 돌리다 진짜 카드에 청구하는 사고는
+    되돌리기가 비싸고 무엇보다 남의 돈이다. 운영 `.env` 를 로컬로 복사해 오는
+    일은 실제로 흔하다"""
+    with pytest.raises(ValidationError) as exc:
+        Settings(**BASE, env="local", toss_secret_key="live_sk_abc")
+    assert "운영 키" in str(exc.value)
+
+
+def test_test_keys_are_fine_outside_production():
+    s = Settings(**BASE, env="local", toss_secret_key="test_sk_abc")
+    assert s.toss_secret_key.get_secret_value() == "test_sk_abc"

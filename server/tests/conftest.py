@@ -7,6 +7,7 @@ SQLite 로 대체하지 않는다. JSONB·배열·부분 인덱스·자문 락�
 from __future__ import annotations
 
 import asyncio
+import base64
 import contextlib
 import os
 import uuid
@@ -23,6 +24,11 @@ os.environ.setdefault(
 os.environ.setdefault("REDIS_CACHE_URL", "redis://localhost:56379/8")
 os.environ.setdefault("REDIS_CORE_URL", "redis://localhost:56379/9")
 os.environ.setdefault("JWT_SECRET", "test-secret")
+# 결제 — **테스트 키만 쓴다.** 운영 키(`live_`)를 넣으면 부팅이 막히도록
+# `Settings` 에 역방향 게이트가 있다 (`app/config.py`)
+os.environ.setdefault("TOSS_CLIENT_KEY", "test_ck_forTests")
+os.environ.setdefault("TOSS_SECRET_KEY", "test_sk_forTests")
+os.environ.setdefault("PAYMENT_ENC_KEY", base64.b64encode(b"k" * 32).decode())
 
 from app.config import get_settings  # noqa: E402
 from app.core import redis as r  # noqa: E402
@@ -30,8 +36,16 @@ from app.db.session import dispose_engine, init_engine, session_scope  # noqa: E
 from app.main import create_app  # noqa: E402
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture
 def settings():
+    """**세션 스코프로 두면 낡는다.**
+
+    일부 테스트가 환경변수를 바꾸고 `get_settings.cache_clear()` 를 부른다
+    (`test_admin.py`, `test_security.py`). 그러면 앱은 새 `Settings` 를 보는데
+    이 픽스처만 옛 객체를 들고 있어서, 여기에 `monkeypatch` 를 걸어도 앱에는
+    아무 영향이 없다 — 테스트가 혼자 돌 때만 통과하고 전체 실행에서 깨진다.
+    매번 현재 캐시를 다시 읽는다.
+    """
     return get_settings()
 
 
