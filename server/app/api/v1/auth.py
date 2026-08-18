@@ -23,7 +23,7 @@ from app.core.security import (
     verify_password,
 )
 from app.db.models import AuthIdentity, EmailToken, RefreshToken, Subscription, User
-from app.services import google_oauth, mail, orgs
+from app.services import entitlements, google_oauth, mail, orgs
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -186,6 +186,8 @@ async def signup(
     org = await orgs.create_personal_org(session, user)
     # 무료 구독은 **조직**에 붙는다. 과금 단위가 조직이라서다
     session.add(Subscription(org_id=org.id, plan_code="free", status="active"))
+    # 베타 무료 이용권 — **카드 없이** 준다 (`SERVER_PAYMENTS.md` 5절)
+    await entitlements.grant_beta_free(session, org.id, settings.beta_free_months)
     await _send_verify_mail(session, user)
     await audit.record(
         session,
@@ -489,7 +491,9 @@ async def google_callback(
     id_token = await google_oauth.exchange(code, stored["verifier"])
     profile = google_oauth.verify_id_token(id_token, expected_nonce=stored["nonce"])
 
-    user = await _link_or_create_google_user(session, profile, ip=client_ip(request))
+    user = await _link_or_create_google_user(
+        session, profile, ip=client_ip(request), beta_months=settings.beta_free_months
+    )
     user.last_seen_at = datetime.now(UTC)
 
     next_path = stored.get("next") or "/"
@@ -504,7 +508,9 @@ async def google_callback(
     return response
 
 
-async def _link_or_create_google_user(session: Db, profile, *, ip: str | None) -> User:
+async def _link_or_create_google_user(
+    session: Db, profile, *, ip: str | None, beta_months: int = 0
+) -> User:
     """구글 계정 → 우리 사용자.
 
     순서가 중요하다:
@@ -571,6 +577,7 @@ async def _link_or_create_google_user(session: Db, profile, *, ip: str | None) -
 
     org = await orgs.create_personal_org(session, user)
     session.add(Subscription(org_id=org.id, plan_code="free", status="active"))
+    await entitlements.grant_beta_free(session, org.id, beta_months)
     await audit.record(
         session, action="user.signup", actor_id=user.id, detail={"via": "google"}, ip=ip
     )

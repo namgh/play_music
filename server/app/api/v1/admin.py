@@ -22,9 +22,11 @@ from app.core import audit
 from app.core.errors import NotFound, Unprocessable
 from app.db.models import (
     AuditLog,
+    BillingKey,
     ImpersonationSession,
     Organization,
     OrgMember,
+    Payment,
     Project,
     Subscription,
     UsageEvent,
@@ -311,4 +313,96 @@ async def set_role(
         last_seen_at=target.last_seen_at,
         plan_code=None,
         project_count=0,
+    )
+
+
+class AdminPaymentRow(BaseModel):
+    id: uuid.UUID
+    amount: int
+    refunded_amount: int
+    status: str
+    approved_at: datetime | None
+
+
+class AdminBillingOut(BaseModel):
+    org_id: uuid.UUID
+    plan_code: str
+    status: str
+    commercial_license: bool
+    current_period_end: datetime | None
+    next_charge_at: datetime | None
+    retry_count: int
+    last_failure_code: str | None
+    card_brand: str | None
+    card_last4: str | None
+    grants: list[str]
+    payments: list[AdminPaymentRow]
+
+
+@router.get("/orgs/{org_id}/billing", response_model=AdminBillingOut)
+async def org_billing(
+    org_id: uuid.UUID, request: Request, session: Db, user: Support
+) -> AdminBillingOut:
+    """문의 대응용 결제 조회.
+
+    **곡은 안 보여준다.** 운영자가 사용자 작업물을 직접 읽는 길은 대리 접속뿐이고,
+    거기엔 동의·시간제한·배너·감사가 붙는다 (`SERVER_ACCOUNTS.md` 4절).
+    여기서 보이는 것은 "얼마가 언제 어떻게 청구됐나"뿐이다 — 문의의 대부분이 그거다.
+
+    **카드는 표시용 뒷자리만.** 빌링키는 복호화하지 않는다 — 운영 화면이 결제
+    수단을 꺼내 볼 수 있으면 그 화면 자체가 공격 대상이 된다.
+    """
+    sub = await session.get(Subscription, org_id)
+    if sub is None:
+        raise NotFound("워크스페이스를 찾을 수 없습니다", code="org_not_found")
+
+    card = (
+        await session.execute(
+            select(BillingKey).where(
+                BillingKey.org_id == org_id, BillingKey.status == "active"
+            )
+        )
+    ).scalar_one_or_none()
+
+    payments = (
+        await session.execute(
+            select(Payment)
+            .where(Payment.org_id == org_id)
+            .order_by(Payment.created_at.desc())
+            .limit(24)
+        )
+    ).scalars().all()
+
+    ent = await entitlements.resolve(session, org_id)
+    # **조회도 감사에 남긴다** — 남의 결제를 들여다보는 일이라 누가 봤는지가 남아야 한다
+    await audit.record(
+        session,
+        action="admin.view_billing",
+        actor_id=user.id,
+        target_type="organization",
+        target_id=org_id,
+        ip=client_ip(request),
+    )
+    return AdminBillingOut(
+        org_id=org_id,
+        plan_code=sub.plan_code,
+        status=sub.status,
+        commercial_license=sub.commercial_license,
+        current_period_end=sub.current_period_end,
+        next_charge_at=sub.next_charge_at,
+        retry_count=sub.retry_count,
+        last_failure_code=sub.last_failure_code,
+        card_brand=card.card_brand if card else None,
+        card_last4=card.card_last4 if card else None,
+        grants=list(ent.grants),
+        payments=[
+            AdminPaymentRow(
+                id=p.id,
+                amount=p.amount,
+                refunded_amount=p.refunded_amount,
+                status=p.status,
+                approved_at=p.approved_at,
+            )
+            for p in payments
+        ],
     )

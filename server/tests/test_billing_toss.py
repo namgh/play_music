@@ -256,3 +256,53 @@ async def test_payments_are_unavailable_without_configuration(
     assert res.status_code == 503
     assert res.json()["error"]["code"] == "payments_unavailable"
     assert pytest is not None
+
+
+# --- 운영자 조회 -------------------------------------------------------------
+
+
+async def test_support_sees_billing_but_never_the_songs(client, unique_email, db):
+    """문의 대응에 필요한 건 "얼마가 언제 왜 청구됐나"지 사용자의 곡이 아니다.
+
+    운영자가 작업물을 직접 읽는 길은 **대리 접속뿐**이고 거기엔 동의·시간제한·
+    배너·감사가 붙는다 (`SERVER_ACCOUNTS.md` 4절).
+    """
+    from sqlalchemy import text as _text
+
+    from tests.test_admin import _make
+
+    user_token = await signup(client, unique_email)
+    prepared = await _prepare(client, user_token)
+    await _issue(client, user_token, prepared["customer_key"])
+    org_id = (
+        await db.execute(
+            _text("SELECT org_id FROM billing_customers WHERE customer_key = :ck"),
+            {"ck": prepared["customer_key"]},
+        )
+    ).scalar_one()
+
+    admin = await _make(client, db, f"support-{unique_email}", "support")
+    res = await client.get(f"/v1/admin/orgs/{org_id}/billing", headers=auth(admin))
+    assert res.status_code == 200, res.text
+
+    body = res.json()
+    assert body["card_last4"] == "1234"
+    assert body["plan_code"] == "free"
+    # **빌링키가 응답 어디에도 없어야 한다**
+    assert BILLING_KEY not in res.text
+    assert "billing_key" not in res.text
+
+
+async def test_ordinary_users_cannot_read_admin_billing(client, unique_email, db):
+    from sqlalchemy import text as _text
+
+    token = await signup(client, unique_email)
+    prepared = await _prepare(client, token)
+    org_id = (
+        await db.execute(
+            _text("SELECT org_id FROM billing_customers WHERE customer_key = :ck"),
+            {"ck": prepared["customer_key"]},
+        )
+    ).scalar_one()
+    res = await client.get(f"/v1/admin/orgs/{org_id}/billing", headers=auth(token))
+    assert res.status_code == 403

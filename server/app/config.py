@@ -88,6 +88,13 @@ class Settings(BaseSettings):
     toss_client_key: str = ""
     toss_secret_key: SecretStr = SecretStr("")
 
+    # **베타 기간 무료 개월 수.** 0 이면 안 준다.
+    #
+    # 카드를 받지 않는다 — 베타의 목적은 매출이 아니라 학습이고, 결제 벽은
+    # 테스터 필터다 (`SERVER_PAYMENTS.md` 5절). 베타가 끝나면 이 값을 0 으로
+    # 내리면 되고, 이미 받은 사람의 부여는 만료일까지 그대로 산다
+    beta_free_months: int = 3
+
     # 빌링키를 암호화하는 대칭키 (base64, 32바이트).
     #   python -c "import base64,os;print(base64.b64encode(os.urandom(32)).decode())"
     # **이게 유출되면 빌링키를 복호화해 남의 카드에 청구할 수 있다.**

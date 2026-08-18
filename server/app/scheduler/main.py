@@ -277,6 +277,133 @@ async def trim_audit_log() -> None:
         )
 
 
+
+# --- 정기결제 (`SERVER_PAYMENTS.md` 1-1) -------------------------------------
+
+CHARGE_BATCH = 50
+
+
+async def charge_due_subscriptions() -> None:
+    """갱신일이 된 구독을 긁는다. **토스는 대신 굴려주지 않는다.**
+
+    후보를 먼저 훑고, **건마다 따로 트랜잭션을 열어 잠근다.** 한 번에 다 잡으면
+    하나가 터질 때 나머지가 같이 롤백되고, 무엇보다 결제 API 를 부르는 동안 락을
+    오래 쥐게 된다. `SKIP LOCKED` 라 워커가 여럿이어도 같은 구독을 두 번 긁지 않는다.
+    """
+    from app.config import get_settings
+    from app.db.models import Subscription
+    from app.services import billing_run
+
+    settings = get_settings()
+    async with session_scope() as session:
+        candidates = (
+            await session.execute(
+                text(
+                    "SELECT org_id FROM subscriptions "
+                    "WHERE next_charge_at IS NOT NULL AND next_charge_at <= now() "
+                    "  AND status IN ('active','past_due') "
+                    "ORDER BY next_charge_at LIMIT :n"
+                ),
+                {"n": CHARGE_BATCH},
+            )
+        ).scalars().all()
+
+    charged = failed = 0
+    for org_id in candidates:
+        # **트랜잭션 전체를 감싼다.** `session_scope` 는 빠져나갈 때 커밋하는데,
+        # 제약 위반은 바로 그 커밋에서 터진다 — 안쪽만 감싸면 한 건의 실패가
+        # 배치 전체를 중단시켜서 나머지 구독이 그 주기에 아예 안 긁힌다.
+        # 실제로 여기서 한 번 당했다: 문제 있는 구독 하나가 뒤의 전부를 막았다
+        try:
+            async with session_scope() as s:
+                locked = (
+                    await s.execute(
+                        text(
+                            "SELECT org_id FROM subscriptions "
+                            "WHERE org_id = :o AND next_charge_at IS NOT NULL "
+                            "  AND next_charge_at <= now() AND status IN ('active','past_due') "
+                            "FOR UPDATE SKIP LOCKED"
+                        ),
+                        {"o": org_id},
+                    )
+                ).first()
+                if locked is None:
+                    continue  # 다른 프로세스가 가져갔거나 그 사이에 상태가 바뀌었다
+
+                sub = await s.get(Subscription, org_id)
+                if sub is None:
+                    continue
+                result = await billing_run.charge_subscription(s, settings, sub)
+                if result.outcome == "charged":
+                    charged += 1
+                elif result.outcome == "rejected":
+                    failed += 1
+        except Exception:  # noqa: BLE001,PERF203
+            log.exception("charge_failed", extra={"org_id": str(org_id)})
+
+    if charged or failed:
+        log.info("subscriptions_charged", extra={"charged": charged, "failed": failed})
+
+
+async def reconcile_pending_payments() -> None:
+    """결과를 모르는 주문을 **조회로 확인한다.**
+
+    이게 "타임아웃에 재시도하지 않는다"의 반쪽이다. 확인할 길이 없으면 결국
+    재시도하게 되고, 그러면 이중 청구가 난다.
+    """
+    from app.config import get_settings
+    from app.db.models import PaymentOrder
+    from app.services import billing_run
+
+    settings = get_settings()
+    async with session_scope() as session:
+        ids = (
+            await session.execute(
+                text(
+                    "SELECT id FROM payment_orders WHERE status = 'pending' "
+                    "  AND created_at < :cutoff ORDER BY created_at LIMIT 50"
+                ),
+                {"cutoff": datetime.now(UTC) - billing_run.RECONCILE_AFTER},
+            )
+        ).scalars().all()
+
+    for order_id in ids:
+        # 커밋까지 감싼다 — 위와 같은 이유다
+        try:
+            async with session_scope() as s:
+                order = await s.get(PaymentOrder, order_id)
+                if order is None or order.status != "pending":
+                    continue
+                await billing_run.reconcile_order(s, settings, order)
+        except Exception:  # noqa: BLE001,PERF203
+            log.exception("reconcile_failed", extra={"order_id": str(order_id)})
+
+    if ids:
+        log.info("payments_reconciled", extra={"count": len(ids)})
+
+
+async def expire_canceling_subscriptions() -> None:
+    """해지 예약이 기간 만료에 도달하면 실제로 끝낸다.
+
+    **미리 끊지 않는다** — 이미 낸 달은 끝까지 쓰는 게 맞다 (`SERVER_BILLING.md` 2절).
+    """
+    from app.services import entitlements
+
+    async with session_scope() as session:
+        rows = (
+            await session.execute(
+                text(
+                    "UPDATE subscriptions SET status = 'canceled', next_charge_at = NULL "
+                    "WHERE status = 'canceling' AND current_period_end IS NOT NULL "
+                    "  AND current_period_end <= now() RETURNING org_id"
+                )
+            )
+        ).scalars().all()
+    for org_id in rows:
+        await entitlements.invalidate(org_id)
+    if rows:
+        log.info("subscriptions_ended", extra={"count": len(rows)})
+
 # (이름, 주기(초), 함수). 주기를 코드에 두는 것은 cron 문자열보다 읽기 쉽고
 # 무엇보다 **테스트에서 직접 부를 수 있어서**다
 TASKS = [
@@ -287,6 +414,11 @@ TASKS = [
     ("expire_impersonations", 60, expire_impersonations),
     ("sweep_expired_tokens", 3600, sweep_expired_tokens),
     ("trim_audit_log", 86400, trim_audit_log),
+    # 결제. **자주 돈다** — 갱신이 하루 늦으면 그만큼 매출이 밀리고, 미결 주문은
+    # 빨리 풀어야 그 구독의 다음 결제가 막히지 않는다
+    ("charge_due_subscriptions", 300, charge_due_subscriptions),
+    ("reconcile_pending_payments", 120, reconcile_pending_payments),
+    ("expire_canceling_subscriptions", 3600, expire_canceling_subscriptions),
 ]
 
 

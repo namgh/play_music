@@ -29,6 +29,10 @@ os.environ.setdefault("JWT_SECRET", "test-secret")
 os.environ.setdefault("TOSS_CLIENT_KEY", "test_ck_forTests")
 os.environ.setdefault("TOSS_SECRET_KEY", "test_sk_forTests")
 os.environ.setdefault("PAYMENT_ENC_KEY", base64.b64encode(b"k" * 32).decode())
+# **베타 무료 이용권은 기본으로 끈다.** 켜 두면 모든 가입자가 무제한이 되어
+# 한도 테스트가 통째로 무의미해진다 — 그건 요금제를 안 보는 것과 같다.
+# 베타 부여 자체는 `test_beta_grant.py` 가 켜서 따로 본다
+os.environ.setdefault("BETA_FREE_MONTHS", "0")
 
 from app.config import get_settings  # noqa: E402
 from app.core import redis as r  # noqa: E402

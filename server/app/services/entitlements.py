@@ -12,7 +12,7 @@ import json
 import logging
 import uuid
 from dataclasses import asdict, dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -277,3 +277,40 @@ async def require_song_quota(
             details={"limit": limit, "used": used, "plan": ent.plan_code,
                      "existing_songs_still_editable": True},
         )
+
+
+async def grant_beta_free(
+    session: AsyncSession, org_id: uuid.UUID, months: int, *, reason: str = "베타 테스트"
+) -> None:
+    """가입 시 **베타 무료 이용권**을 준다 (`SERVER_PAYMENTS.md` 5절).
+
+    구독이 아니라 **부여**다. 구독 행에 "결제 안 했는데 active" 를 써 넣으면
+    결제 코드가 그걸 다시 해석해야 하고, 그러면 "왜 이 사람은 청구가 안 되지"를
+    매번 되짚게 된다.
+
+    만료되면 자동으로 무료 티어로 내려온다 — 끄는 잡이 필요 없다. `resolve()` 가
+    `ends_at` 을 보고 판정하기 때문이다. **곡은 안 지운다. 새 곡만 막힌다.**
+    """
+    if months <= 0:
+        return
+    now = datetime.now(UTC)
+    ends = now
+    for _ in range(months):
+        year = ends.year + (ends.month == 12)
+        month = ends.month % 12 + 1
+        last = (date(year + (month == 12), month % 12 + 1, 1) - timedelta(days=1)).day
+        ends = ends.replace(year=year, month=month, day=min(ends.day, last))
+
+    session.add(
+        EntitlementGrant(
+            org_id=org_id,
+            kind="beta_free",
+            # 베타는 **유료 티어를 그대로 준다** — 무료 티어를 조금 늘리는 게 아니다.
+            # 그래야 "돈 낼 만한가"를 사용자가 실제로 판단할 수 있다
+            limits={"songs_total": None, "storage_mb": 50000},
+            commercial_license=True,
+            ends_at=ends,
+            reason=reason,
+        )
+    )
+    await invalidate(org_id)

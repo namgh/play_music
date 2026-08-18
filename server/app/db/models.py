@@ -529,6 +529,17 @@ class Subscription(Base):
     last_event_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = created_at_col()
 
+    # --- 정기결제 (`SERVER_PAYMENTS.md` 1-1) --------------------------------
+    # **토스는 구독을 대신 굴려주지 않는다.** 매달 긁는 건 우리 일이라 "언제 긁을
+    # 것인가"를 우리가 들고 있어야 한다. `NULL` 이면 자동결제가 없는 상태다
+    # (무료, 해지 예정, 또는 완전 해지)
+    next_charge_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # 연속 실패 횟수. 재시도 간격(1일·3일·7일)과 포기 시점을 여기서 정한다.
+    # 성공하면 0 으로 되돌린다 — **누적이 아니라 연속이다**
+    retry_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    # 마지막 실패 이유. 사용자에게 "카드 한도를 확인해 주세요"를 말해 주려면 필요하다
+    last_failure_code: Mapped[str | None] = mapped_column(Text)
+
     __table_args__ = (
         CheckConstraint(
             "status IN ('active','canceling','past_due','canceled')", name="status"
