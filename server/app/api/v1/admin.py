@@ -112,7 +112,8 @@ class UsageOut(BaseModel):
     user_id: uuid.UUID
     plan_code: str
     status: str
-    limits: dict[str, int]
+    # `None` 은 무제한 — `int` 로만 두면 무제한 플랜에서 응답이 터진다
+    limits: dict[str, int | None]
     used: dict[str, int]
 
 

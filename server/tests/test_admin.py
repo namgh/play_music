@@ -317,5 +317,5 @@ async def test_user_usage_endpoint_works(client, unique_email, db):
     assert res.status_code == 200, res.text
     body = res.json()
     assert body["plan_code"] == "free"
-    assert body["limits"]["projects"] == 5
+    assert body["limits"]["songs_total"] == 5
     assert token  # 사용

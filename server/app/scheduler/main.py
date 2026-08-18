@@ -146,9 +146,14 @@ async def purge_deleted_users() -> None:
     개인정보는 지우되 **돈과 감사의 근거는 남긴다.** 둘을 같이 지우면 분쟁이
     났을 때 우리도 사용자도 아무것도 증명할 수 없다:
 
-      - 지운다: 이메일·표시이름·로그인 수단·세션·토큰, 개인 워크스페이스와 그 곡
-      - 남긴다: 결제 이벤트, 사용량 원장, 감사 로그 — 단 **식별자를 끊는다**
-                (`actor_id`/`user_id` 를 NULL 로, 계정은 익명 표식으로)
+      - 지운다: 이메일·표시이름·로그인 수단·세션·토큰, 개인 워크스페이스의 **콘텐츠**
+                (곡·버전·내보내기·에셋)
+      - 남긴다: 구독, 사용량 원장, 결제 이벤트, 감사 로그 — 단 **식별자를 끊는다**
+                (`actor_id`/`user_id` 를 NULL 로, 계정과 조직은 익명 표식으로)
+
+    **조직 행 자체를 지우면 안 된다.** `subscriptions`·`usage_events` 가 조직을
+    CASCADE 로 물고 있어서, 조직을 지우는 순간 돈의 근거가 통째로 사라진다.
+    사람에게 하는 것과 같게 — 행은 남기고 이름만 익명화한다.
 
     남이 있는 팀은 건드리지 않는다 — 탈퇴는 그 사람 것만 정리하는 것이지 남의
     작업물을 지우는 일이 아니다. 그래서 탈퇴 요청 단계에서 마지막 owner 는 막는다.
@@ -166,17 +171,51 @@ async def purge_deleted_users() -> None:
         ).scalars().all()
 
         for user_id in rows:
-            # 개인 워크스페이스만 지운다 (CASCADE 로 그 안의 곡·에셋이 함께 간다)
-            await session.execute(
-                text(
-                    """
-                    DELETE FROM organizations o
-                    USING org_members m
-                    WHERE o.id = m.org_id AND m.user_id = :uid AND o.kind = 'personal'
-                    """
-                ),
-                {"uid": user_id},
-            )
+            # **개인 워크스페이스는 지우지 않는다. 사람에게 한 것과 똑같이 익명화한다.**
+            #
+            # 예전에는 여기서 `DELETE FROM organizations` 를 했는데, 그러면 CASCADE 가
+            # `subscriptions`·`usage_events`·`usage_rollups` 까지 쓸어 갔다. 위 문서가
+            # 약속한 "돈의 근거는 남긴다"와 **정반대로** 동작했다. 실측으로 파기 후
+            # 원장 0행·구독 0행이었다 — 결제 분쟁이 나면 아무것도 증명할 수 없었다.
+            personal = (
+                await session.execute(
+                    text(
+                        "SELECT o.id FROM organizations o JOIN org_members m "
+                        "ON m.org_id = o.id WHERE m.user_id = :uid AND o.kind = 'personal'"
+                    ),
+                    {"uid": user_id},
+                )
+            ).scalars().all()
+
+            if personal:
+                # 콘텐츠만 지운다. **곡 → 에셋 순서를 지켜야 한다** —
+                # `project_exports.asset_id` 는 CASCADE 가 아니라서 에셋을 먼저 지우면
+                # 참조가 걸려 실패한다. 곡을 지우면 버전·내보내기가 CASCADE 로 따라간다
+                await session.execute(
+                    text("DELETE FROM projects WHERE org_id = ANY(:ids)"), {"ids": personal}
+                )
+                # 스토리지 객체는 버킷 수명주기 규칙이 지운다 (`sweep_pending_assets` 와 같은 이유)
+                await session.execute(
+                    text("DELETE FROM assets WHERE org_id = ANY(:ids)"), {"ids": personal}
+                )
+                # 파기된 조직에 살아 있는 혜택이 남아 있을 이유가 없다
+                await session.execute(
+                    text(
+                        "UPDATE entitlement_grants SET revoked_at = now() "
+                        "WHERE org_id = ANY(:ids) AND revoked_at IS NULL"
+                    ),
+                    {"ids": personal},
+                )
+                # 행은 남기고 이름만 익명화한다. `slug` 는 UNIQUE 이고 형식 제약이
+                # 있어서 `purged-<uuid>` 로 덮는다 — 소문자·숫자·하이픈만 쓴다
+                await session.execute(
+                    text(
+                        "UPDATE organizations SET status = 'purged', name = '', "
+                        "    slug = 'purged-' || id::text, deleted_at = now() "
+                        "WHERE id = ANY(:ids)"
+                    ),
+                    {"ids": personal},
+                )
             # 식별자를 끊는다. 행 자체는 남겨 근거를 보존한다
             await session.execute(
                 text("UPDATE audit_log SET actor_id = NULL WHERE actor_id = :uid"),

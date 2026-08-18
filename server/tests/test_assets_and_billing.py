@@ -418,7 +418,7 @@ async def test_storage_endpoint_shows_the_limit(client, unique_email):
     token = await signup(client, unique_email)
     res = await client.get("/v1/storage", headers=auth(token))
     assert res.status_code == 200
-    assert res.json()["limit_bytes"] == 500 * 1024 * 1024
+    assert res.json()["limit_bytes"] == 2000 * 1024 * 1024
 
 
 async def test_outsider_cannot_delete_assets(client, unique_email):

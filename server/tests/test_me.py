@@ -38,8 +38,10 @@ async def test_me_returns_everything_the_first_screen_needs(client, unique_email
     assert ws[0]["my_role"] == "owner"
     assert ws[0]["plan_code"] == "free"
     assert ws[0]["commercial_license"] is False
-    assert ws[0]["limits"]["projects"] == 5
+    # 무료 체험은 **누적 5곡**이다 (`SERVER_PAYMENTS.md` 0절)
+    assert ws[0]["limits"]["songs_total"] == 5
     assert ws[0]["usage"]["projects"] == 0
+    assert ws[0]["usage"]["songs_total"] == 0, "체험을 몇 칸 썼는지 화면이 알아야 한다"
 
 
 async def test_me_project_count_tracks_reality(client, unique_email):
@@ -279,12 +281,26 @@ async def test_purge_removes_personal_data_but_keeps_the_ledger(client, unique_e
     user = (await db.execute(select(User).where(User.email == unique_email))).scalar_one()
     user_id = user.id
 
+    org_id = (
+        await db.execute(
+            text("SELECT org_id FROM projects WHERE id = :p"), {"p": project["id"]}
+        )
+    ).scalar_one()
+
     await db.execute(
         text(
             "INSERT INTO usage_events (org_id, user_id, kind, quantity) "
-            "SELECT org_id, :u, 'ai_job', 1 FROM projects WHERE id = :p"
+            "VALUES (:o, :u, 'ai_job', 1)"
         ),
-        {"u": user_id, "p": project["id"]},
+        {"o": org_id, "u": user_id},
+    )
+    # 돈이 걸린 행 — 파기가 이걸 지우면 결제 분쟁에서 아무것도 증명할 수 없다
+    await db.execute(
+        text(
+            "INSERT INTO subscriptions (org_id, plan_code, status) VALUES (:o, 'pro', 'canceled') "
+            "ON CONFLICT (org_id) DO UPDATE SET plan_code = 'pro'"
+        ),
+        {"o": org_id},
     )
     await db.commit()
 
@@ -316,13 +332,46 @@ async def test_purge_removes_personal_data_but_keeps_the_ledger(client, unique_e
     ).scalar_one_or_none()
     assert gone is None
 
-    # **원장은 남고 식별자만 끊겼다**
-    ledger = (
+    # ------------------------------------------------------------------
+    # **원장은 남고 식별자만 끊긴다.**
+    #
+    # 예전 이 테스트는 `count(*) WHERE user_id = :u == 0` 만 봤는데, 그건 행이
+    # **삭제돼도** 통과한다. 지워졌는지 남았는지를 구분하지 못하는 단언이라,
+    # 파기가 조직을 DELETE 해서 원장을 통째로 날리는 동안에도 초록불이었다.
+    # 그래서 이제 **행이 몇 개 남았는지**를 조직 기준으로 센다.
+    # ------------------------------------------------------------------
+    kept = (
         await db.execute(
-            text("SELECT count(*) FROM usage_events WHERE user_id = :u"), {"u": user_id}
+            text("SELECT count(*) FROM usage_events WHERE org_id = :o"), {"o": org_id}
         )
     ).scalar_one()
-    assert ledger == 0, "사용량 원장의 식별자가 끊겨야 한다"
+    assert kept > 0, "사용량 원장이 남아 있어야 한다 — 지우면 결제 분쟁을 못 푼다"
+
+    orphaned = (
+        await db.execute(
+            text("SELECT count(*) FROM usage_events WHERE org_id = :o AND user_id IS NOT NULL"),
+            {"o": org_id},
+        )
+    ).scalar_one()
+    assert orphaned == 0, "원장은 남기되 사람과의 연결은 끊겨야 한다"
+
+    subs = (
+        await db.execute(
+            text("SELECT count(*) FROM subscriptions WHERE org_id = :o"), {"o": org_id}
+        )
+    ).scalar_one()
+    assert subs == 1, "구독 이력이 남아 있어야 한다"
+
+    # **조직도 사람처럼 익명화한다 — 지우지 않는다.** 지우면 위 둘이 CASCADE 로 따라간다
+    org = (
+        await db.execute(
+            text("SELECT status, name, slug FROM organizations WHERE id = :o"), {"o": org_id}
+        )
+    ).first()
+    assert org is not None, "조직 행을 지우면 구독·원장이 CASCADE 로 사라진다"
+    assert org.status == "purged"
+    assert org.name == ""
+    assert org.slug.startswith("purged-")
 
     audit_rows = (
         await db.execute(select(AuditLog).where(AuditLog.actor_id == user_id))

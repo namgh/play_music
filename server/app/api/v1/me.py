@@ -38,7 +38,7 @@ class WorkspaceOut(BaseModel):
     my_role: str
     plan_code: str
     commercial_license: bool
-    limits: dict[str, int]
+    limits: dict[str, int | None]
     usage: dict[str, int]
 
 
@@ -90,7 +90,13 @@ async def me(session: Db, user: CurrentUser) -> MeOut:
                 usage={
                     "ai_job": await entitlements.usage_in_period(session, org.id, "ai_job"),
                     "export": await entitlements.usage_in_period(session, org.id, "export"),
+                    # 지금 갖고 있는 곡 수 (휴지통 제외) — 목록 화면이 쓴다
                     "projects": await _project_count(session, org.id),
+                    # **체험을 몇 칸 썼나.** `limits.songs_total` 과 짝이다.
+                    # 이걸 안 보여주면 6번째 곡에서 갑자기 막히고 고장으로 읽힌다
+                    "songs_total": await entitlements.usage_total(
+                        session, org.id, entitlements.SONG_CREATED
+                    ),
                 },
             )
         )

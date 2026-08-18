@@ -310,7 +310,8 @@ async def billing_portal(
 class PlanOut(BaseModel):
     code: str
     display_name: str
-    limits: dict[str, int]
+    # **`None` 은 무제한이다.** `int` 로만 두면 무제한 플랜에서 응답이 터진다
+    limits: dict[str, int | None]
 
 
 @router.get("/billing/plans", response_model=list[PlanOut])

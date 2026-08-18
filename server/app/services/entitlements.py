@@ -14,18 +14,27 @@ import uuid
 from dataclasses import asdict, dataclass
 from datetime import UTC, date, datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import redis as r
 from app.core.errors import LimitReached
-from app.db.models import Plan, Subscription, UsageEvent, UsageRollup
+from app.db.models import EntitlementGrant, Plan, Subscription, UsageEvent, UsageRollup
 
 log = logging.getLogger(__name__)
 
 ENTITLEMENT_TTL_SEC = 60  # 결제 반영이 1분 안에 되면 충분하다
 
-DEFAULT_FREE_LIMITS = {"projects": 5, "ai_monthly": 5, "storage_mb": 500}
+# 베타 기본값 (`SERVER_PAYMENTS.md` 0절). `songs_total` 은 **누적**이다 —
+# 지우고 새로 만들어도 안 돌아온다. 안 그러면 무료 체험이 무한이 된다
+DEFAULT_FREE_LIMITS = {"songs_total": 5, "ai_monthly": 0, "storage_mb": 2000}
+
+# 누적 곡 수를 세는 원장의 `kind`
+SONG_CREATED = "song_created"
+
+#: `songs_total` 로 이름을 바꾸기 전의 키. 옛 플랜 행이 남아 있으면 **무제한으로
+#: 열리는 대신** 이 값을 쓴다 — 매출을 지키는 한도라 열리는 쪽으로 틀리면 안 된다
+_LEGACY_SONG_KEY = "projects"
 
 
 @dataclass(frozen=True)
@@ -34,6 +43,8 @@ class Entitlements:
     status: str
     commercial_license: bool
     limits: dict[str, int]
+    #: 지금 적용 중인 부여의 `kind` 들. 화면이 "베타 무료 이용 중"을 보여줄 수 있게
+    grants: tuple[str, ...] = ()
 
     @property
     def ai_allowed(self) -> bool:
@@ -42,11 +53,65 @@ class Entitlements:
         return self.status in ("active", "canceling", "past_due")
 
 
+def _limit_of(limits: dict, key: str) -> int | None:
+    """`None` 은 **무제한**이다. 키가 없어도 무제한 — 단 `songs_total` 만은
+    옛 이름(`projects`)을 먼저 본다. 이름을 바꾸다 한도가 통째로 풀리면
+    무료로 무한히 쓰게 된다"""
+    if key == "songs_total" and key not in limits and _LEGACY_SONG_KEY in limits:
+        log.warning("plan_uses_legacy_limit_key", extra={"key": _LEGACY_SONG_KEY})
+        return limits[_LEGACY_SONG_KEY]
+    return limits.get(key)
+
+
+def _merge_limits(base: dict, extra: dict) -> dict:
+    """**부여는 혜택이지 제약이 아니다** — 항상 후한 쪽을 남긴다.
+
+    `None`(무제한)이 어떤 숫자보다도 후하다. 부여에 **없는 키는 손대지 않는다** —
+    빈 `{}` 부여가 모든 한도를 무제한으로 열어 버리면 쿠폰 하나로 요금제가 무너진다.
+    """
+    merged = dict(base)
+    for key, value in extra.items():
+        if key not in merged:
+            # 플랜에 없는 키 = 이미 무제한. 부여가 그걸 좁힐 수는 없다
+            continue
+        current = merged[key]
+        if current is None or value is None:
+            merged[key] = None
+        else:
+            merged[key] = max(current, value)
+    return merged
+
+
+async def _active_grants(
+    session: AsyncSession, org_id: uuid.UUID
+) -> list[EntitlementGrant]:
+    now = datetime.now(UTC)
+    return list(
+        (
+            await session.execute(
+                select(EntitlementGrant).where(
+                    EntitlementGrant.org_id == org_id,
+                    EntitlementGrant.revoked_at.is_(None),
+                    EntitlementGrant.starts_at <= now,
+                    (EntitlementGrant.ends_at.is_(None)) | (EntitlementGrant.ends_at > now),
+                )
+            )
+        ).scalars()
+    )
+
+
 async def resolve(session: AsyncSession, org_id: uuid.UUID) -> Entitlements:
-    """**조직 단위다.** 개인도 1인 조직이라 경로가 하나뿐이다 (`app/services/orgs.py`)"""
+    """**조직 단위다.** 개인도 1인 조직이라 경로가 하나뿐이다 (`app/services/orgs.py`)
+
+    판정은 **구독 + 유효한 부여들의 합성**이다 (`SERVER_PAYMENTS.md` 4절).
+    베타 3개월 무료·쿠폰·AI 리워드가 전부 부여로 들어오므로, 구독 하나만 보면
+    "결제 안 했는데 써야 하는" 사람을 설명할 수 없다.
+    """
     cached = await r.cache_get(r.key("ent", str(org_id)))
     if cached:
         data = json.loads(cached)
+        # JSON 왕복에서 튜플이 리스트가 된다 — 프로즌 데이터클래스라 되돌려 준다
+        data["grants"] = tuple(data.get("grants", ()))
         return Entitlements(**data)
 
     row = (
@@ -58,18 +123,45 @@ async def resolve(session: AsyncSession, org_id: uuid.UUID) -> Entitlements:
     ).first()
 
     if row is None:
-        ent = Entitlements("free", "active", False, dict(DEFAULT_FREE_LIMITS))
+        plan_code, status, commercial = "free", "active", False
+        limits = dict(DEFAULT_FREE_LIMITS)
     else:
         sub, plan = row
-        ent = Entitlements(
-            plan_code=sub.plan_code,
-            status=sub.status,
-            commercial_license=sub.commercial_license,
-            limits=dict(plan.limits) if plan else dict(DEFAULT_FREE_LIMITS),
-        )
+        plan_code, status, commercial = sub.plan_code, sub.status, sub.commercial_license
+        limits = dict(plan.limits) if plan else dict(DEFAULT_FREE_LIMITS)
 
+    applied: list[str] = []
+    for grant in await _active_grants(session, org_id):
+        limits = _merge_limits(limits, grant.limits or {})
+        commercial = commercial or grant.commercial_license
+        applied.append(grant.kind)
+
+    ent = Entitlements(
+        plan_code=plan_code,
+        status=status,
+        commercial_license=commercial,
+        limits=limits,
+        grants=tuple(applied),
+    )
     await r.cache_set(r.key("ent", str(org_id)), json.dumps(asdict(ent)), ENTITLEMENT_TTL_SEC)
     return ent
+
+
+async def usage_total(session: AsyncSession, org_id: uuid.UUID, kind: str) -> int:
+    """**전 기간 누적.** 무료 체험(누적 5곡)처럼 달마다 리셋되면 안 되는 한도용이다.
+
+    롤업을 더하지 않고 원장만 센다 — `roll_up_usage` 는 **접기만 하고 지우지 않으므로**
+    (`app/scheduler/main.py`) 원장만 세는 것이 정확하다. 둘을 더하면 이중 계산이다.
+    """
+    return int(
+        (
+            await session.execute(
+                select(func.coalesce(func.sum(UsageEvent.quantity), 0)).where(
+                    UsageEvent.org_id == org_id, UsageEvent.kind == kind
+                )
+            )
+        ).scalar_one()
+    )
 
 
 async def invalidate(org_id: uuid.UUID) -> None:
@@ -155,3 +247,33 @@ async def record_usage(
             org_id=org_id, user_id=user_id, kind=kind, quantity=quantity, job_id=job_id
         )
     )
+
+
+async def require_song_quota(
+    session: AsyncSession, ent: Entitlements, org_id: uuid.UUID
+) -> None:
+    """무료 체험의 **누적 곡 한도**. 초과면 402.
+
+    `require_quota` 와 달리 **경계를 정확히 막는다.** 저기서는 몇 건 새도 원가가
+    작지만, 여기는 "무료로 몇 곡까지 만드나"가 곧 결제할 이유라 새면 안 된다.
+    자문 락으로 같은 조직의 동시 생성만 직렬화한다 — 코드로만 세면 프로세스 둘이
+    같이 통과한다.
+    """
+    limit = _limit_of(ent.limits, "songs_total")
+    if limit is None:
+        return
+    await session.execute(
+        text("SELECT pg_advisory_xact_lock(hashtextextended(:k, 0))").bindparams(
+            k=str(org_id)
+        )
+    )
+    used = await usage_total(session, org_id, SONG_CREATED)
+    if used >= limit:
+        raise LimitReached(
+            f"무료로 만들 수 있는 {limit}곡을 모두 사용했습니다",
+            code="song_limit_reached",
+            # **기존 곡은 계속 쓸 수 있다**는 걸 화면이 말해 줘야 한다.
+            # 만든 걸 못 여는 줄 알면 결제가 아니라 이탈이 나온다
+            details={"limit": limit, "used": used, "plan": ent.plan_code,
+                     "existing_songs_still_editable": True},
+        )

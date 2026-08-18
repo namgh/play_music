@@ -162,7 +162,11 @@ async def test_document_must_have_schema_version(client, unique_email):
 
 
 async def test_project_limit_is_enforced(client, unique_email):
-    """무료 한도. **코드가 아니라 DB 에서 센다** (`SERVER.md` 5절)"""
+    """무료 한도. **코드가 아니라 DB 에서 센다** (`SERVER.md` 5절).
+
+    누적으로 세는 것이라 지웠다 새로 만들어도 안 돌아온다 —
+    그 성질은 `tests/test_entitlements.py` 가 따로 본다.
+    """
     token = await signup(client, unique_email)
     for i in range(5):
         res = await client.post(
@@ -174,7 +178,7 @@ async def test_project_limit_is_enforced(client, unique_email):
         "/v1/projects", json={"name": "여섯째", "document": DOC}, headers=auth(token)
     )
     assert over.status_code == 402
-    assert over.json()["error"]["code"] == "project_limit_reached"
+    assert over.json()["error"]["code"] == "song_limit_reached"
     assert over.json()["error"]["details"]["limit"] == 5
 
 

@@ -153,32 +153,15 @@ async def create_project(
     org = await orgs.resolve_org(session, user=user, org_id=body.org_id, need=orgs.EDIT)
 
     ent = await entitlements.resolve(session, org.id)
-    limit = ent.limits.get("projects")
-    if limit is not None:
-        await session.execute(
-            text("SELECT pg_advisory_xact_lock(hashtextextended(:k, 0))").bindparams(
-                k=str(org.id)
-            )
-        )
-        count = (
-            await session.execute(
-                select(Project).where(
-                    Project.org_id == org.id, Project.deleted_at.is_(None)
-                )
-            )
-        ).scalars()
-        if len(list(count)) >= limit:
-            from app.core.errors import LimitReached
-
-            raise LimitReached(
-                f"현재 플랜은 프로젝트 {limit}개까지입니다",
-                code="project_limit_reached",
-                details={"limit": limit, "plan": ent.plan_code},
-            )
+    await entitlements.require_song_quota(session, ent, org.id)
 
     project = Project(org_id=org.id, owner_id=user.id, name=body.name)
     session.add(project)
     await session.flush()
+    # **누적으로 센다.** 살아 있는 곡을 세면 지웠다 새로 만드는 것으로 무한히 우회된다
+    await entitlements.record_usage(
+        session, org_id=org.id, user_id=user.id, kind=entitlements.SONG_CREATED
+    )
 
     version, _ = await save_document(
         session, project=project, doc=body.document, author_id=user.id, expected_head=None
@@ -398,31 +381,10 @@ async def restore_project(
     if orgs.ROLE_RANK[role] < orgs.ROLE_RANK[orgs.EDIT]:
         raise Forbidden("권한이 없습니다", code="insufficient_org_role")
 
-    # **한도를 다시 본다.** 지운 뒤 새로 만들어 한도를 채운 상태에서 복구하면
-    # 한도를 넘게 된다 — 복구는 생성과 같은 비용이다
-    ent = await entitlements.resolve(session, project.org_id)
-    limit = ent.limits.get("projects")
-    if limit is not None:
-        alive = len(
-            list(
-                (
-                    await session.execute(
-                        select(Project.id).where(
-                            Project.org_id == project.org_id, Project.deleted_at.is_(None)
-                        )
-                    )
-                ).scalars()
-            )
-        )
-        if alive >= limit:
-            from app.core.errors import LimitReached
-
-            raise LimitReached(
-                f"현재 플랜은 프로젝트 {limit}개까지입니다. 자리를 비운 뒤 복구해 주세요",
-                code="project_limit_reached",
-                details={"limit": limit, "plan": ent.plan_code},
-            )
-
+    # **복구는 한도를 안 본다.** 한도가 누적(`song_created` 원장)으로 바뀌었으므로
+    # 이 곡은 만들 때 이미 한 칸을 썼다. 복구할 때 또 세면 같은 곡을 두 번 물리는
+    # 셈이고, 휴지통에서 되돌리는 것조차 막히면 "자리를 비우라"는 말을 들은 사용자가
+    # 결국 곡을 영구 삭제하게 된다
     project.deleted_at = None
     project.updated_at = datetime.now(UTC)
     await audit.record(
@@ -450,32 +412,16 @@ async def duplicate_project(
         raise Conflict("아직 저장된 내용이 없습니다", code="no_version")
     head = await load_version(session, source.head_version_id)
 
+    # **복제는 새 곡이다** — 한 칸을 쓴다. 안 세면 "복제"가 한도를 우회하는 길이 된다
     ent = await entitlements.resolve(session, source.org_id)
-    limit = ent.limits.get("projects")
-    if limit is not None:
-        alive = len(
-            list(
-                (
-                    await session.execute(
-                        select(Project.id).where(
-                            Project.org_id == source.org_id, Project.deleted_at.is_(None)
-                        )
-                    )
-                ).scalars()
-            )
-        )
-        if alive >= limit:
-            from app.core.errors import LimitReached
-
-            raise LimitReached(
-                f"현재 플랜은 프로젝트 {limit}개까지입니다",
-                code="project_limit_reached",
-                details={"limit": limit, "plan": ent.plan_code},
-            )
+    await entitlements.require_song_quota(session, ent, source.org_id)
 
     copy = Project(org_id=source.org_id, owner_id=user.id, name=f"{source.name} 사본")
     session.add(copy)
     await session.flush()
+    await entitlements.record_usage(
+        session, org_id=source.org_id, user_id=user.id, kind=entitlements.SONG_CREATED
+    )
     version, _ = await save_document(
         session, project=copy, doc=head.doc or {}, author_id=user.id, expected_head=None
     )

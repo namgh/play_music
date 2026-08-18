@@ -73,19 +73,31 @@ async def test_restore_brings_it_back(client, unique_email):
     assert detail.json()["document"]["tempo"]["bpm"] == 92
 
 
-async def test_restore_respects_the_plan_limit(client, unique_email):
-    """**복구는 생성과 같은 비용이다.** 지운 뒤 새로 만들어 한도를 채운 상태에서
-    복구하면 한도를 넘게 된다"""
+async def test_restore_is_free_once_the_quota_is_spent(client, unique_email):
+    """**복구는 한도를 쓰지 않는다.** 규칙이 뒤집힌 자리라 이유를 남긴다.
+
+    옛 한도는 "동시에 보관 가능한 곡 수"였고, 그래서 복구도 한 칸을 먹었다.
+    지금은 **누적 생성 수**라 이 곡은 만들 때 이미 한 칸을 썼다 — 복구할 때 또 세면
+    같은 곡을 두 번 물리는 셈이다.
+
+    그리고 여기서 막으면 "자리를 비우고 복구하라"는 말을 들은 사용자가 결국 다른
+    곡을 영구 삭제한다. 한도를 지키려다 사용자 작업물을 잃게 만드는 셈이다.
+    """
     token = await signup(client, unique_email)
     first = await _project(client, token, "첫 곡")
     await client.delete(f"/v1/projects/{first['id']}", headers=auth(token))
 
-    for i in range(5):  # 무료 한도를 다시 채운다
+    # 남은 체험을 전부 쓴다 (첫 곡이 이미 한 칸을 썼으므로 네 곡)
+    for i in range(4):
         await _project(client, token, f"곡 {i}")
 
+    exhausted = await client.post(
+        "/v1/projects", json={"name": "막힘", "document": DOC}, headers=auth(token)
+    )
+    assert exhausted.status_code == 402, "여기서 막혀 있어야 시험이 성립한다"
+
     res = await client.post(f"/v1/projects/{first['id']}/restore", headers=auth(token))
-    assert res.status_code == 402
-    assert res.json()["error"]["code"] == "project_limit_reached"
+    assert res.status_code == 200, f"휴지통 복구가 한도로 막히면 안 된다: {res.text}"
 
 
 async def test_cannot_restore_someone_elses_project(client, unique_email):

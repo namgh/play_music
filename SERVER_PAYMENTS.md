@@ -283,7 +283,7 @@ erDiagram
 
 | Day | 무엇을 | 끝나면 확인되는 것 | 주로 건드리는 곳 |
 |---|---|---|---|
-| **1** | **기반** — 파기 버그 수정(조직 익명화), `entitlement_grants`, 판정을 구독+부여 합성으로, 5곡 누적 카운트, `plans` 베타 값 | 탈퇴해도 원장이 남는다 · 지우고 재생성하는 우회가 막힌다 · 프로모션 자리가 생긴다 | `db/models.py` · 마이그레이션 · `services/entitlements.py` · `scheduler/` · `api/v1/projects.py` |
+| **1** ✅ | **기반** — 파기 버그 수정(조직 익명화), `entitlement_grants`, 판정을 구독+부여 합성으로, 5곡 누적 카운트, `plans` 베타 값 | 탈퇴해도 원장이 남는다 · 지우고 재생성하는 우회가 막힌다 · 프로모션 자리가 생긴다 | `db/models.py` · 마이그레이션 · `services/entitlements.py` · `scheduler/` · `api/v1/projects.py` |
 | **2** | **결제 스키마 + 토스 클라이언트** — 테이블 4종, 승인·조회·취소·빌링키 발급 HTTP 클라이언트, 테스트 더블 | 테스트 키로 **실제 토스 승인이 뚫린다** | 마이그레이션 · `services/toss.py`(신규) |
 | **3** | **빌링키 발급 흐름** — `prepare` → `issue`, 암호화 저장, `customer_key` 발급 | 카드 등록이 끝까지 간다 | `api/v1/billing.py` · `core/crypto.py`(신규) |
 | **4** | **정기결제 실행** — 스케줄러 갱신 잡, `orderId` 멱등, 중복청구 DB 제약 | **매달 자동으로 긁힌다.** 두 번 돌려도 한 번만 청구된다 | `scheduler/main.py` · `services/billing_run.py`(신규) |

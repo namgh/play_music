@@ -23,6 +23,32 @@ from tests.test_projects import auth, signup
 
 
 @pytest.fixture(autouse=True)
+async def ai_quota_for_infra_tests(app, db):
+    """**베타 기본값은 `ai_monthly: 0` 이다** — Phase 1 에 AI 가 없기 때문이다
+    (`SERVER_PAYMENTS.md` 0절).
+
+    이 파일이 보는 것은 요금제가 아니라 **잡 큐 인프라**(SKIP LOCKED·임대·재시도)라,
+    필요한 권한을 명시적으로 켜고 끝나면 되돌린다. 제품 기본값에 기대면 요금 정책을
+    바꿀 때마다 인프라 테스트가 같이 깨진다 — 실제로 그렇게 깨졌다.
+
+    가입이 `subscriptions(plan_code='free')` 를 만들기 때문에 판정은 **DB 의 플랜
+    행**을 읽는다. `DEFAULT_FREE_LIMITS` 는 구독 행이 없을 때만 쓰는 대비책이라
+    거기를 건드려도 여기엔 아무 영향이 없다.
+    """
+    from sqlalchemy import text as _text
+
+    await db.execute(
+        _text("""UPDATE plans SET limits = limits || '{"ai_monthly": 50}' WHERE code = 'free'""")
+    )
+    await db.commit()
+    yield
+    await db.execute(
+        _text("""UPDATE plans SET limits = limits || '{"ai_monthly": 0}' WHERE code = 'free'""")
+    )
+    await db.commit()
+
+
+@pytest.fixture(autouse=True)
 async def clean_jobs(app, db):
     await db.execute(text("DELETE FROM ai_jobs WHERE status IN ('queued','running')"))
     await db.commit()

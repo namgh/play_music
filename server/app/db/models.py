@@ -143,6 +143,10 @@ class Organization(Base):
     slug: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     name: Mapped[str] = mapped_column(Text, nullable=False)
     kind: Mapped[str] = mapped_column(Text, nullable=False, server_default="personal")
+    # 사용자와 같은 생명주기다 — `deleted` 는 되돌릴 수 있고 `purged` 는 못 되돌린다.
+    # **`purged` 라도 행을 지우지 않는다**: 지우면 CASCADE 로 구독·사용량 원장까지
+    # 사라져서 결제 분쟁을 풀 수 없다. 콘텐츠만 지우고 이름을 익명화한다
+    status: Mapped[str] = mapped_column(Text, nullable=False, server_default="active")
     created_by: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL")
     )
@@ -151,6 +155,7 @@ class Organization(Base):
 
     __table_args__ = (
         CheckConstraint("kind IN ('personal','team')", name="kind"),
+        CheckConstraint("status IN ('active','deleted','purged')", name="status"),
         # 슬러그는 소문자·숫자·하이픈만. 대소문자만 다른 두 조직은 사람이 구분 못 한다
         CheckConstraint("slug ~ '^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$'", name="slug_format"),
     )
@@ -519,6 +524,49 @@ class Subscription(Base):
         CheckConstraint(
             "status IN ('active','canceling','past_due','canceled')", name="status"
         ),
+    )
+
+
+class EntitlementGrant(Base):
+    """**구독이 아닌 방식으로 주는 권한** (`SERVER_PAYMENTS.md` 4절).
+
+    앞으로 들어올 것들이 전부 구독이 아니다 — 베타 3개월 무료, "AI 를 많이 쓰면
+    DAW 면제", 쿠폰, 파트너, 내부 계정. 이걸 구독 행에 우겨넣으면 "결제는 안 했는데
+    구독 상태가 active" 같은 거짓말을 하게 되고, 결제 코드가 그걸 다시 해석한다.
+
+    그래서 판정을 **`구독 + 유효한 부여들`의 합성**으로 둔다. 넷이 같은 자리로 들어온다.
+
+    **행동은 `kind` 가 아니라 `limits`/`commercial_license` 가 정한다.** `kind` 는
+    "왜 줬나"를 사람이 읽기 위한 것이라 제약을 걸지 않는다 — 새 프로모션마다
+    마이그레이션을 하게 되면 `plans.limits` 를 데이터로 둔 이유가 무너진다.
+    """
+
+    __tablename__ = "entitlement_grants"
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+    kind: Mapped[str] = mapped_column(Text, nullable=False)
+    # 구독 한도 **위에 덮어쓴다.** 합성 규칙은 `services/entitlements.py` 에 있다
+    limits: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=text("'{}'"))
+    commercial_license: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
+    starts_at: Mapped[datetime] = created_at_col()
+    # NULL 이면 무기한. 베타 3개월 무료는 여기에 만료일이 들어간다
+    ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # **왜 줬는지 남긴다.** 공짜 권한은 나중에 반드시 "이건 누가 왜 줬나"를 묻게 된다
+    reason: Mapped[str | None] = mapped_column(Text)
+    granted_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = created_at_col()
+
+    __table_args__ = (
+        # 유효한 부여만 찾는 질의가 매 요청에 붙는다
+        Index("ix_entitlement_grants_org_id_ends_at", "org_id", "ends_at"),
     )
 
 
