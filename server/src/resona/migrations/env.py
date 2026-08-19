@@ -14,9 +14,9 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
-from resona.config import get_settings
-from resona.db import models  # noqa: F401 — 모델을 임포트해야 metadata 가 채워진다
-from resona.db.base import metadata
+from resona import domains  # noqa: F401 — 도메인을 임포트해야 metadata 가 채워진다
+from resona.core.config import get_settings
+from resona.shared.base_model import metadata
 
 config = context.config
 if config.config_file_name is not None:

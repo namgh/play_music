@@ -58,9 +58,9 @@ os.environ.setdefault("PAYMENT_ENC_KEY", base64.b64encode(b"k" * 32).decode())
 # 베타 부여 자체는 `test_beta_grant.py` 가 켜서 따로 본다
 os.environ.setdefault("BETA_FREE_MONTHS", "0")
 
-from resona.config import get_settings  # noqa: E402
 from resona.core import redis as r  # noqa: E402
-from resona.db.session import dispose_engine, init_engine, session_scope  # noqa: E402
+from resona.core.config import get_settings  # noqa: E402
+from resona.core.db import dispose_engine, init_engine, session_scope  # noqa: E402
 from resona.main import create_app  # noqa: E402
 
 

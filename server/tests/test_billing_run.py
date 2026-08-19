@@ -13,8 +13,9 @@ import httpx
 import pytest
 from sqlalchemy import text
 
-from resona.db.models import Subscription
-from resona.services import billing_run, toss
+from resona.domains.billing.models import Subscription
+from resona.domains.payments import provider_toss as toss
+from resona.domains.payments import service as billing_run
 from tests.test_billing_toss import _issue, _prepare
 from tests.test_projects import signup
 
@@ -248,7 +249,7 @@ async def test_reconcile_confirms_a_payment_that_actually_went_through(
     client, unique_email, db, settings
 ):
     """조회해 보니 **결제가 됐더라** — 재시도 대신 이 길로 간다"""
-    from resona.db.models import PaymentOrder
+    from resona.domains.payments.models import PaymentOrder
 
     _, org_id = await setup_org_with_card(client, db, unique_email)
     sub = await _sub(db, org_id, status="active", current_period_end=None)
@@ -279,7 +280,7 @@ async def test_reconcile_marks_it_failed_when_nothing_was_charged(
     client, unique_email, db, settings
 ):
     """조회해 보니 **그런 결제가 없더라** = 안 긁혔다. 실패로 확정해도 안전하다"""
-    from resona.db.models import PaymentOrder
+    from resona.domains.payments.models import PaymentOrder
 
     _, org_id = await setup_org_with_card(client, db, unique_email)
     sub = await _sub(db, org_id, status="active", current_period_end=None)
@@ -312,7 +313,7 @@ async def test_reconcile_leaves_it_alone_when_still_unknown(
     client, unique_email, db, settings
 ):
     """아직도 모르면 **그대로 둔다.** 추측해서 확정하는 것이 제일 나쁘다"""
-    from resona.db.models import PaymentOrder
+    from resona.domains.payments.models import PaymentOrder
 
     _, org_id = await setup_org_with_card(client, db, unique_email)
     sub = await _sub(db, org_id, status="active", current_period_end=None)
@@ -388,7 +389,7 @@ async def test_failed_attempts_may_repeat_in_the_same_cycle(client, unique_email
 
 
 async def test_scheduler_charges_due_subscriptions(client, unique_email, db, settings):
-    from resona.scheduler import main as sched
+    from resona.workers import scheduler as sched
 
     _, org_id = await setup_org_with_card(client, db, unique_email)
     await _sub(db, org_id, status="active")
@@ -417,7 +418,7 @@ async def test_scheduler_charges_due_subscriptions(client, unique_email, db, set
 async def test_scheduler_skips_subscriptions_that_are_not_due(
     client, unique_email, db, settings
 ):
-    from resona.scheduler import main as sched
+    from resona.workers import scheduler as sched
 
     _, org_id = await setup_org_with_card(client, db, unique_email)
     await _sub(

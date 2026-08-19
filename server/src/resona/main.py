@@ -21,25 +21,28 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from resona.api.v1 import (
-    admin,
-    assets,
-    auth,
-    billing,
-    billing_toss,
-    events,
-    health,
-    jobs,
-    me,
-    orgs,
-    presets,
-    projects,
-)
-from resona.config import get_settings
+from resona.core import health
 from resona.core import redis as r
+from resona.core.config import get_settings
+from resona.core.db import dispose_engine, init_engine
 from resona.core.errors import AppError, app_error_handler, error_body, unhandled_error_handler
-from resona.db.session import dispose_engine, init_engine
-from resona.logging import setup_logging
+from resona.core.logging import setup_logging
+
+# **도메인 모듈에서 라우터를 직접 가져온다.**
+# `domains/<d>/__init__.py` 로 re-export 하지 않는 이유는, 알렘빅이 메타데이터를
+# 채우려고 `resona.domains` 를 임포트하는데 그때 FastAPI 라우터까지 딸려 오면
+# 마이그레이션이 앱 전체에 의존하게 되기 때문이다
+from resona.domains.accounts import router as accounts_router
+from resona.domains.accounts import router_me as accounts_me_router
+from resona.domains.assets import router as assets_router
+from resona.domains.billing import router as billing_router
+from resona.domains.jobs import router as jobs_router
+from resona.domains.jobs import router_events as jobs_events_router
+from resona.domains.ops import router as ops_router
+from resona.domains.payments import router as payments_router
+from resona.domains.projects import router as projects_router
+from resona.domains.projects import router_presets as projects_presets_router
+from resona.domains.workspaces import router as workspaces_router
 
 log = logging.getLogger(__name__)
 
@@ -194,17 +197,20 @@ def create_app() -> FastAPI:
         )
 
     app.include_router(health.router)
-    app.include_router(auth.router, prefix="/v1")
-    app.include_router(projects.router, prefix="/v1")
-    app.include_router(me.router, prefix="/v1")
-    app.include_router(presets.router, prefix="/v1")
-    app.include_router(orgs.router, prefix="/v1")
-    app.include_router(assets.router, prefix="/v1")
-    app.include_router(events.router, prefix="/v1")
-    app.include_router(jobs.router, prefix="/v1")
-    app.include_router(billing.router, prefix="/v1")
-    app.include_router(billing_toss.router, prefix="/v1")
-    app.include_router(admin.router, prefix="/v1")
+    for domain_router in (
+        accounts_router,
+        accounts_me_router,
+        workspaces_router,
+        projects_router,
+        projects_presets_router,
+        assets_router,
+        jobs_router,
+        jobs_events_router,
+        billing_router,
+        payments_router,
+        ops_router,
+    ):
+        app.include_router(domain_router.router, prefix="/v1")
     return app
 
 

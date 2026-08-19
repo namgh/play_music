@@ -14,8 +14,10 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select, text
 
-from resona.db.models import AuditLog, Project, User
-from resona.scheduler import main as sched
+from resona.domains.accounts.models import User
+from resona.domains.ops.models import AuditLog
+from resona.domains.projects.models import Project
+from resona.workers import scheduler as sched
 from tests.test_projects import DOC, auth, signup
 
 PASSWORD = "correct-horse-battery"
@@ -103,7 +105,7 @@ async def test_password_change_requires_the_current_one(client, unique_email):
 async def test_password_change_kills_other_sessions(client, unique_email, db):
     """바꾸는 이유의 절반은 "누가 들어온 것 같다"이고,
     그때 옛 세션이 살아 있으면 바꾼 의미가 없다"""
-    from resona.db.models import RefreshToken
+    from resona.domains.accounts.models import RefreshToken
 
     token = await signup(client, unique_email)
     user_id = (
@@ -127,7 +129,7 @@ async def test_password_change_kills_other_sessions(client, unique_email, db):
 
 async def test_password_change_is_rejected_for_google_only_accounts(client, db, unique_email):
     """비밀번호가 없는 계정에 "현재 비밀번호"를 물으면 답할 수가 없다"""
-    from resona.db.models import AuthIdentity
+    from resona.domains.accounts.models import AuthIdentity
 
     token = await signup(client, unique_email)
     await db.execute(
@@ -167,7 +169,7 @@ async def test_delete_requires_password_and_confirmation(client, unique_email):
 
 
 async def test_delete_marks_deleted_and_kills_sessions(client, unique_email, db):
-    from resona.db.models import RefreshToken
+    from resona.domains.accounts.models import RefreshToken
 
     token = await signup(client, unique_email)
     res = await client.post(

@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy import text
 
-from resona.services import entitlements
+from resona.domains.billing import service as entitlements
 from tests.test_projects import DOC, auth, signup
 
 

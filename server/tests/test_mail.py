@@ -12,9 +12,9 @@ import smtplib
 import pytest
 from sqlalchemy import select, text
 
-from resona.db.models import EmailOutbox
-from resona.services import mail
-from resona.worker import mailer
+from resona.domains.ops import mail as mail
+from resona.domains.ops.models import EmailOutbox
+from resona.workers import mailer
 from tests.test_projects import signup
 
 PASSWORD = "correct-horse-battery"
@@ -29,7 +29,7 @@ async def clean_outbox(app, db):
 @pytest.fixture
 def smtp_configured(monkeypatch):
     """설정은 **`Settings` 한 곳**에서만 오므로 캐시를 비워야 반영된다"""
-    from resona.config import get_settings
+    from resona.core.config import get_settings
 
     monkeypatch.setenv("SMTP_USER", "noreply@example.com")
     monkeypatch.setenv("SMTP_PASSWORD", "app-password-1234")
@@ -105,7 +105,7 @@ async def test_enqueue_rejects_unknown_template(db):
 
 async def test_enqueue_rolls_back_with_its_transaction(client, unique_email, db):
     """**아웃박스의 존재 이유.** 가입이 실패하면 확인 메일도 없던 일이 돼야 한다"""
-    from resona.db.session import session_scope
+    from resona.core.db import session_scope
 
     with pytest.raises(RuntimeError):
         async with session_scope() as s:
@@ -148,7 +148,7 @@ async def test_nothing_to_send_returns_false(client, smtp_configured, fake_smtp)
 
 async def test_unconfigured_smtp_keeps_mail_queued(client, unique_email, db, monkeypatch):
     """설정이 없다고 **failed 로 만들지 않는다** — 나중에 설정해도 안 나가게 된다"""
-    from resona.config import get_settings
+    from resona.core.config import get_settings
 
     monkeypatch.delenv("SMTP_USER", raising=False)
     monkeypatch.delenv("SMTP_PASSWORD", raising=False)
@@ -258,7 +258,7 @@ async def test_verify_email_activates_account(client, unique_email, db, smtp_con
     res = await client.post("/v1/auth/verify-email", json={"token": token})
     assert res.status_code == 204
 
-    from resona.db.models import User
+    from resona.domains.accounts.models import User
 
     user = (
         await db.execute(select(User).where(User.email == unique_email))

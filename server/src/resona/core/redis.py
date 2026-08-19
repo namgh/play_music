@@ -13,7 +13,7 @@ from typing import Any
 
 from redis.asyncio import Redis
 
-from resona.config import Settings
+from resona.core.config import Settings
 
 log = logging.getLogger(__name__)
 

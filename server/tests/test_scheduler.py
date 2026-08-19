@@ -18,7 +18,7 @@ import pytest
 from sqlalchemy import text
 
 from resona.core import redis as r
-from resona.scheduler import main as sched
+from resona.workers import scheduler as sched
 
 
 @pytest.fixture(autouse=True)
@@ -143,7 +143,8 @@ async def test_roll_up_usage_folds_last_month(client, unique_email, db):
     """**조직 단위로 접는다.** 여기서 컬럼 이름이 틀려 있었다 (user_id → org_id)"""
     from sqlalchemy import select
 
-    from resona.db.models import Organization, OrgMember, User
+    from resona.domains.accounts.models import User
+    from resona.domains.workspaces.models import Organization, OrgMember
     from tests.test_projects import signup
 
     await signup(client, unique_email)
@@ -196,7 +197,8 @@ async def test_roll_up_does_not_fold_the_current_month(client, unique_email, db)
     """이번 달을 접으면 **아직 늘어날 사용량이 롤업에 굳는다**"""
     from sqlalchemy import select
 
-    from resona.db.models import Organization, OrgMember, User
+    from resona.domains.accounts.models import User
+    from resona.domains.workspaces.models import Organization, OrgMember
     from tests.test_projects import signup
 
     await signup(client, unique_email)
@@ -231,7 +233,7 @@ async def test_expire_impersonations_closes_overdue_sessions(client, unique_emai
     """**담당자가 '종료'를 누르는 것에 의존하지 않는다** — 누르는 것을 잊는 쪽이 기본값"""
     from sqlalchemy import select
 
-    from resona.db.models import User
+    from resona.domains.accounts.models import User
     from tests.test_projects import signup
 
     await signup(client, unique_email)
@@ -265,7 +267,7 @@ async def test_expire_impersonations_closes_overdue_sessions(client, unique_emai
 async def test_sweep_expired_tokens_removes_expired_only(client, unique_email, db):
     from sqlalchemy import select
 
-    from resona.db.models import User
+    from resona.domains.accounts.models import User
     from tests.test_projects import signup
 
     await signup(client, unique_email)

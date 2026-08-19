@@ -22,8 +22,9 @@ import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
 from sqlalchemy import select
 
-from resona.db.models import AuthIdentity, Organization, OrgMember, User
-from resona.services import google_oauth
+from resona.domains.accounts import provider_google as google_oauth
+from resona.domains.accounts.models import AuthIdentity, User
+from resona.domains.workspaces.models import Organization, OrgMember
 from tests.test_projects import DOC, auth, signup
 
 CLIENT_ID = "test-client-id.apps.googleusercontent.com"
@@ -34,7 +35,7 @@ _KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 
 @pytest.fixture(autouse=True)
 def google_configured(monkeypatch):
-    from resona.config import get_settings
+    from resona.core.config import get_settings
 
     monkeypatch.setenv("GOOGLE_CLIENT_ID", CLIENT_ID)
     monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "test-secret")
@@ -344,7 +345,7 @@ async def test_next_parameter_cannot_redirect_offsite(client, target):
 
 
 async def test_start_is_rejected_when_not_configured(client, monkeypatch):
-    from resona.config import get_settings
+    from resona.core.config import get_settings
 
     monkeypatch.delenv("GOOGLE_CLIENT_ID", raising=False)
     get_settings.cache_clear()

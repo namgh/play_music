@@ -18,7 +18,7 @@ import pytest
 from sqlalchemy import text
 
 from resona.core import events
-from resona.worker.main import Worker
+from resona.workers.tasks import Worker
 from tests.test_projects import auth, signup
 
 

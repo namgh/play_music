@@ -23,7 +23,7 @@ import os
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
-from resona.config import Settings
+from resona.core.config import Settings
 from resona.core.errors import AppError
 
 #: AES-256-GCM
