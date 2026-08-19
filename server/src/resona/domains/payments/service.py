@@ -34,14 +34,20 @@ import secrets
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
+from typing import TYPE_CHECKING
 
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from resona.core import crypto
 from resona.core.config import Settings
+from resona.domains.billing import service as billing
 from resona.domains.billing import service as entitlements
-from resona.domains.billing.models import Plan, Subscription
+
+if TYPE_CHECKING:  # 타입 표기 전용 — **런타임 결합을 만들지 않는다.**
+    # 결제는 구독을 긁는 일이라 `payments → billing` 방향 의존은 설계상 맞다.
+    # 다만 그 반대는 없어야 하고, 실행 시점에는 임포트조차 없어야 한다
+    from resona.domains.billing.models import Subscription
 from resona.domains.payments import provider_toss as toss
 from resona.domains.payments.models import BillingKey, Payment, PaymentOrder
 
@@ -180,7 +186,7 @@ async def charge_subscription(
     """구독 하나를 청구한다. **부르는 쪽이 잠금을 쥔 상태여야 한다**"""
     now = now or datetime.now(UTC)
 
-    plan = await session.get(Plan, sub.plan_code)
+    plan = await billing.get_plan(session, sub.plan_code)
     if plan is None or not plan.price_krw:
         return ChargeResult("skipped", "유료 플랜이 아니다")
 
@@ -250,7 +256,7 @@ async def reconcile_order(
     결국 재시도할 수밖에 없고, 그러면 이중 청구가 난다.
     """
     now = now or datetime.now(UTC)
-    sub = await session.get(Subscription, order.org_id)
+    sub = await billing.get_subscription(session, order.org_id)
 
     try:
         payload = await toss.get_payment_by_order_id(settings, order_id=order.order_id)

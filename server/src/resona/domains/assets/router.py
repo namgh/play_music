@@ -27,10 +27,11 @@ from resona.core.deps import Config, Db, client_ip
 from resona.core.errors import Conflict, NotFound, Unprocessable
 from resona.core.ratelimit import check as rate_check
 from resona.domains.accounts.deps import ActiveUser, CurrentUser
+from resona.domains.assets import repository
 from resona.domains.assets.models import Asset
 from resona.domains.billing import service as entitlements
 from resona.domains.ops import audit
-from resona.domains.projects.models import Project, ProjectExport, ProjectVersion
+from resona.domains.projects import service as projects
 from resona.domains.projects.service import get_project
 from resona.domains.workspaces import service as orgs
 
@@ -188,8 +189,8 @@ async def create_export(
     # 없거나 남의 것이면 여기서 404 를 던진다 (존재 자체를 알려주지 않는다)
     project = await get_project(session, body.project_id, user.id, need=orgs.EDIT)
 
-    version = await session.get(ProjectVersion, body.version_id)
-    if version is None or version.project_id != project.id:
+    version = await projects.get_version_of(session, project.id, body.version_id)
+    if version is None:
         raise NotFound("버전을 찾을 수 없습니다", code="version_not_found")
 
     asset = await session.get(Asset, body.asset_id)
@@ -200,7 +201,8 @@ async def create_export(
         raise Conflict("업로드가 아직 끝나지 않았습니다", code="asset_not_ready")
 
     ent = await entitlements.resolve(session, project.org_id)
-    export = ProjectExport(
+    export = await projects.record_export(
+        session,
         project_id=project.id,
         version_id=version.id,
         asset_id=asset.id,
@@ -216,7 +218,6 @@ async def create_export(
             "commercial": ent.commercial_license,
         },
     )
-    session.add(export)
     await session.flush()
 
     await entitlements.record_usage(
@@ -251,18 +252,15 @@ async def list_exports(
     # 내려받기는 viewer 도 된다 — 정지 계정에도 열려 있어야 하는 경로다
     project = await get_project(session, project_id, user.id)
 
-    rows = (
-        await session.execute(
-            select(ProjectExport, Asset)
-            .join(Asset, Asset.id == ProjectExport.asset_id)
-            .where(ProjectExport.project_id == project_id)
-            .order_by(ProjectExport.created_at.desc())
-            .limit(limit)
-        )
-    ).all()
+    # **조인하지 않는다.** 내보내기 이력은 곡 도메인, 파일은 에셋 도메인이다
+    exports = await projects.exports_of(session, project_id, limit=limit)
+    assets = await repository.get_many(session, [e.asset_id for e in exports])
 
     out: list[ExportOut] = []
-    for export, asset in rows:
+    for export in exports:
+        asset = assets.get(export.asset_id)
+        if asset is None:
+            continue
         out.append(
             ExportOut(
                 id=export.id,
@@ -301,12 +299,7 @@ async def delete_asset(
         raise NotFound("에셋을 찾을 수 없습니다", code="asset_not_found")
     await orgs.require_member(session, org_id=asset.org_id, user_id=user.id, need=orgs.EDIT)
 
-    used_by = (
-        await session.execute(
-            select(ProjectExport.id).where(ProjectExport.asset_id == asset_id).limit(1)
-        )
-    ).first()
-    if used_by is not None:
+    if await projects.export_exists_for_asset(session, asset_id):
         raise Conflict(
             "내보내기에 사용 중인 파일입니다. 내보내기를 먼저 삭제해 주세요",
             code="asset_in_use",
@@ -333,11 +326,11 @@ async def delete_export(
     **라이선스 스냅샷도 함께 사라진다.** 그래서 지우는 것은 사용자의 명시적
     선택이어야 하고, 우리가 알아서 정리하지 않는다 (`SERVER_BILLING.md` 3절).
     """
-    export = await session.get(ProjectExport, export_id)
+    export = await projects.get_export(session, export_id)
     if export is None:
         raise NotFound("내보내기를 찾을 수 없습니다", code="export_not_found")
 
-    project = await session.get(Project, export.project_id)
+    project = await projects.get_project_row(session, export.project_id)
     if project is None:
         raise NotFound("내보내기를 찾을 수 없습니다", code="export_not_found")
     await orgs.require_member(session, org_id=project.org_id, user_id=user.id, need=orgs.EDIT)

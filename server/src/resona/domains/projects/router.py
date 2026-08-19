@@ -12,7 +12,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Header, Query, Request, Response, status
 from pydantic import BaseModel, Field
-from sqlalchemy import select, text
+from sqlalchemy import select
 
 from resona.core.deps import Db, client_ip
 from resona.core.errors import Conflict, Forbidden, NotFound, Unprocessable
@@ -22,10 +22,11 @@ from resona.domains.billing import service as entitlements
 from resona.domains.ops import audit
 from resona.domains.ops.idempotency import begin as idem_begin
 from resona.domains.ops.idempotency import complete as idem_complete
+from resona.domains.projects import repository
 from resona.domains.projects.models import Project, ProjectVersion
 from resona.domains.projects.service import get_project, load_version, save_document
 from resona.domains.workspaces import service as orgs
-from resona.domains.workspaces.models import OrgMember
+from resona.domains.workspaces import service as workspaces_repo
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
@@ -99,33 +100,17 @@ async def list_projects(
     `org_id` 를 주면 그 워크스페이스만, 안 주면 **내가 속한 전부**를 본다 —
     개인 곡과 팀 곡을 한 화면에서 찾을 수 있어야 한다.
     """
-    stmt = (
-        select(Project)
-        .join(OrgMember, OrgMember.org_id == Project.org_id)
-        .where(OrgMember.user_id == user.id, Project.deleted_at.is_(None))
-        .order_by(Project.updated_at.desc(), Project.id.desc())
-        .limit(limit + 1)
-    )
     if org_id is not None:
         await orgs.require_member(session, org_id=org_id, user_id=user.id)
-        stmt = stmt.where(Project.org_id == org_id)
-    if cursor:
-        try:
-            at, last_id = cursor.split("|", 1)
-            stmt = stmt.where(
-                text("(projects.updated_at, projects.id) < (:at, :lid)").bindparams(
-                    at=datetime.fromisoformat(at), lid=uuid.UUID(last_id)
-                )
-            )
-        except (ValueError, AttributeError):
-            raise Unprocessable("커서가 올바르지 않습니다", code="invalid_cursor") from None
-
-    rows = list((await session.execute(stmt)).scalars())
-    has_more = len(rows) > limit
-    rows = rows[:limit]
-    next_cursor = (
-        f"{rows[-1].updated_at.isoformat()}|{rows[-1].id}" if has_more and rows else None
-    )
+    # **내가 속한 조직을 워크스페이스에 물어보고, 곡은 `org_id` 로만 고른다.**
+    # 조인하면 곡 도메인이 `org_members` 의 모양에 묶인다
+    roles = await workspaces_repo.roles_for_user(session, user.id)
+    try:
+        rows, next_cursor = await repository.list_for_orgs(
+            session, list(roles), cursor=cursor, limit=limit, only_org=org_id
+        )
+    except repository.InvalidCursor:
+        raise Unprocessable("커서가 올바르지 않습니다", code="invalid_cursor") from None
     return ListOut(items=[_summary(p) for p in rows], next_cursor=next_cursor)
 
 
@@ -198,17 +183,11 @@ async def list_trash(
     org_id: uuid.UUID | None = None,
 ) -> list[ProjectSummary]:
     """**30일 유예를 두는 이유가 되돌리기인데 되돌리는 문이 없었다.**"""
-    stmt = (
-        select(Project)
-        .join(OrgMember, OrgMember.org_id == Project.org_id)
-        .where(OrgMember.user_id == user.id, Project.deleted_at.is_not(None))
-        .order_by(Project.deleted_at.desc())
-        .limit(limit)
-    )
     if org_id is not None:
         await orgs.require_member(session, org_id=org_id, user_id=user.id)
-        stmt = stmt.where(Project.org_id == org_id)
-    return [_summary(p) for p in (await session.execute(stmt)).scalars()]
+    roles = await workspaces_repo.roles_for_user(session, user.id)
+    rows = await repository.list_trashed(session, list(roles), limit=limit, only_org=org_id)
+    return [_summary(p) for p in rows]
 
 
 @router.get("/{project_id}", response_model=ProjectDetail)
@@ -366,21 +345,12 @@ async def restore_project(
     project_id: uuid.UUID, request: Request, session: Db, user: ActiveUser
 ) -> ProjectSummary:
     """휴지통에서 되살린다. `get_project` 는 삭제된 것을 안 보므로 직접 찾는다"""
-    row = (
-        await session.execute(
-            select(Project, OrgMember.role)
-            .join(OrgMember, OrgMember.org_id == Project.org_id)
-            .where(
-                Project.id == project_id,
-                OrgMember.user_id == user.id,
-                Project.deleted_at.is_not(None),
-            )
-        )
-    ).first()
-    if row is None:
+    project = await repository.get_deleted(session, project_id)
+    if project is None:
         raise NotFound("프로젝트를 찾을 수 없습니다", code="project_not_found")
-
-    project, role = row
+    role = await workspaces_repo.role_of(session, org_id=project.org_id, user_id=user.id)
+    if role is None:
+        raise NotFound("프로젝트를 찾을 수 없습니다", code="project_not_found")
     if orgs.ROLE_RANK[role] < orgs.ROLE_RANK[orgs.EDIT]:
         raise Forbidden("권한이 없습니다", code="insufficient_org_role")
 

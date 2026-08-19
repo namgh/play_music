@@ -13,14 +13,25 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 
 from resona.core.deps import Db, client_ip
 from resona.core.errors import NotFound, Unprocessable
-from resona.domains.accounts.deps import require_platform_role
+from resona.domains.accounts import service as accounts
+from resona.domains.accounts.deps import Admin, Owner, Support
+
+# ⚠ **여기만 남은 예외다.**
+#
+# 어드민 목록은 사용자·구독·곡 수를 한 화면에 모아 보여 주는 집계라, 지금은
+# 여러 도메인의 테이블을 한 번에 조인한다. 도메인당 하나씩 물어보면 질의가
+# 넷으로 늘고, 그건 그것대로 맞는 선택이지만 **읽기 전용 집계 모델**을 따로
+# 두는 편이 낫다 — 그 설계를 하기 전까지 여기만 예외로 둔다.
+#
+# 나머지 도메인은 전부 상대 도메인의 service 를 거친다.
 from resona.domains.accounts.models import User
+from resona.domains.billing import service as billing
 from resona.domains.billing import service as entitlements
 from resona.domains.billing.models import Subscription, UsageEvent
 from resona.domains.ops import audit
@@ -32,9 +43,6 @@ from resona.domains.workspaces.models import Organization, OrgMember
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
-Support = Annotated[User, Depends(require_platform_role("support", "admin", "owner"))]
-Admin = Annotated[User, Depends(require_platform_role("admin", "owner"))]
-Owner = Annotated[User, Depends(require_platform_role("owner"))]
 
 
 class UserRow(BaseModel):
@@ -120,7 +128,7 @@ async def user_usage(
     user_id: uuid.UUID, request: Request, session: Db, operator: Support
 ) -> UsageOut:
     """**사용량은 보되 곡 내용은 보지 않는다**"""
-    target = await session.get(User, user_id)
+    target = await accounts.get(session, user_id)
     if target is None:
         raise NotFound("사용자를 찾을 수 없습니다", code="user_not_found")
 
@@ -161,7 +169,7 @@ class StatusIn(BaseModel):
 async def set_status(
     user_id: uuid.UUID, body: StatusIn, request: Request, session: Db, operator: Admin
 ) -> Any:
-    target = await session.get(User, user_id)
+    target = await accounts.get(session, user_id)
     if target is None:
         raise NotFound("사용자를 찾을 수 없습니다", code="user_not_found")
     if target.platform_role in ("admin", "owner") and operator.platform_role != "owner":
@@ -206,7 +214,7 @@ async def impersonate(
     여기서는 **세션 기록만** 만든다. 실제 토큰 발급은 동의 확인을 거친 뒤이며,
     화면에는 항상 배너가 뜬다. 사유는 필수이고 감사 로그에 남는다.
     """
-    target = await session.get(User, user_id)
+    target = await accounts.get(session, user_id)
     if target is None:
         raise NotFound("사용자를 찾을 수 없습니다", code="user_not_found")
 
@@ -285,7 +293,7 @@ async def set_role(
     user_id: uuid.UUID, body: RoleIn, request: Request, session: Db, operator: Owner
 ) -> Any:
     """**owner 만.** 권한 상승은 가장 위험한 조작이다"""
-    target = await session.get(User, user_id)
+    target = await accounts.get(session, user_id)
     if target is None:
         raise NotFound("사용자를 찾을 수 없습니다", code="user_not_found")
     before = target.platform_role
@@ -348,7 +356,7 @@ async def org_billing(
     **카드는 표시용 뒷자리만.** 빌링키는 복호화하지 않는다 — 운영 화면이 결제
     수단을 꺼내 볼 수 있으면 그 화면 자체가 공격 대상이 된다.
     """
-    sub = await session.get(Subscription, org_id)
+    sub = await billing.get_subscription(session, org_id)
     if sub is None:
         raise NotFound("워크스페이스를 찾을 수 없습니다", code="org_not_found")
 

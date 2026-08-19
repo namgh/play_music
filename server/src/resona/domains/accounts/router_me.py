@@ -27,9 +27,8 @@ from resona.domains.accounts.deps import ActiveUser, CurrentUser
 from resona.domains.accounts.models import AuthIdentity, RefreshToken
 from resona.domains.billing import service as entitlements
 from resona.domains.ops import audit
-from resona.domains.projects.models import Project
+from resona.domains.projects import service as projects
 from resona.domains.workspaces import service as orgs
-from resona.domains.workspaces.models import Organization, OrgMember
 
 router = APIRouter(tags=["me"])
 
@@ -95,7 +94,7 @@ async def me(session: Db, user: CurrentUser) -> MeOut:
                     "ai_job": await entitlements.usage_in_period(session, org.id, "ai_job"),
                     "export": await entitlements.usage_in_period(session, org.id, "export"),
                     # 지금 갖고 있는 곡 수 (휴지통 제외) — 목록 화면이 쓴다
-                    "projects": await _project_count(session, org.id),
+                    "projects": await projects.count_active(session, org.id),
                     # **체험을 몇 칸 썼나.** `limits.songs_total` 과 짝이다.
                     # 이걸 안 보여주면 6번째 곡에서 갑자기 막히고 고장으로 읽힌다
                     "songs_total": await entitlements.usage_total(
@@ -115,20 +114,6 @@ async def me(session: Db, user: CurrentUser) -> MeOut:
         auth_providers=providers,
         created_at=user.created_at,
         workspaces=workspaces,
-    )
-
-
-async def _project_count(session: Db, org_id: uuid.UUID) -> int:
-    from sqlalchemy import func
-
-    return int(
-        (
-            await session.execute(
-                select(func.count())
-                .select_from(Project)
-                .where(Project.org_id == org_id, Project.deleted_at.is_(None))
-            )
-        ).scalar_one()
     )
 
 
@@ -235,7 +220,7 @@ async def delete_account(
         if not ok:
             raise Unauthorized("비밀번호가 올바르지 않습니다", code="invalid_credentials")
 
-    blocking = await _teams_that_would_be_orphaned(session, user.id)
+    blocking = await orgs.teams_that_would_be_orphaned(session, user.id)
     if blocking:
         raise Conflict(
             "다른 사람이 있는 워크스페이스의 마지막 소유자입니다. "
@@ -261,38 +246,6 @@ async def delete_account(
         "purge_after_days": 30,
         "note": "30일 안에 로그인하면 되돌릴 수 있습니다",
     }
-
-
-async def _teams_that_would_be_orphaned(session: Db, user_id: uuid.UUID) -> list[Organization]:
-    """내가 마지막 owner 인데 **다른 구성원이 있는** 팀들"""
-    from sqlalchemy import func
-
-    rows = (
-        await session.execute(
-            select(Organization)
-            .join(OrgMember, OrgMember.org_id == Organization.id)
-            .where(
-                OrgMember.user_id == user_id,
-                OrgMember.role == "owner",
-                Organization.kind == "team",
-                Organization.deleted_at.is_(None),
-            )
-        )
-    ).scalars()
-
-    blocking = []
-    for org in rows:
-        members = int(
-            (
-                await session.execute(
-                    select(func.count()).select_from(OrgMember).where(OrgMember.org_id == org.id)
-                )
-            ).scalar_one()
-        )
-        owners = await orgs.count_owners(session, org.id)
-        if members > 1 and owners <= 1:
-            blocking.append(org)
-    return blocking
 
 
 @router.post("/me/restore", response_model=MeOut)

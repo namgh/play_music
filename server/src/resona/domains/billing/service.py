@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from resona.core import redis as r
 from resona.core.errors import LimitReached
+from resona.domains.billing import repository
 from resona.domains.billing.models import (
     EntitlementGrant,
     Plan,
@@ -320,3 +321,43 @@ async def grant_beta_free(
         )
     )
     await invalidate(org_id)
+
+
+# --- 다른 도메인에 여는 공개 인터페이스 ---------------------------------------
+#
+# `billing.repository` 나 `billing.models` 를 남이 임포트하지 않게 여기로 모은다.
+# 무료 플랜의 초기값이나 구독 테이블 모양이 바뀌어도 고칠 곳이 하나다.
+
+
+async def get_plan(session: AsyncSession, code: str):
+    return await repository.get_plan(session, code)
+
+
+async def active_plans(session: AsyncSession) -> list:
+    return await repository.active_plans(session)
+
+
+async def get_subscription(session: AsyncSession, org_id: uuid.UUID):
+    return await repository.get_subscription(session, org_id)
+
+
+async def subscriptions_for(session: AsyncSession, org_ids) -> dict:
+    return await repository.subscriptions_for(session, org_ids)
+
+
+async def start_free(session: AsyncSession, org_id: uuid.UUID):
+    """가입·조직 생성 시 붙는 무료 구독"""
+    return await repository.create_free(session, org_id)
+
+
+async def start_paid(session: AsyncSession, org_id: uuid.UUID, *, plan_code: str):
+    """첫 결제가 성공한 뒤 `payments` 가 부른다"""
+    return await repository.create(session, org_id, plan_code=plan_code)
+
+
+async def due_for_charge(session: AsyncSession, limit: int) -> list:
+    return await repository.due_for_charge(session, limit)
+
+
+async def lock_if_due(session: AsyncSession, org_id: uuid.UUID):
+    return await repository.lock_if_due(session, org_id)

@@ -20,6 +20,7 @@ import logging
 import secrets
 import uuid
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
@@ -30,8 +31,11 @@ from resona.core.deps import Config, Db, client_ip
 from resona.core.errors import Conflict, NotFound
 from resona.core.ratelimit import check as rate_check
 from resona.domains.accounts.deps import ActiveUser
+from resona.domains.billing import service as billing
+
+if TYPE_CHECKING:  # 타입 표기 전용 — 런타임 결합을 만들지 않는다
+    from resona.domains.billing.models import Subscription
 from resona.domains.billing import service as entitlements
-from resona.domains.billing.models import Plan, Subscription
 from resona.domains.ops import audit
 from resona.domains.payments import provider_toss as toss
 from resona.domains.payments import service as billing_run
@@ -355,7 +359,7 @@ async def my_subscription(
     session: Db, user: ActiveUser, org_id: uuid.UUID | None = None
 ) -> SubscriptionOut | None:
     org = await orgs.resolve_org(session, user=user, org_id=org_id, need=orgs.BILLING)
-    sub = await session.get(Subscription, org.id)
+    sub = await billing.get_subscription(session, org.id)
     return _sub_out(sub) if sub else None
 
 
@@ -371,17 +375,16 @@ async def subscribe(
     await rate_check("billing_issue", str(user.id))
     org = await orgs.resolve_org(session, user=user, org_id=body.org_id, need=orgs.BILLING)
 
-    plan = await session.get(Plan, body.plan_code)
+    plan = await billing.get_plan(session, body.plan_code)
     if plan is None or not plan.active or not plan.price_krw:
         raise NotFound("구독할 수 있는 플랜이 아닙니다", code="plan_not_purchasable")
 
     if await billing_run.active_billing_key(session, org.id) is None:
         raise Conflict("결제 카드를 먼저 등록해 주세요", code="no_billing_key")
 
-    sub = await session.get(Subscription, org.id)
+    sub = await billing.get_subscription(session, org.id)
     if sub is None:
-        sub = Subscription(org_id=org.id, plan_code=plan.code, status="active")
-        session.add(sub)
+        sub = await billing.start_paid(session, org.id, plan_code=plan.code)
         await session.flush()
 
     if sub.status in ("active", "past_due") and sub.plan_code == plan.code and sub.next_charge_at:
@@ -445,7 +448,7 @@ async def cancel_subscription(
     즉시 끊으면 환불 요구가 따라오고, 무엇보다 사용자가 손해를 본다.
     """
     org = await orgs.resolve_org(session, user=user, org_id=org_id, need=orgs.BILLING)
-    sub = await session.get(Subscription, org.id)
+    sub = await billing.get_subscription(session, org.id)
     if sub is None or sub.status not in ("active", "past_due"):
         raise Conflict("해지할 구독이 없습니다", code="not_subscribed")
 
@@ -471,7 +474,7 @@ async def resume_subscription(
     """해지를 무른다. **기간이 아직 남아 있을 때만** 된다 — 이미 끝났으면
     새로 구독하는 것이지 무르는 게 아니다"""
     org = await orgs.resolve_org(session, user=user, org_id=org_id, need=orgs.BILLING)
-    sub = await session.get(Subscription, org.id)
+    sub = await billing.get_subscription(session, org.id)
     now = datetime.now(UTC)
     if sub is None or sub.status != "canceling":
         raise Conflict("해지 예약 상태가 아닙니다", code="not_canceling")

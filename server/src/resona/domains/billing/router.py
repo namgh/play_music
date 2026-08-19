@@ -30,8 +30,8 @@ from sqlalchemy.exc import IntegrityError
 
 from resona.core.deps import Config, Db, client_ip
 from resona.core.errors import Conflict, NotFound, Unauthorized, Unprocessable
+from resona.domains.accounts import service as accounts
 from resona.domains.accounts.deps import ActiveUser, CurrentUser
-from resona.domains.accounts.models import User
 from resona.domains.billing import provider_stripe as payments
 from resona.domains.billing import service as entitlements
 from resona.domains.billing.models import Plan, Subscription
@@ -152,7 +152,7 @@ async def _apply(session: Db, event: dict[str, Any], occurred_at: datetime) -> N
     if not email:
         return
 
-    user = (await session.execute(select(User).where(User.email == email))).scalar_one_or_none()
+    user = await accounts.get_by_email(session, email)
     if user is None:
         # 결제는 됐는데 계정이 없다. **삼키지 않는다** — 사람이 봐야 하는 상황이라
         # 이벤트 행에 남기고 일일 대사(reconciliation)가 잡는다

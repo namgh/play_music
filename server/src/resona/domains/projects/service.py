@@ -19,8 +19,9 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from resona.core.errors import Conflict, Forbidden, NotFound, Unprocessable
-from resona.domains.projects.models import Project, ProjectVersion
-from resona.domains.workspaces.models import OrgMember
+from resona.domains.projects import repository
+from resona.domains.projects.models import Project, ProjectExport, ProjectVersion
+from resona.domains.workspaces import service as workspaces
 from resona.domains.workspaces.service import ROLE_RANK
 
 # 이보다 크면 객체 스토리지로 보낸다. JSONB 에 수 MB 를 넣으면 목록 조회까지 느려진다
@@ -97,21 +98,15 @@ async def get_project(
 
     없거나 권한이 없으면 **404** 다. 403 은 "그 곡이 존재한다"를 알려 준다.
     """
-    row = (
-        await session.execute(
-            select(Project, OrgMember.role)
-            .join(OrgMember, OrgMember.org_id == Project.org_id)
-            .where(
-                Project.id == project_id,
-                OrgMember.user_id == user_id,
-                Project.deleted_at.is_(None),
-            )
-        )
-    ).first()
-    if row is None:
+    # **조인하지 않는다.** 곡을 먼저 찾고, 역할은 워크스페이스에 물어본다 —
+    # 여기서 `org_members` 를 조인하면 곡 도메인이 그 테이블 모양에 묶인다.
+    # 비회원에게는 여전히 404 다: 403 은 "그 곡이 존재한다"를 알려 준다
+    project = await repository.get(session, project_id)
+    if project is None:
         raise NotFound("프로젝트를 찾을 수 없습니다", code="project_not_found")
-
-    project, role = row
+    role = await workspaces.role_of(session, org_id=project.org_id, user_id=user_id)
+    if role is None:
+        raise NotFound("프로젝트를 찾을 수 없습니다", code="project_not_found")
     if ROLE_RANK[role] < ROLE_RANK[need]:
         raise Forbidden(
             "권한이 없습니다",
@@ -217,3 +212,59 @@ async def save_document(
         )
 
     return version, True
+
+
+async def count_active(session: AsyncSession, org_id: uuid.UUID) -> int:
+    """**곡 수는 곡 도메인이 센다.** 남이 `projects` 를 직접 세면 "휴지통 제외" 같은
+    규칙이 두 곳에 생기고, 언젠가 한쪽만 고쳐진다"""
+    return await repository.count_active(session, org_id)
+
+
+async def get_version_of(session: AsyncSession, project_id, version_id):
+    """그 곡의 버전인지까지 확인한다 — 남의 곡 버전을 붙이지 못하게"""
+    version = await repository.get_version(session, version_id)
+    if version is None or version.project_id != project_id:
+        return None
+    return version
+
+
+async def record_export(session: AsyncSession, **fields):
+    """**내보내기 이력은 곡의 것이다.** 에셋 도메인이 `ProjectExport` 를 직접
+    만들면 곡의 이력 규칙(라이선스 스냅샷 등)이 두 곳으로 갈라진다"""
+    export = ProjectExport(**fields)
+    session.add(export)
+    return export
+
+
+async def exports_of(session: AsyncSession, project_id, *, limit: int = 50) -> list:
+    from sqlalchemy import select as _select
+
+    return list(
+        (
+            await session.execute(
+                _select(ProjectExport)
+                .where(ProjectExport.project_id == project_id)
+                .order_by(ProjectExport.created_at.desc())
+                .limit(limit)
+            )
+        ).scalars()
+    )
+
+
+async def export_exists_for_asset(session: AsyncSession, asset_id) -> bool:
+    from sqlalchemy import select as _select
+
+    return (
+        await session.execute(
+            _select(ProjectExport.id).where(ProjectExport.asset_id == asset_id).limit(1)
+        )
+    ).first() is not None
+
+
+async def get_export(session: AsyncSession, export_id):
+    return await session.get(ProjectExport, export_id)
+
+
+async def get_project_row(session: AsyncSession, project_id):
+    """권한 검사 없이 곡 행만. **권한이 필요한 경로에서는 `get_project` 를 쓴다**"""
+    return await session.get(Project, project_id)

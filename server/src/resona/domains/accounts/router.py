@@ -24,8 +24,8 @@ from resona.core.security import (
 from resona.domains.accounts import provider_google as google_oauth
 from resona.domains.accounts.deps import ActiveUser
 from resona.domains.accounts.models import AuthIdentity, EmailToken, RefreshToken, User
+from resona.domains.billing import service as billing
 from resona.domains.billing import service as entitlements
-from resona.domains.billing.models import Subscription
 from resona.domains.ops import audit
 from resona.domains.ops import mail as mail
 from resona.domains.workspaces import service as orgs
@@ -190,7 +190,7 @@ async def signup(
     # 개인 계정도 1인 조직이라는 것이 이 서비스의 전제다 (`app/services/orgs.py`)
     org = await orgs.create_personal_org(session, user)
     # 무료 구독은 **조직**에 붙는다. 과금 단위가 조직이라서다
-    session.add(Subscription(org_id=org.id, plan_code="free", status="active"))
+    await billing.start_free(session, org.id)
     # 베타 무료 이용권 — **카드 없이** 준다 (`SERVER_PAYMENTS.md` 5절)
     await entitlements.grant_beta_free(session, org.id, settings.beta_free_months)
     await _send_verify_mail(session, user)
@@ -581,7 +581,7 @@ async def _link_or_create_google_user(
     session.add(AuthIdentity(user_id=user.id, provider="google", subject=profile.subject))
 
     org = await orgs.create_personal_org(session, user)
-    session.add(Subscription(org_id=org.id, plan_code="free", status="active"))
+    await billing.start_free(session, org.id)
     await entitlements.grant_beta_free(session, org.id, beta_months)
     await audit.record(
         session, action="user.signup", actor_id=user.id, detail={"via": "google"}, ip=ip

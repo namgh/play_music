@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from resona.core.errors import Conflict, Forbidden, NotFound
 from resona.domains.accounts.models import User
+from resona.domains.workspaces import repository
 from resona.domains.workspaces.models import Organization, OrgMember
 
 # 강한 것부터 약한 것 순. 숫자로 비교하면 새 역할을 끼워 넣기 쉽다
@@ -205,3 +206,56 @@ async def ensure_not_last_owner(
             "마지막 소유자는 나갈 수 없습니다. 다른 사람에게 소유자를 넘겨주세요",
             code="last_owner",
         )
+
+
+async def role_of(session: AsyncSession, *, org_id: uuid.UUID, user_id: uuid.UUID) -> str | None:
+    """**다른 도메인이 `org_members` 를 조인하지 않게** 하는 창구"""
+    return await repository.role_of(session, org_id=org_id, user_id=user_id)
+
+
+async def roles_for_user(session: AsyncSession, user_id: uuid.UUID) -> dict:
+    return await repository.roles_for_user(session, user_id)
+
+
+async def members(session: AsyncSession, org_id: uuid.UUID) -> list:
+    return await repository.members(session, org_id)
+
+
+async def get_org(session: AsyncSession, org_id: uuid.UUID):
+    return await repository.get(session, org_id)
+
+
+async def teams_that_would_be_orphaned(
+    session: AsyncSession, user_id: uuid.UUID
+) -> list[Organization]:
+    """내가 마지막 owner 인데 **다른 구성원이 있는** 팀들"""
+    from sqlalchemy import func
+
+    rows = (
+        await session.execute(
+            select(Organization)
+            .join(OrgMember, OrgMember.org_id == Organization.id)
+            .where(
+                OrgMember.user_id == user_id,
+                OrgMember.role == "owner",
+                Organization.kind == "team",
+                Organization.deleted_at.is_(None),
+            )
+        )
+    ).scalars()
+
+    blocking = []
+    for org in rows:
+        members = int(
+            (
+                await session.execute(
+                    select(func.count())
+                    .select_from(OrgMember)
+                    .where(OrgMember.org_id == org.id)
+                )
+            ).scalar_one()
+        )
+        owners = await repository.count_owners(session, org.id)
+        if members > 1 and owners <= 1:
+            blocking.append(org)
+    return blocking

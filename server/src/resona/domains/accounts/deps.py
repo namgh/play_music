@@ -75,3 +75,13 @@ def require_platform_role(*roles: str):
         return user
 
     return dependency
+
+
+# --- 플랫폼 역할 게이트 -------------------------------------------------------
+#
+# 어드민 엔드포인트가 쓰는 타입. **리소스 접근은 주지 않는다** — 2축 권한이라
+# 플랫폼 admin 이라도 남의 워크스페이스에는 못 들어간다 (`SERVER_ACCOUNTS.md` 3절).
+
+Support = Annotated[User, Depends(require_platform_role("support", "admin", "owner"))]
+Admin = Annotated[User, Depends(require_platform_role("admin", "owner"))]
+Owner = Annotated[User, Depends(require_platform_role("owner"))]

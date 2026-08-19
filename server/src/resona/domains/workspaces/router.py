@@ -22,12 +22,13 @@ from resona.core.deps import Db, client_ip
 from resona.core.errors import Conflict, Forbidden, NotFound, Unprocessable
 from resona.core.ratelimit import check as rate_check
 from resona.core.security import hash_token, new_opaque_token
+from resona.domains.accounts import service as accounts
 from resona.domains.accounts.deps import ActiveUser, CurrentUser
-from resona.domains.accounts.models import User
+from resona.domains.billing import service as billing
 from resona.domains.billing import service as entitlements
-from resona.domains.billing.models import Subscription
 from resona.domains.ops import audit
 from resona.domains.ops import mail as mail
+from resona.domains.workspaces import repository
 from resona.domains.workspaces import service as orgs
 from resona.domains.workspaces.models import Organization, OrgInvite, OrgMember
 
@@ -83,7 +84,7 @@ async def create_org(
     await rate_check("org_create", str(user.id))
     org = await orgs.create_team(session, user=user, name=body.name)
     # 새 팀은 무료로 시작한다. 과금 단위가 조직이라 구독도 조직에 붙는다
-    session.add(Subscription(org_id=org.id, plan_code="free", status="active"))
+    await billing.start_free(session, org.id)
     await audit.record(
         session,
         action="org.create",
@@ -98,23 +99,20 @@ async def create_org(
 @router.get("/{org_id}/members", response_model=list[MemberOut])
 async def list_members(org_id: uuid.UUID, session: Db, user: CurrentUser) -> list[MemberOut]:
     await orgs.require_member(session, org_id=org_id, user_id=user.id)
-    rows = (
-        await session.execute(
-            select(OrgMember, User)
-            .join(User, User.id == OrgMember.user_id)
-            .where(OrgMember.org_id == org_id)
-            .order_by(OrgMember.joined_at)
-        )
-    ).all()
+    # **`users` 를 조인하지 않는다.** 조인하면 워크스페이스가 계정 테이블 모양에
+    # 묶여서, 나중에 계정을 떼어내는 순간 구성원 목록이 깨진다.
+    # 두 번 질의하되 두 번째는 **한 번에 모아서** 한다 (N+1 아님)
+    rows = sorted(await repository.members(session, org_id), key=lambda m: m.joined_at)
+    users = await accounts.get_many(session, [m.user_id for m in rows])
     return [
         MemberOut(
-            user_id=u.id,
-            email=u.email,
-            display_name=u.display_name,
+            user_id=m.user_id,
+            email=users[m.user_id].email if m.user_id in users else "",
+            display_name=users[m.user_id].display_name if m.user_id in users else "",
             role=m.role,
             joined_at=m.joined_at,
         )
-        for m, u in rows
+        for m in rows
     ]
 
 
@@ -138,14 +136,13 @@ async def invite(
         )
 
     email = body.email.lower()
+    # 이메일로 사람을 찾는 건 계정 도메인의 일이다
+    invitee = await accounts.get_by_email(session, email)
     already = (
-        await session.execute(
-            select(OrgMember)
-            .join(User, User.id == OrgMember.user_id)
-            .where(OrgMember.org_id == org_id, User.email == email)
-        )
-    ).first()
-    if already is not None:
+        invitee is not None
+        and await repository.role_of(session, org_id=org_id, user_id=invitee.id) is not None
+    )
+    if already:
         raise Conflict("이미 참여 중인 사용자입니다", code="already_member")
 
     token = new_opaque_token()
@@ -258,7 +255,7 @@ async def set_member_role(
         await orgs.ensure_not_last_owner(session, org_id=org_id, user_id=member_id)
 
     member.role = body.role
-    target = await session.get(User, member_id)
+    target = await accounts.get(session, member_id)
     assert target is not None
     await audit.record(
         session,
