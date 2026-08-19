@@ -23,7 +23,6 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from resona.core.errors import Conflict, Forbidden, NotFound
-from resona.domains.accounts.models import User
 from resona.domains.workspaces import repository
 from resona.domains.workspaces.models import Organization, OrgMember
 
@@ -60,34 +59,38 @@ async def _unique_slug(session: AsyncSession, base: str) -> str:
     return f"w-{uuid.uuid4().hex[:12]}"
 
 
-async def create_personal_org(session: AsyncSession, user: User) -> Organization:
+async def create_personal_org(
+    session: AsyncSession, *, user_id: uuid.UUID, email: str, display_name: str
+) -> Organization:
     """가입 직후에 부른다. **이게 없으면 프로젝트를 만들 곳이 없다**"""
     base = slugify(
-        user.display_name or user.email.split("@")[0], fallback=f"u-{uuid.uuid4().hex[:8]}"
+        display_name or email.split("@")[0], fallback=f"u-{uuid.uuid4().hex[:8]}"
     )
     org = Organization(
         slug=await _unique_slug(session, base),
-        name=user.display_name or user.email.split("@")[0],
+        name=display_name or email.split("@")[0],
         kind="personal",
-        created_by=user.id,
+        created_by=user_id,
     )
     session.add(org)
     await session.flush()
-    session.add(OrgMember(org_id=org.id, user_id=user.id, role="owner"))
+    session.add(OrgMember(org_id=org.id, user_id=user_id, role="owner"))
     return org
 
 
-async def create_team(session: AsyncSession, *, user: User, name: str) -> Organization:
+async def create_team(
+    session: AsyncSession, *, user_id: uuid.UUID, name: str
+) -> Organization:
     org = Organization(
         slug=await _unique_slug(session, slugify(name, fallback=f"t-{uuid.uuid4().hex[:8]}")),
         name=name,
         kind="team",
-        created_by=user.id,
+        created_by=user_id,
     )
     session.add(org)
     await session.flush()
     # 만든 사람이 owner 다. owner 가 없는 조직은 과금도 삭제도 못 한다
-    session.add(OrgMember(org_id=org.id, user_id=user.id, role="owner"))
+    session.add(OrgMember(org_id=org.id, user_id=user_id, role="owner"))
     return org
 
 
@@ -156,7 +159,7 @@ async def require_member(
 
 
 async def resolve_org(
-    session: AsyncSession, *, user: User, org_id: uuid.UUID | None, need: str = "viewer"
+    session: AsyncSession, *, user_id: uuid.UUID, org_id: uuid.UUID | None, need: str = "viewer"
 ) -> Organization:
     """`org_id` 를 안 주면 **개인 워크스페이스로 간다.**
 
@@ -164,8 +167,8 @@ async def resolve_org(
     "먼저 워크스페이스를 고르세요"를 요구하면 거기서 절반이 떠난다.
     """
     if org_id is None:
-        return await personal_org(session, user.id)
-    await require_member(session, org_id=org_id, user_id=user.id, need=need)
+        return await personal_org(session, user_id)
+    await require_member(session, org_id=org_id, user_id=user_id, need=need)
     org = await session.get(Organization, org_id)
     if org is None or org.deleted_at is not None:
         raise NotFound("워크스페이스를 찾을 수 없습니다", code="org_not_found")
@@ -259,3 +262,7 @@ async def teams_that_would_be_orphaned(
         if members > 1 and owners <= 1:
             blocking.append(org)
     return blocking
+
+
+async def personal_org_ids(session: AsyncSession, user_ids) -> dict:
+    return await repository.personal_org_ids(session, user_ids)

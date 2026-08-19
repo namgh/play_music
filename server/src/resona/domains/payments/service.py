@@ -49,6 +49,7 @@ if TYPE_CHECKING:  # 타입 표기 전용 — **런타임 결합을 만들지 �
     # 다만 그 반대는 없어야 하고, 실행 시점에는 임포트조차 없어야 한다
     from resona.domains.billing.models import Subscription
 from resona.domains.payments import provider_toss as toss
+from resona.domains.payments import repository
 from resona.domains.payments.models import BillingKey, Payment, PaymentOrder
 
 log = logging.getLogger(__name__)
@@ -286,3 +287,12 @@ async def reconcile_order(
         _schedule_retry(sub, now, order.failure_code)
         await entitlements.invalidate(sub.org_id)
     return ChargeResult("rejected", status)
+
+
+async def active_card(session: AsyncSession, org_id: uuid.UUID):
+    """**표시용 뒷자리만 읽는다.** 빌링키는 복호화하지 않는다"""
+    return await repository.active_key(session, org_id)
+
+
+async def recent_payments(session: AsyncSession, org_id: uuid.UUID, *, limit: int = 24) -> list:
+    return await repository.list_payments(session, org_id, limit=limit)

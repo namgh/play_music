@@ -40,6 +40,7 @@ from resona.domains.jobs import router as jobs_router
 from resona.domains.jobs import router_events as jobs_events_router
 from resona.domains.ops import router as ops_router
 from resona.domains.payments import router as payments_router
+from resona.domains.payments import router_stripe as payments_stripe_router
 from resona.domains.projects import router as projects_router
 from resona.domains.projects import router_presets as projects_presets_router
 from resona.domains.workspaces import router as workspaces_router
@@ -208,6 +209,7 @@ def create_app() -> FastAPI:
         jobs_events_router,
         billing_router,
         payments_router,
+        payments_stripe_router,
         ops_router,
     ):
         app.include_router(domain_router.router, prefix="/v1")

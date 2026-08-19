@@ -93,7 +93,7 @@ async def prepare_billing(
     **과금은 소유자만 건드린다** (`orgs.BILLING`). 편집자가 팀 카드를 바꿀 수 있으면
     그건 권한 설계가 아니라 사고다.
     """
-    org = await orgs.resolve_org(session, user=user, org_id=org_id, need=orgs.BILLING)
+    org = await orgs.resolve_org(session, user_id=user.id, org_id=org_id, need=orgs.BILLING)
     if not settings.toss_client_key:
         raise toss.TossUnavailable("결제가 설정되지 않았습니다")
 
@@ -132,8 +132,7 @@ async def issue_billing_key(
     붙이려는 시도가 가능하다. **우리가 저장해 둔 값과 대조**한다.
     """
     await rate_check("billing_issue", str(user.id))
-    org = await orgs.resolve_org(
-        session, user=user, org_id=body.org_id, need=orgs.BILLING
+    org = await orgs.resolve_org(session, user_id=user.id, org_id=body.org_id, need=orgs.BILLING
     )
 
     customer = (
@@ -207,7 +206,7 @@ async def current_card(
     session: Db, user: ActiveUser, org_id: uuid.UUID | None = None
 ) -> CardOut | None:
     """등록된 카드를 보여준다. **복호화하지 않는다** — 표시용 컬럼만 읽는다"""
-    org = await orgs.resolve_org(session, user=user, org_id=org_id, need=orgs.BILLING)
+    org = await orgs.resolve_org(session, user_id=user.id, org_id=org_id, need=orgs.BILLING)
     row = (
         await session.execute(
             select(BillingKey).where(
@@ -226,7 +225,7 @@ async def remove_card(
 ) -> None:
     """카드를 뺀다. **구독은 여기서 해지하지 않는다** — 그건 별도 행위다
     (Day 6). 카드만 빠지면 다음 결제가 실패해 `past_due` 로 흘러간다"""
-    org = await orgs.resolve_org(session, user=user, org_id=org_id, need=orgs.BILLING)
+    org = await orgs.resolve_org(session, user_id=user.id, org_id=org_id, need=orgs.BILLING)
     await session.execute(
         update(BillingKey)
         .where(BillingKey.org_id == org.id, BillingKey.status == "active")
@@ -358,7 +357,7 @@ def _sub_out(sub: Subscription) -> SubscriptionOut:
 async def my_subscription(
     session: Db, user: ActiveUser, org_id: uuid.UUID | None = None
 ) -> SubscriptionOut | None:
-    org = await orgs.resolve_org(session, user=user, org_id=org_id, need=orgs.BILLING)
+    org = await orgs.resolve_org(session, user_id=user.id, org_id=org_id, need=orgs.BILLING)
     sub = await billing.get_subscription(session, org.id)
     return _sub_out(sub) if sub else None
 
@@ -373,7 +372,7 @@ async def subscribe(
     알게 되고, 그 사이 사용자는 유료 기능을 다 쓴 뒤다.
     """
     await rate_check("billing_issue", str(user.id))
-    org = await orgs.resolve_org(session, user=user, org_id=body.org_id, need=orgs.BILLING)
+    org = await orgs.resolve_org(session, user_id=user.id, org_id=body.org_id, need=orgs.BILLING)
 
     plan = await billing.get_plan(session, body.plan_code)
     if plan is None or not plan.active or not plan.price_krw:
@@ -447,7 +446,7 @@ async def cancel_subscription(
 
     즉시 끊으면 환불 요구가 따라오고, 무엇보다 사용자가 손해를 본다.
     """
-    org = await orgs.resolve_org(session, user=user, org_id=org_id, need=orgs.BILLING)
+    org = await orgs.resolve_org(session, user_id=user.id, org_id=org_id, need=orgs.BILLING)
     sub = await billing.get_subscription(session, org.id)
     if sub is None or sub.status not in ("active", "past_due"):
         raise Conflict("해지할 구독이 없습니다", code="not_subscribed")
@@ -473,7 +472,7 @@ async def resume_subscription(
 ) -> SubscriptionOut:
     """해지를 무른다. **기간이 아직 남아 있을 때만** 된다 — 이미 끝났으면
     새로 구독하는 것이지 무르는 게 아니다"""
-    org = await orgs.resolve_org(session, user=user, org_id=org_id, need=orgs.BILLING)
+    org = await orgs.resolve_org(session, user_id=user.id, org_id=org_id, need=orgs.BILLING)
     sub = await billing.get_subscription(session, org.id)
     now = datetime.now(UTC)
     if sub is None or sub.status != "canceling":
@@ -514,7 +513,7 @@ async def list_payments(
     session: Db, user: ActiveUser, org_id: uuid.UUID | None = None
 ) -> list[PaymentOut]:
     """결제 내역. **사용자가 스스로 확인할 수 있어야 한다** — 문의가 반으로 준다"""
-    org = await orgs.resolve_org(session, user=user, org_id=org_id, need=orgs.BILLING)
+    org = await orgs.resolve_org(session, user_id=user.id, org_id=org_id, need=orgs.BILLING)
     rows = (
         await session.execute(
             select(Payment)
@@ -562,7 +561,7 @@ async def refund_payment(
     if payment is None:
         raise NotFound("결제를 찾을 수 없습니다", code="payment_not_found")
     # 소유 확인 — 남의 결제를 환불시킬 수 없다
-    await orgs.resolve_org(session, user=user, org_id=payment.org_id, need=orgs.BILLING)
+    await orgs.resolve_org(session, user_id=user.id, org_id=payment.org_id, need=orgs.BILLING)
 
     remaining = payment.amount - payment.refunded_amount
     if remaining <= 0:

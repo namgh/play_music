@@ -99,3 +99,16 @@ async def pending_invite(session: AsyncSession, token_hash: str) -> OrgInvite | 
             )
         )
     ).scalar_one_or_none()
+
+
+async def personal_org_ids(session: AsyncSession, user_ids) -> dict[uuid.UUID, uuid.UUID]:
+    """여러 사람의 개인 워크스페이스를 **한 번에**. 어드민 목록이 N+1 로 안 돌게"""
+    ids = list(user_ids)
+    if not ids:
+        return {}
+    rows = await session.execute(
+        select(OrgMember.user_id, Organization.id)
+        .join(Organization, Organization.id == OrgMember.org_id)
+        .where(OrgMember.user_id.in_(ids), Organization.kind == "personal")
+    )
+    return {uid: oid for uid, oid in rows}

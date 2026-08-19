@@ -268,3 +268,7 @@ async def get_export(session: AsyncSession, export_id):
 async def get_project_row(session: AsyncSession, project_id):
     """권한 검사 없이 곡 행만. **권한이 필요한 경로에서는 `get_project` 를 쓴다**"""
     return await session.get(Project, project_id)
+
+
+async def counts_by_owner(session: AsyncSession, owner_ids) -> dict:
+    return await repository.counts_by_owner(session, owner_ids)

@@ -31,3 +31,8 @@ async def login_methods(session: AsyncSession, user_id: uuid.UUID) -> list[str]:
 
 async def count_by_status(session: AsyncSession) -> dict[str, int]:
     return await repository.count_by_status(session)
+
+
+async def search_recent(session: AsyncSession, *, limit: int, query: str | None = None) -> list:
+    """어드민 사용자 검색"""
+    return await repository.search_recent(session, limit=limit, query=query)

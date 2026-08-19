@@ -188,7 +188,9 @@ async def signup(
     )
     # **개인 워크스페이스를 여기서 만든다.** 없으면 곡을 만들 곳이 없다 —
     # 개인 계정도 1인 조직이라는 것이 이 서비스의 전제다 (`app/services/orgs.py`)
-    org = await orgs.create_personal_org(session, user)
+    org = await orgs.create_personal_org(
+        session, user_id=user.id, email=user.email, display_name=user.display_name
+    )
     # 무료 구독은 **조직**에 붙는다. 과금 단위가 조직이라서다
     await billing.start_free(session, org.id)
     # 베타 무료 이용권 — **카드 없이** 준다 (`SERVER_PAYMENTS.md` 5절)
@@ -580,7 +582,9 @@ async def _link_or_create_google_user(
     # **비밀번호 없이 만든다.** 나중에 비밀번호를 걸고 싶으면 재설정 흐름을 탄다
     session.add(AuthIdentity(user_id=user.id, provider="google", subject=profile.subject))
 
-    org = await orgs.create_personal_org(session, user)
+    org = await orgs.create_personal_org(
+        session, user_id=user.id, email=user.email, display_name=user.display_name
+    )
     await billing.start_free(session, org.id)
     await entitlements.grant_beta_free(session, org.id, beta_months)
     await audit.record(

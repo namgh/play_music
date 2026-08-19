@@ -82,7 +82,7 @@ async def create_org(
     body: CreateOrgIn, request: Request, session: Db, user: ActiveUser
 ) -> OrgOut:
     await rate_check("org_create", str(user.id))
-    org = await orgs.create_team(session, user=user, name=body.name)
+    org = await orgs.create_team(session, user_id=user.id, name=body.name)
     # 새 팀은 무료로 시작한다. 과금 단위가 조직이라 구독도 조직에 붙는다
     await billing.start_free(session, org.id)
     await audit.record(

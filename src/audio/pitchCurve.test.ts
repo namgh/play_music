@@ -171,10 +171,19 @@ test('비브라토의 깊이와 속도가 지정값과 맞는다', async () => {
     `깊이 ${measured.toFixed(1)} 센트 (지정 ${depth})`,
   );
 
-  // 속도 — 0선을 지나는 횟수로 센다
+  // 속도 — 0선을 지나는 횟수로 센다.
+  //
+  // **부호만 보면 안 된다.** 0선 근처에서는 추적기 잡음이 부호를 몇 번씩 뒤집고,
+  // 그걸 전부 세면 속도가 배로 나온다 (5Hz 를 11Hz 로 읽었다). 그래서 확실히
+  // 위/아래에 있을 때만 상태를 바꾸는 히스테리시스를 둔다 — 잡음은 이 띠를
+  // 넘지 못하고, 진짜 비브라토는 넘는다.
+  const guard = depth * 0.25;
+  let state = 0; // -1 | 0 | +1
   let crossings = 0;
-  for (let i = 1; i < window.length; i++) {
-    if (Math.sign(window[i]!.cents) !== Math.sign(window[i - 1]!.cents)) crossings++;
+  for (const p of window) {
+    const next = p.cents > guard ? 1 : p.cents < -guard ? -1 : state;
+    if (state !== 0 && next !== state) crossings++;
+    state = next;
   }
   const span = window.at(-1)!.timeSec - window[0]!.timeSec;
   const measuredHz = crossings / (2 * span);

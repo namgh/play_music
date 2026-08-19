@@ -15,31 +15,19 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import select
 
 from resona.core.deps import Db, client_ip
 from resona.core.errors import NotFound, Unprocessable
 from resona.domains.accounts import service as accounts
 from resona.domains.accounts.deps import Admin, Owner, Support
-
-# ⚠ **여기만 남은 예외다.**
-#
-# 어드민 목록은 사용자·구독·곡 수를 한 화면에 모아 보여 주는 집계라, 지금은
-# 여러 도메인의 테이블을 한 번에 조인한다. 도메인당 하나씩 물어보면 질의가
-# 넷으로 늘고, 그건 그것대로 맞는 선택이지만 **읽기 전용 집계 모델**을 따로
-# 두는 편이 낫다 — 그 설계를 하기 전까지 여기만 예외로 둔다.
-#
-# 나머지 도메인은 전부 상대 도메인의 service 를 거친다.
-from resona.domains.accounts.models import User
 from resona.domains.billing import service as billing
 from resona.domains.billing import service as entitlements
-from resona.domains.billing.models import Subscription, UsageEvent
 from resona.domains.ops import audit
 from resona.domains.ops.models import AuditLog, ImpersonationSession
-from resona.domains.payments.models import BillingKey, Payment
-from resona.domains.projects.models import Project
+from resona.domains.payments import service as payments
+from resona.domains.projects import service as projects
 from resona.domains.workspaces import service as orgs
-from resona.domains.workspaces.models import Organization, OrgMember
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -68,29 +56,23 @@ async def search_users(
     # **조직 마이그레이션 이후 구독은 조직에 붙는다.** 사용자의 플랜은 그 사람의
     # 개인 워크스페이스 구독이다 — 예전 조인(`Subscription.user_id`)이 그대로 남아
     # 있어서 이 엔드포인트는 500 이었고, 테스트가 없어서 아무도 몰랐다
-    personal = (
-        select(OrgMember.user_id.label("uid"), Subscription.plan_code.label("plan"))
-        .join(Organization, Organization.id == OrgMember.org_id)
-        .join(Subscription, Subscription.org_id == Organization.id, isouter=True)
-        .where(Organization.kind == "personal")
-        .subquery()
-    )
-    stmt = (
-        select(
-            User,
-            personal.c.plan,
-            func.count(Project.id).filter(Project.deleted_at.is_(None)).label("projects"),
-        )
-        .join(personal, personal.c.uid == User.id, isouter=True)
-        .join(Project, Project.owner_id == User.id, isouter=True)
-        .group_by(User.id, personal.c.plan)
-        .order_by(User.created_at.desc())
-        .limit(limit)
-    )
-    if q:
-        stmt = stmt.where(User.email.ilike(f"%{q.lower()}%"))
+    # **5개 도메인을 한 번에 조인하지 않는다.** 각 도메인에 물어보고 여기서 맞춘다 —
+    # 질의는 넷이지만 전부 `IN (...)` 로 **한 번에** 가져오므로 N+1 이 아니고,
+    # 무엇보다 어드민 화면 하나 때문에 도메인들이 서로의 테이블 모양에 묶이지 않는다
+    users = await accounts.search_recent(session, limit=limit, query=q)
+    ids = [u.id for u in users]
+    org_of = await orgs.personal_org_ids(session, ids)
+    subs = await entitlements.subscriptions_for(session, list(org_of.values()))
+    counts = await projects.counts_by_owner(session, ids)
 
-    rows = (await session.execute(stmt)).all()
+    rows = [
+        (
+            u,
+            (subs.get(org_of.get(u.id)).plan_code if subs.get(org_of.get(u.id)) else None),
+            counts.get(u.id, 0),
+        )
+        for u in users
+    ]
     await audit.record(
         session,
         action="admin.users.search",
@@ -136,11 +118,7 @@ async def user_usage(
     # 팀 사용량은 그 팀의 owner 가 볼 일이지 플랫폼 운영자가 들여다볼 것이 아니다
     org = await orgs.personal_org(session, user_id)
     ent = await entitlements.resolve(session, org.id)
-    kinds = (
-        await session.execute(
-            select(UsageEvent.kind).where(UsageEvent.org_id == org.id).group_by(UsageEvent.kind)
-        )
-    ).scalars()
+    kinds = await entitlements.usage_kinds(session, org.id)
     used = {k: await entitlements.usage_in_period(session, org.id, k) for k in kinds}
 
     await audit.record(
@@ -360,22 +338,9 @@ async def org_billing(
     if sub is None:
         raise NotFound("워크스페이스를 찾을 수 없습니다", code="org_not_found")
 
-    card = (
-        await session.execute(
-            select(BillingKey).where(
-                BillingKey.org_id == org_id, BillingKey.status == "active"
-            )
-        )
-    ).scalar_one_or_none()
+    card = await payments.active_card(session, org_id)
 
-    payments = (
-        await session.execute(
-            select(Payment)
-            .where(Payment.org_id == org_id)
-            .order_by(Payment.created_at.desc())
-            .limit(24)
-        )
-    ).scalars().all()
+    rows_paid = await payments.recent_payments(session, org_id, limit=24)
 
     ent = await entitlements.resolve(session, org_id)
     # **조회도 감사에 남긴다** — 남의 결제를 들여다보는 일이라 누가 봤는지가 남아야 한다
@@ -407,6 +372,6 @@ async def org_billing(
                 status=p.status,
                 approved_at=p.approved_at,
             )
-            for p in payments
+            for p in rows_paid
         ],
     )

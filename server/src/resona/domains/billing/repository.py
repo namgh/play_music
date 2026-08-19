@@ -100,3 +100,15 @@ async def lock_if_due(session: AsyncSession, org_id: uuid.UUID) -> Subscription 
     if locked is None:
         return None
     return await session.get(Subscription, org_id)
+
+
+async def usage_kinds(session: AsyncSession, org_id: uuid.UUID) -> list[str]:
+    from resona.domains.billing.models import UsageEvent
+
+    return list(
+        (
+            await session.execute(
+                select(UsageEvent.kind).where(UsageEvent.org_id == org_id).group_by(UsageEvent.kind)
+            )
+        ).scalars()
+    )

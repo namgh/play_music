@@ -361,3 +361,7 @@ async def due_for_charge(session: AsyncSession, limit: int) -> list:
 
 async def lock_if_due(session: AsyncSession, org_id: uuid.UUID):
     return await repository.lock_if_due(session, org_id)
+
+
+async def usage_kinds(session: AsyncSession, org_id: uuid.UUID) -> list[str]:
+    return await repository.usage_kinds(session, org_id)

@@ -99,7 +99,7 @@ async def create_asset(
     # 한도는 **워크스페이스** 것이다. 개인 기준으로 세면 두 방향으로 틀린다 —
     # 팀이 Pro 를 결제해도 올리는 사람의 무료 한도에 막히고, 반대로 무료 조직에
     # 여러 명을 초대하면 인원수만큼 올릴 수 있다
-    org = await orgs.resolve_org(session, user=user, org_id=body.org_id, need=orgs.EDIT)
+    org = await orgs.resolve_org(session, user_id=user.id, org_id=body.org_id, need=orgs.EDIT)
 
     # 용량 한도는 **올리기 전에** 본다. 올린 뒤 거절하면 대역폭은 이미 썼다
     ent = await entitlements.resolve(session, org.id)
@@ -362,7 +362,7 @@ async def storage_usage(
     한도에 걸렸을 때 사용자가 할 수 있는 일이 "뭘 지울지 고르는 것"인데,
     무엇이 얼마를 쓰고 있는지 볼 방법이 없으면 고를 수가 없다.
     """
-    org = await orgs.resolve_org(session, user=user, org_id=org_id)
+    org = await orgs.resolve_org(session, user_id=user.id, org_id=org_id)
     row = (
         await session.execute(
             select(

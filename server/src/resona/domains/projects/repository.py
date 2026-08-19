@@ -143,3 +143,18 @@ async def list_versions(
             )
         ).scalars()
     )
+
+
+async def counts_by_owner(session: AsyncSession, owner_ids) -> dict[uuid.UUID, int]:
+    """만든 사람별 살아 있는 곡 수. 어드민 목록용 — **한 번에** 센다"""
+    from sqlalchemy import func
+
+    ids = list(owner_ids)
+    if not ids:
+        return {}
+    rows = await session.execute(
+        select(Project.owner_id, func.count())
+        .where(Project.owner_id.in_(ids), Project.deleted_at.is_(None))
+        .group_by(Project.owner_id)
+    )
+    return {oid: n for oid, n in rows}

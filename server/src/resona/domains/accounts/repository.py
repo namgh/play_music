@@ -41,3 +41,12 @@ async def identities(session: AsyncSession, user_id: uuid.UUID) -> list[str]:
 async def count_by_status(session: AsyncSession) -> dict[str, int]:
     rows = await session.execute(select(User.status, func.count()).group_by(User.status))
     return {status: n for status, n in rows}
+
+
+async def search_recent(
+    session: AsyncSession, *, limit: int, query: str | None = None
+) -> list[User]:
+    stmt = select(User).order_by(User.created_at.desc()).limit(limit)
+    if query:
+        stmt = stmt.where(User.email.ilike(f"%{query.lower()}%"))
+    return list((await session.execute(stmt)).scalars())

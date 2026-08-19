@@ -138,7 +138,7 @@ async def create_project(
     # 동시에 통과한다. 자문 락으로 같은 사용자의 동시 생성만 직렬화한다
     # `org_id` 가 없으면 **개인 워크스페이스로 간다** — 처음 쓰는 사람에게
     # "먼저 워크스페이스를 고르세요"를 요구하면 거기서 절반이 떠난다
-    org = await orgs.resolve_org(session, user=user, org_id=body.org_id, need=orgs.EDIT)
+    org = await orgs.resolve_org(session, user_id=user.id, org_id=body.org_id, need=orgs.EDIT)
 
     ent = await entitlements.resolve(session, org.id)
     await entitlements.require_song_quota(session, ent, org.id)
