@@ -15,7 +15,7 @@ WORKDIR /srv
 COPY pyproject.toml ./
 RUN pip install --upgrade pip && pip install .
 
-COPY app ./app
+COPY src ./src
 COPY alembic.ini ./
 
 # **root 로 돌리지 않는다.** 컨테이너가 뚫렸을 때 할 수 있는 일을 줄인다
@@ -31,4 +31,4 @@ EXPOSE 8000
 #   workers × (db_pool_size + db_max_overflow) ≤ Postgres max_connections − 예약분
 # 이 부등식을 깨면 트래픽이 아니라 **배포 직후**에 커넥션이 마른다.
 ENV WEB_CONCURRENCY=4
-CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers ${WEB_CONCURRENCY}"]
+CMD ["sh", "-c", "exec uvicorn resona.main:app --host 0.0.0.0 --port 8000 --workers ${WEB_CONCURRENCY}"]

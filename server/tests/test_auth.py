@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from sqlalchemy import func, select
 
-from app.db.models import RefreshToken, User
+from resona.db.models import RefreshToken, User
 
 PASSWORD = "correct-horse-battery"
 
@@ -12,7 +12,7 @@ PASSWORD = "correct-horse-battery"
 async def test_signup_creates_personal_workspace_and_free_plan(client, unique_email, db):
     """**가입하면 개인 워크스페이스가 같이 생긴다.** 없으면 곡을 만들 곳이 없다 —
     개인 계정도 1인 조직이라는 것이 이 서비스의 전제다"""
-    from app.db.models import Organization, OrgMember, Subscription
+    from resona.db.models import Organization, OrgMember, Subscription
 
     res = await client.post(
         "/v1/auth/signup", json={"email": unique_email, "password": PASSWORD}
@@ -42,7 +42,7 @@ async def test_signup_creates_personal_workspace_and_free_plan(client, unique_em
 async def test_signup_enqueues_verification_mail(client, unique_email, db):
     """**메일은 아웃박스를 거친다.** 요청 안에서 보내면 트랜잭션이 롤백돼도
     메일은 이미 나가 있다"""
-    from app.db.models import EmailOutbox
+    from resona.db.models import EmailOutbox
 
     await client.post("/v1/auth/signup", json={"email": unique_email, "password": PASSWORD})
     row = (
@@ -61,7 +61,7 @@ async def test_signup_with_existing_email_never_issues_tokens(client, unique_ema
     그대로 내줬다. 이메일 주소만 알면 아무 비밀번호로 남의 계정을 통째로 열 수 있었다.
     열거 방지가 인증 우회가 된 것이다.
     """
-    from app.db.models import EmailOutbox
+    from resona.db.models import EmailOutbox
 
     await client.post("/v1/auth/signup", json={"email": unique_email, "password": PASSWORD})
     cookie_before = client.cookies.get("resona_refresh")
@@ -124,7 +124,7 @@ async def test_failed_login_is_actually_recorded(client, unique_email, db):
     한때 이 기록이 한 건도 안 남고 있었다 — 401 이 트랜잭션을 롤백해서
     `audit.record` 가 통째로 사라졌다. "기록하고 있다고 믿는" 상태가 제일 나쁘다.
     """
-    from app.db.models import AuditLog
+    from resona.db.models import AuditLog
 
     await client.post("/v1/auth/signup", json={"email": unique_email, "password": PASSWORD})
     for _ in range(3):
@@ -218,7 +218,7 @@ async def test_password_rehash_on_cost_change():
     """비용을 올리면 **로그인 성공 시점에 재해싱**한다 (`security.verify_password`)"""
     from argon2 import PasswordHasher
 
-    from app.core.security import verify_password
+    from resona.core.security import verify_password
 
     weak = PasswordHasher(memory_cost=8, time_cost=1, parallelism=1).hash(PASSWORD)
     ok, rehashed = verify_password(PASSWORD, weak)
@@ -230,7 +230,7 @@ async def test_wrong_password_takes_similar_time_as_missing_user():
     """사용자가 없어도 더미와 비교해 시간을 맞춘다 — 존재 여부가 새지 않게"""
     import time
 
-    from app.core.security import hash_password, verify_password
+    from resona.core.security import hash_password, verify_password
 
     stored = hash_password(PASSWORD)
 

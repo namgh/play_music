@@ -14,7 +14,7 @@ import uuid
 import pytest
 from sqlalchemy import select
 
-from app.db.models import AuditLog, ImpersonationSession, User
+from resona.db.models import AuditLog, ImpersonationSession, User
 from tests.test_projects import DOC, auth, signup
 
 
@@ -53,7 +53,7 @@ async def test_there_is_no_endpoint_to_read_another_users_project(client, unique
 
     # 어드민 표면 어디에도 남의 문서를 읽는 경로가 **없다**는 것을 확인한다.
     # 있으면 언젠가 쓰이고, 쓰이면 사고가 난다
-    from app.api.v1 import admin as admin_router
+    from resona.api.v1 import admin as admin_router
 
     admin_paths = [r.path for r in admin_router.router.routes]
     assert not any("project" in p or "document" in p for p in admin_paths), admin_paths
@@ -241,7 +241,7 @@ async def test_bootstrap_owner_is_created_on_signup(client, unique_email, monkey
     마이그레이션으로도 생기지 않았다 — 첫 남용 신고가 들어오면 운영자가
     프로덕션 DB 에 직접 UPDATE 를 쳐야 하고 그건 감사 로그에도 안 남는다.
     """
-    from app.config import get_settings
+    from resona.config import get_settings
 
     monkeypatch.setenv("BOOTSTRAP_OWNER_EMAIL", unique_email)
     get_settings.cache_clear()
@@ -260,7 +260,7 @@ async def test_bootstrap_owner_is_created_on_signup(client, unique_email, monkey
 
 async def test_bootstrap_does_not_promote_an_existing_account(client, unique_email, db):
     """**환경변수만으로 남의 계정이 운영자가 되면 그게 곧 권한 상승 경로다**"""
-    from app.config import get_settings
+    from resona.config import get_settings
 
     await signup(client, unique_email)  # 먼저 평범하게 가입
 

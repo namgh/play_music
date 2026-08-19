@@ -200,7 +200,7 @@ async def test_soft_delete_hides_but_keeps(client, unique_email, db):
     """곡을 잃는 것은 되돌릴 수 없다 → 30일 복구 창 (`SERVER_DATA.md` 4-1)"""
     from sqlalchemy import select
 
-    from app.db.models import Project
+    from resona.db.models import Project
 
     token = await signup(client, unique_email)
     created = (

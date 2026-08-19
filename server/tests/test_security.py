@@ -10,8 +10,8 @@ from __future__ import annotations
 import pytest
 from starlette.datastructures import Headers
 
-from app.api.deps import client_ip
-from app.config import get_settings
+from resona.api.deps import client_ip
+from resona.config import get_settings
 
 
 def _request(peer: str | None, forwarded: str | None = None):

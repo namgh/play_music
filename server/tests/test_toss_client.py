@@ -18,7 +18,7 @@ import json
 import httpx
 import pytest
 
-from app.services import toss
+from resona.services import toss
 
 
 def _transport(handler):

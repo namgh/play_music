@@ -17,7 +17,7 @@ from urllib.parse import parse_qs, urlparse
 
 from sqlalchemy import select
 
-from app.db.models import Asset, ProjectExport, Subscription
+from resona.db.models import Asset, ProjectExport, Subscription
 from tests.test_projects import DOC, auth, signup
 
 WAV_SHA = hashlib.sha256(b"fake wav bytes").hexdigest()
@@ -224,7 +224,7 @@ async def test_commercial_license_survives_cancellation(client, unique_email, db
 
 async def _subscription(db, email: str):
     """구독은 **개인 워크스페이스**에 붙어 있다 — 과금 단위가 조직이다"""
-    from app.db.models import Organization, OrgMember, User
+    from resona.db.models import Organization, OrgMember, User
 
     user = (await db.execute(select(User).where(User.email == email))).scalar_one()
     org = (
@@ -243,7 +243,7 @@ async def _webhook(client, event: dict, *, secret: str | None = None):
     raw = json.dumps(event).encode()
     headers = {"content-type": "application/json"}
     if secret is None:
-        from app.config import get_settings
+        from resona.config import get_settings
 
         secret = get_settings().billing_webhook_secret.get_secret_value()
     if secret:
@@ -297,7 +297,7 @@ async def test_webhook_out_of_order_is_ignored(client, unique_email, db):
 
 async def test_webhook_signature_is_verified(client, unique_email, monkeypatch):
     """설정이 `Settings` 로 모였으므로 캐시를 비워야 반영된다"""
-    from app.config import get_settings
+    from resona.config import get_settings
 
     monkeypatch.setenv("BILLING_WEBHOOK_SECRET", "whsec_test")
     get_settings.cache_clear()
@@ -328,7 +328,7 @@ async def test_webhook_signature_is_verified(client, unique_email, monkeypatch):
 
 async def test_presign_is_deterministic_for_fixed_time(settings):
     """서명이 **재현 가능해야** 테스트할 수 있다 — 그래서 시각을 주입받는다"""
-    from app.services import storage
+    from resona.services import storage
 
     at = datetime(2026, 8, 11, 12, 0, 0, tzinfo=UTC)
     a = storage.presign(

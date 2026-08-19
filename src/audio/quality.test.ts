@@ -341,7 +341,9 @@ test('에일리어싱 — 비조화 부분음을 접힘으로 오해하지 않�
     const n = Math.round(1 * rate);
     const x = new Float32Array(n);
     // 비조화 부분음: 1, 2.04, 3.13, 4.28배 (피아노의 강성 분산과 비슷하게)
-    for (const [ratio, amp] of [[1, 0.5], [2.04, 0.4], [3.13, 0.3], [4.28, 0.2]]) {
+    // 튜플로 못 박는다 — `number[][]` 로 추론되면 요소가 `undefined` 가 될 수 있다고 본다
+    const partials: Array<[number, number]> = [[1, 0.5], [2.04, 0.4], [3.13, 0.3], [4.28, 0.2]];
+    for (const [ratio, amp] of partials) {
       for (let i = 0; i < n; i += 1) {
         x[i]! += amp * Math.sin((2 * Math.PI * f0 * ratio * i) / rate);
       }

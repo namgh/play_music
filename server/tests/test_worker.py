@@ -13,8 +13,8 @@ import uuid
 import pytest
 from sqlalchemy import select, text
 
-from app.db.models import AiJob, UsageEvent
-from app.worker.main import Worker
+from resona.db.models import AiJob, UsageEvent
+from resona.worker.main import Worker
 from tests.test_projects import auth, signup
 
 
@@ -198,8 +198,12 @@ async def test_shutdown_releases_lease(client, unique_email, db):
     job = await _submit(client, token)
 
     worker = Worker()
-    async with __import__("app.db.session", fromlist=["session_scope"]).session_scope() as s:
-        from app.worker.main import CLAIM_SQL, WORKER_ID
+    from resona.db.session import session_scope
+    from resona.worker.main import CLAIM_SQL, WORKER_ID
+
+    # 문자열로 모듈을 부르면 패키지 이름이 바뀔 때 **정적 검색에 안 잡힌다.**
+    # 실제로 `app` → `resona` 로 옮길 때 여기만 남아 터졌다
+    async with session_scope() as s:
 
         row = (await s.execute(CLAIM_SQL, {"worker": WORKER_ID, "lease": 300})).first()
     worker._current = row[0]

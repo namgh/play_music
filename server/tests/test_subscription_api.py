@@ -11,7 +11,7 @@ import json
 import httpx
 from sqlalchemy import text
 
-from app.services import entitlements, toss
+from resona.services import entitlements, toss
 from tests.test_billing_run import _charge_ok, _charge_rejected, setup_org_with_card
 from tests.test_projects import DOC, auth, signup
 
@@ -140,7 +140,7 @@ async def test_resume_undoes_a_cancellation(client, unique_email, db):
 
 async def test_the_period_actually_ends_when_it_expires(client, unique_email, db):
     """해지 예약이 만료에 도달하면 스케줄러가 끝낸다"""
-    from app.scheduler import main as sched
+    from resona.scheduler import main as sched
 
     token, org_id = await setup_org_with_card(client, db, unique_email)
     await _subscribe(client, token)
@@ -369,7 +369,7 @@ async def test_full_lifecycle_signup_to_cancellation(client, unique_email, db):
 
     **단위로 다 맞아도 이어 붙이면 어긋나는 곳이 있다.**
     """
-    from app.scheduler import main as sched
+    from resona.scheduler import main as sched
 
     # ① 무료로 5곡까지
     token, org_id = await setup_org_with_card(client, db, unique_email)

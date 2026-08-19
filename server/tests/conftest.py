@@ -17,15 +17,39 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 os.environ.setdefault("ENV", "local")
-os.environ.setdefault("KEY_PREFIX", "test:v1")
 os.environ.setdefault(
     "DATABASE_URL", "postgresql+asyncpg://resona:resona@localhost:55432/resona"
 )
-os.environ.setdefault("REDIS_CACHE_URL", "redis://localhost:56379/8")
-os.environ.setdefault("REDIS_CORE_URL", "redis://localhost:56379/9")
+
+# ---------------------------------------------------------------------------
+# ⚠ **아래 셋은 `setdefault` 가 아니라 강제다.**
+#
+# `setdefault` 는 이미 있는 환경변수를 덮지 않는다. 그래서 `.env` 를 읽은 셸에서
+# (`set -a; . ./.env`) 테스트를 돌리면 개발용 Redis **0·1번**을 그대로 쓰게 되는데,
+# 아래 `app` 픽스처가 매 테스트마다 `flushdb()` 를 부른다 —
+# **개발자의 로컬 Redis 가 통째로 지워진다.**
+#
+# 테스트 격리도 함께 깨진다. 개발 중 쌓인 레이트리밋·캐시·락이 남아 있는 상태로
+# 돌게 되어, 어떤 테스트는 "혼자 돌리면 통과하는데 전체로는 실패"한다.
+# 그런 실패는 원인을 찾는 데 몇 시간이 든다.
+#
+# 테스트가 볼 수 있는 자원은 테스트만의 것이어야 한다. 선택지가 아니다.
+# ---------------------------------------------------------------------------
+os.environ["KEY_PREFIX"] = "test:v1"
+os.environ["REDIS_CACHE_URL"] = "redis://localhost:56379/8"
+os.environ["REDIS_CORE_URL"] = "redis://localhost:56379/9"
+
+# **원격 DB 를 향해 테스트를 돌리지 못하게 막는다.** 테스트는 데이터를 만들고
+# 지운다. 실수로 스테이징이나 운영을 가리키면 되돌릴 수 없다
+_db_url = os.environ["DATABASE_URL"]
+if not any(host in _db_url for host in ("localhost", "127.0.0.1", "@postgres")):
+    raise RuntimeError(
+        "테스트가 로컬이 아닌 DB 를 가리키고 있다. 테스트는 데이터를 지운다:\n"
+        f"  DATABASE_URL={_db_url}"
+    )
 os.environ.setdefault("JWT_SECRET", "test-secret")
 # 결제 — **테스트 키만 쓴다.** 운영 키(`live_`)를 넣으면 부팅이 막히도록
-# `Settings` 에 역방향 게이트가 있다 (`app/config.py`)
+# `Settings` 에 역방향 게이트가 있다 (`resona/config.py`)
 os.environ.setdefault("TOSS_CLIENT_KEY", "test_ck_forTests")
 os.environ.setdefault("TOSS_SECRET_KEY", "test_sk_forTests")
 os.environ.setdefault("PAYMENT_ENC_KEY", base64.b64encode(b"k" * 32).decode())
@@ -34,10 +58,10 @@ os.environ.setdefault("PAYMENT_ENC_KEY", base64.b64encode(b"k" * 32).decode())
 # 베타 부여 자체는 `test_beta_grant.py` 가 켜서 따로 본다
 os.environ.setdefault("BETA_FREE_MONTHS", "0")
 
-from app.config import get_settings  # noqa: E402
-from app.core import redis as r  # noqa: E402
-from app.db.session import dispose_engine, init_engine, session_scope  # noqa: E402
-from app.main import create_app  # noqa: E402
+from resona.config import get_settings  # noqa: E402
+from resona.core import redis as r  # noqa: E402
+from resona.db.session import dispose_engine, init_engine, session_scope  # noqa: E402
+from resona.main import create_app  # noqa: E402
 
 
 @pytest.fixture

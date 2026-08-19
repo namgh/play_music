@@ -13,7 +13,7 @@ import uuid
 
 from sqlalchemy import select
 
-from app.db.models import EmailOutbox, OrgInvite
+from resona.db.models import EmailOutbox, OrgInvite
 from tests.test_projects import DOC, auth, signup
 
 
@@ -349,7 +349,7 @@ async def test_storage_quota_is_per_workspace_not_per_person(client, unique_emai
     """
     import hashlib
 
-    from app.db.models import Asset
+    from resona.db.models import Asset
 
     owner = await signup(client, unique_email)
     team = await _team(client, owner)

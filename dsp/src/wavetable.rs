@@ -261,7 +261,10 @@ impl WaveTableSet {
 /// 전역 `static mut` 로 뒀더니 테스트가 병렬로 돌 때 경쟁이 났다 — wasm 은 단일
 /// 스레드라 실사용에서는 안 터지지만, **테스트에서 터지는 것은 코드가 틀렸다는
 /// 뜻이다.** 자물쇠는 보이스를 만들 때만 잡고 오디오 경로에는 없다.
-static CACHE: OnceLock<Mutex<Vec<(u64, Arc<WaveTableSet>)>>> = OnceLock::new();
+/// 표본율(비트 패턴)을 키로 하는 캐시. 이름을 붙여야 읽을 때 무엇인지 보인다
+type TableCache = OnceLock<Mutex<Vec<(u64, Arc<WaveTableSet>)>>>;
+
+static CACHE: TableCache = OnceLock::new();
 
 pub fn shared(sample_rate: f64) -> Arc<WaveTableSet> {
     let key = sample_rate.to_bits();
@@ -428,7 +431,15 @@ mod level_tests {
             (sum / n as f64).sqrt()
         };
         // 사각파는 ±1 이라 RMS 1.0, 삼각파는 1/√3
-        assert!((0.93..1.05).contains(&rms(TableWave::Square)), "사각파 {}", rms(TableWave::Square));
-        assert!((0.52..0.62).contains(&rms(TableWave::Triangle)), "삼각파 {}", rms(TableWave::Triangle));
+        assert!(
+            (0.93..1.05).contains(&rms(TableWave::Square)),
+            "사각파 {}",
+            rms(TableWave::Square)
+        );
+        assert!(
+            (0.52..0.62).contains(&rms(TableWave::Triangle)),
+            "삼각파 {}",
+            rms(TableWave::Triangle)
+        );
     }
 }

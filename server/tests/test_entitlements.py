@@ -14,7 +14,7 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import text
 
-from app.services import entitlements
+from resona.services import entitlements
 from tests.test_projects import DOC, auth, signup
 
 FREE_SONGS = entitlements.DEFAULT_FREE_LIMITS["songs_total"]

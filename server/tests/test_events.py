@@ -17,8 +17,8 @@ import httpx
 import pytest
 from sqlalchemy import text
 
-from app.core import events
-from app.worker.main import Worker
+from resona.core import events
+from resona.worker.main import Worker
 from tests.test_projects import auth, signup
 
 
@@ -145,7 +145,7 @@ async def test_events_require_auth(client):
 
 async def test_publish_never_raises_when_redis_is_down(monkeypatch):
     """**알림이 안 갔다고 잡 처리를 실패시키지 않는다.** 클라이언트는 폴링으로 안다"""
-    import app.core.redis as r
+    import resona.core.redis as r
 
     class Broken:
         async def publish(self, *a, **kw):

@@ -781,6 +781,9 @@ mod excitation_seed_tests {
             .zip(b.iter())
             .map(|(x, y)| (x - y).abs())
             .fold(0.0, f32::max);
-        assert!(diff > 1e-3, "씨앗이 달라도 같은 소리가 난다 (최대차 {diff})");
+        assert!(
+            diff > 1e-3,
+            "씨앗이 달라도 같은 소리가 난다 (최대차 {diff})"
+        );
     }
 }

@@ -12,7 +12,7 @@ import base64
 import pytest
 from pydantic import SecretStr
 
-from app.core import crypto
+from resona.core import crypto
 
 
 async def test_round_trip(settings):

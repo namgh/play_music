@@ -21,7 +21,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from app.config import Settings
+from resona.config import Settings
 
 ENV_EXAMPLE = Path(__file__).resolve().parent.parent / ".env.example"
 

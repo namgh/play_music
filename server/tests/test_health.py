@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.api.v1 import health
+from resona.api.v1 import health
 
 
 @pytest.fixture(autouse=True)

@@ -17,8 +17,8 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from sqlalchemy import text
 
-from app.core import redis as r
-from app.scheduler import main as sched
+from resona.core import redis as r
+from resona.scheduler import main as sched
 
 
 @pytest.fixture(autouse=True)
@@ -143,7 +143,7 @@ async def test_roll_up_usage_folds_last_month(client, unique_email, db):
     """**조직 단위로 접는다.** 여기서 컬럼 이름이 틀려 있었다 (user_id → org_id)"""
     from sqlalchemy import select
 
-    from app.db.models import Organization, OrgMember, User
+    from resona.db.models import Organization, OrgMember, User
     from tests.test_projects import signup
 
     await signup(client, unique_email)
@@ -196,7 +196,7 @@ async def test_roll_up_does_not_fold_the_current_month(client, unique_email, db)
     """이번 달을 접으면 **아직 늘어날 사용량이 롤업에 굳는다**"""
     from sqlalchemy import select
 
-    from app.db.models import Organization, OrgMember, User
+    from resona.db.models import Organization, OrgMember, User
     from tests.test_projects import signup
 
     await signup(client, unique_email)
@@ -231,7 +231,7 @@ async def test_expire_impersonations_closes_overdue_sessions(client, unique_emai
     """**담당자가 '종료'를 누르는 것에 의존하지 않는다** — 누르는 것을 잊는 쪽이 기본값"""
     from sqlalchemy import select
 
-    from app.db.models import User
+    from resona.db.models import User
     from tests.test_projects import signup
 
     await signup(client, unique_email)
@@ -241,9 +241,13 @@ async def test_expire_impersonations_closes_overdue_sessions(client, unique_emai
         text(
             "INSERT INTO impersonation_sessions "
             "  (operator_id, subject_id, reason, write_allowed, expires_at) "
-            "VALUES (:op, :sub, '만료 테스트', false, :exp)"
+            # ⚠ **시각은 DB 시계로 쓴다.** 파이썬(호스트) 시계로 쓰면 쓸어내는 쪽은
+            # Postgres(컨테이너) 시계로 비교하므로, 둘이 1분 이상 어긋나면 그것만으로
+            # 실패한다. Docker Desktop 은 호스트가 자다 깬 직후 VM 시계가 뒤처진다 —
+            # 새벽에 돌린 예약 점검에서 실제로 이 테스트가 한 번 실패했다
+            "VALUES (:op, :sub, '만료 테스트', false, now() - interval '1 minute')"
         ),
-        {"op": user.id, "sub": user.id, "exp": datetime.now(UTC) - timedelta(minutes=1)},
+        {"op": user.id, "sub": user.id},
     )
     await db.commit()
 
@@ -261,7 +265,7 @@ async def test_expire_impersonations_closes_overdue_sessions(client, unique_emai
 async def test_sweep_expired_tokens_removes_expired_only(client, unique_email, db):
     from sqlalchemy import select
 
-    from app.db.models import User
+    from resona.db.models import User
     from tests.test_projects import signup
 
     await signup(client, unique_email)
@@ -270,13 +274,10 @@ async def test_sweep_expired_tokens_removes_expired_only(client, unique_email, d
     await db.execute(
         text(
             "INSERT INTO email_tokens (user_id, kind, token_hash, expires_at) "
-            "VALUES (:u, 'verify', :h, :exp)"
+            # 위와 같은 이유로 DB 시계를 쓴다
+            "VALUES (:u, 'verify', :h, now() - interval '1 hour')"
         ),
-        {
-            "u": user.id,
-            "h": f"expired-{uuid.uuid4().hex}",
-            "exp": datetime.now(UTC) - timedelta(hours=1),
-        },
+        {"u": user.id, "h": f"expired-{uuid.uuid4().hex}"},
     )
     live_hash = f"live-{uuid.uuid4().hex}"
     await db.execute(

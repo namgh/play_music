@@ -15,8 +15,8 @@ import httpx
 import pytest
 from sqlalchemy import text
 
-from app.core import crypto
-from app.services import toss
+from resona.core import crypto
+from resona.services import toss
 from tests.test_projects import auth, signup
 
 BILLING_KEY = "bk_super_secret_value"

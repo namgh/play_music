@@ -382,4 +382,3 @@ mod tests {
         assert!(buffer.iter().all(|v| v.is_finite()));
     }
 }
-

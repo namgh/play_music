@@ -11,9 +11,9 @@
 
 use crate::denormal::flush;
 use crate::oversample::Oversampler;
+use crate::smooth::{times, Smoothed};
 use crate::wavetable::{TableWave, WaveTableSet};
 use std::sync::Arc;
-use crate::smooth::{times, Smoothed};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Waveform {
@@ -481,10 +481,14 @@ impl SynthVoice {
             let dt_a = (freq * (-half / 1200.0).exp2() / self.sample_rate).min(0.49);
             let dt_b = (freq * (half / 1200.0).exp2() / self.sample_rate).min(0.49);
 
-            let mut raw = self.osc_a.next(waveform, dt_a, dt_a * self.sample_rate, &self.tables);
+            let mut raw = self
+                .osc_a
+                .next(waveform, dt_a, dt_a * self.sample_rate, &self.tables);
             let mut voices = 1.0;
             if use_second {
-                raw += self.osc_b.next(waveform, dt_b, dt_b * self.sample_rate, &self.tables);
+                raw += self
+                    .osc_b
+                    .next(waveform, dt_b, dt_b * self.sample_rate, &self.tables);
                 voices += 1.0;
             }
 
@@ -504,7 +508,10 @@ impl SynthVoice {
             // 서브 — 한 옥타브 아래 사인. 저역을 받쳐 준다
             if sub_level > 0.0 {
                 let dt = (freq * 0.5 / self.sample_rate).min(0.49);
-                raw += self.sub.next(Waveform::Sine, dt, dt * self.sample_rate, &self.tables) * sub_level;
+                raw += self
+                    .sub
+                    .next(Waveform::Sine, dt, dt * self.sample_rate, &self.tables)
+                    * sub_level;
             }
 
             // 노이즈 — 어택의 바람 소리
@@ -818,10 +825,8 @@ mod tests {
                 if !(20.0..20000.0).contains(&folded) {
                     continue;
                 }
-                let db =
-                    20.0 * (magnitude_at(&banded[2048..], folded) / fund).log10();
-                let nb =
-                    20.0 * (magnitude_at(&naive[2048..], folded) / naive_fund).log10();
+                let db = 20.0 * (magnitude_at(&banded[2048..], folded) / fund).log10();
+                let nb = 20.0 * (magnitude_at(&naive[2048..], folded) / naive_fund).log10();
                 worst = worst.max(db);
                 worst_naive = worst_naive.max(nb);
             }
@@ -1044,8 +1049,8 @@ mod wavetable_aliasing_tests {
         let (mut re, mut im, mut norm) = (0.0, 0.0, 0.0);
         for (i, v) in signal.iter().enumerate() {
             let t = 2.0 * core::f64::consts::PI * i as f64 / n as f64;
-            let window = 0.35875 - 0.48829 * t.cos() + 0.14128 * (2.0 * t).cos()
-                - 0.01168 * (3.0 * t).cos();
+            let window =
+                0.35875 - 0.48829 * t.cos() + 0.14128 * (2.0 * t).cos() - 0.01168 * (3.0 * t).cos();
             let sample = *v as f64 * window;
             re += sample * (w * i as f64).cos();
             im -= sample * (w * i as f64).sin();
@@ -1109,5 +1114,4 @@ mod wavetable_aliasing_tests {
             }
         }
     }
-
 }
