@@ -50,7 +50,7 @@ function projectWithCurve(midi: number, curve: PitchCurve | null, sustainSec = 4
   // 그러면 실행마다 여기(擊)의 잡음이 달라져 추적된 음정이 흔들리고, 측정이
   // 간헐적으로 어긋난다 — **제품이 아니라 시험 입력이 비결정적이었던 것이다.**
   // (저장된 곡은 id 가 고정이라 언제 렌더해도 같다: 미리듣기 = 내보내기)
-  note.id = `curve-test-${midi}`;
+  note.id = `not_curve-test-${midi}`;
   note.pitchCurve = curve;
   clip.notes.push(note);
   track.clips.push(clip);

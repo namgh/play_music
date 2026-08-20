@@ -74,6 +74,9 @@ jobs:
       - name: 테스트 (음정 ±1센트 회귀 포함)
         run: npm run test:model
 
+      - name: 성능 회귀 (혼자 돌린다 — 옆에서 다른 시험이 돌면 기계 부하를 재게 된다)
+        run: npm run test:perf
+
       - name: M0 스파이크 음정 테스트
         run: npm run test:pitch
 
