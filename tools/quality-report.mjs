@@ -25,7 +25,7 @@ import { argv } from 'node:process';
 
 import { WasmVoiceEngine } from '../src/audio/voice/wasmEngine.ts';
 import { encodeWav } from '../src/audio/wav.ts';
-import { createRegistry, playableInstrumentIds } from '../src/instruments/definitions.ts';
+import { loadAllInstruments, playableInstrumentIds } from '../src/instruments/definitions.ts';
 import { instrumentParams, resolveInstrument } from '../src/instruments/resolve.ts';
 import { VOICE_KIND_INDEX } from '../src/instruments/types.ts';
 
@@ -46,7 +46,7 @@ import {
 
 const FS = 48000;
 const BLOCK = 128;
-const registry = createRegistry();
+const registry = await loadAllInstruments();
 
 const args = new Map();
 for (let i = 2; i < argv.length; i += 1) {

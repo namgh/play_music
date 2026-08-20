@@ -21,9 +21,10 @@
     "build:dsp": "$HOME/.cargo/bin/cargo build --release --manifest-path dsp/Cargo.toml --target wasm32-unknown-unknown && cp dsp/target/wasm32-unknown-unknown/release/dsp.wasm src/generated/dsp.wasm",
     "test:dsp": "$HOME/.cargo/bin/cargo test --manifest-path dsp/Cargo.toml",
     "lint:dsp": "$HOME/.cargo/bin/cargo fmt --manifest-path dsp/Cargo.toml --check && $HOME/.cargo/bin/cargo clippy --manifest-path dsp/Cargo.toml --all-targets -- -D warnings",
-    "check": "npm run instruments:check && npm run lint:dsp && npm run test:dsp && npm run build:dsp && npm run typecheck && npm run test:model && npm run test:perf && npm run test:pitch && vite build && npm run check:server",
+    "check": "npm run instruments:check && npm run lint:dsp && npm run test:dsp && npm run build:dsp && npm run typecheck && npm run test:model && npm run test:perf && npm run test:pitch && npm run quality:smoke && vite build && npm run check:server",
     "check:server": "cd server && .venv/bin/ruff check src tests && .venv/bin/python -m pytest -q --timeout=120",
     "quality": "node --experimental-strip-types tools/quality-report.mjs",
+    "quality:smoke": "node --experimental-strip-types tools/quality-report.mjs > /dev/null",
     "quality:compare": "node --experimental-strip-types tools/quality-compare.mjs",
     "test:quality": "node --experimental-strip-types --test 'src/audio/quality.test.ts'",
     "quality:sweep": "node --experimental-strip-types tools/quality-sweep.mjs"

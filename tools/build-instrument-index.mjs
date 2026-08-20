@@ -113,6 +113,16 @@ ${ids.map((id) => `  ${ident(id)},`).join('\n')}
   }
 
   // ② 경량 카탈로그 — 항상 실려 있다
+  //
+  // **순서는 제품 결정이지 알파벳이 아니다.** 파일 이름순으로 두었더니 `drum/clap`
+  // 이 첫 악기가 되어, 새 프로젝트가 **클랩 트랙**으로 시작했다. 작곡 도구를 열었을
+  // 때 처음 보이는 악기는 기타여야 한다. `CATEGORY_ORDER` 가 그 의도를 이미 담고
+  // 있으므로 그것을 따른다
+  const { CATEGORY_ORDER } = await import('../src/instruments/types.ts');
+  const rank = (c) => {
+    const i = CATEGORY_ORDER.indexOf(c);
+    return i === -1 ? CATEGORY_ORDER.length : i;
+  };
   const catalog = rows.map(({ family, id }) => {
     const r = resolveInstrument(id, registry);
     return {
@@ -124,6 +134,13 @@ ${ids.map((id) => `  ${ident(id)},`).join('\n')}
       chunks: chunksFor(id, defs, familyOf),
     };
   });
+  catalog.sort((a, b) => {
+    // 뼈대는 목록에 안 나오므로 뒤로 밀어 둔다
+    if (a.abstract !== b.abstract) return a.abstract ? 1 : -1;
+    const byCategory = rank(a.category) - rank(b.category);
+    return byCategory !== 0 ? byCategory : a.name.localeCompare(b.name, 'ko');
+  });
+
   files.set(
     join(ROOT, 'catalog.generated.ts'),
     `${HEADER(`악기 ${catalog.length}개`)}
