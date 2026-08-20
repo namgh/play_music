@@ -10,6 +10,7 @@
  */
 
 import type { ParamValue } from '../../instruments/types.ts';
+import { VOICE_KIND_ORDER, voiceKindAbiHash } from '../../instruments/types.ts';
 
 /**
  * Rust 쪽 `PARAM_COUNT` 와 순서가 **정확히** 같아야 한다.
@@ -224,6 +225,9 @@ interface WasmExports {
   all_off(): void;
   process(frames: number): number;
   param_count(): number;
+  voice_kind_abi_hash?(): number;
+  voice_kind_count?(): number;
+  unknown_voice_kind_count?(): number;
   voice_line_delay(voice: number): number;
   voice_loop_gain(voice: number): number;
   sample_rate(): number;
@@ -294,6 +298,23 @@ export class WasmVoiceEngine {
       throw new WasmEngineError(
         `파라미터 개수 불일치: wasm ${expected}, JS ${WASM_PARAM_COUNT} — 한쪽만 고쳤다`,
       );
+    }
+
+    // **보이스 종류의 순서도 같은 이유로 대조한다.**
+    //
+    // 파라미터와 달리 여기는 개수가 같아도 틀릴 수 있다 — 중간에 하나를 끼워 넣으면
+    // 뒤가 전부 밀려서 모든 악기가 엉뚱한 엔진으로 울린다. 그래서 이름과 순서를
+    // 함께 해싱해 비교한다. 옛 wasm 에는 이 함수가 없으므로 있을 때만 본다
+    if (typeof exports.voice_kind_abi_hash === 'function') {
+      const wasmHash = exports.voice_kind_abi_hash() >>> 0;
+      const jsHash = voiceKindAbiHash();
+      if (wasmHash !== jsHash) {
+        throw new WasmEngineError(
+          `보이스 종류 ABI 불일치: wasm ${wasmHash}, JS ${jsHash} — ` +
+            `이름이나 순서가 어긋났다. VOICE_KIND_INDEX 와 dsp/src/voice.rs 의 ` +
+            `VOICE_KIND_NAMES 를 맞출 것 (지금 JS 순서: ${VOICE_KIND_ORDER.join(', ')})`,
+        );
+      }
     }
     return new WasmVoiceEngine(exports);
   }

@@ -28,7 +28,7 @@ import { fileURLToPath } from 'node:url';
 import { WasmVoiceEngine } from './voice/wasmEngine.ts';
 import { createRegistry, playableInstrumentIds } from '../instruments/definitions.ts';
 import { instrumentParams, resolveInstrument } from '../instruments/resolve.ts';
-import { VOICE_KIND_INDEX } from '../instruments/types.ts';
+import { voiceKindIndex } from '../instruments/types.ts';
 
 const FS = 48000;
 const BLOCK = 128;
@@ -50,7 +50,7 @@ function renderNote(
   const instrument = resolveInstrument(instrumentId, registry);
   const params = {
     ...instrumentParams(instrument, 'default', null),
-    voiceKind: VOICE_KIND_INDEX[instrument.voice] ?? 0,
+    voiceKind: voiceKindIndex(instrument.voice),
   };
   wasm.allOff();
   wasm.noteOn(440 * 2 ** ((midi - 69) / 12), velocity, params, 1, undefined, seed);

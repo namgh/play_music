@@ -33,7 +33,7 @@ import type { ResolvedInstrument } from '../instruments/types.ts';
 import {
   curveToParams, noteOffFields, toFreeCurve, variationSeed, WASM_PARAM_ORDER,
 } from './voice/wasmEngine.ts';
-import { VOICE_KIND_INDEX } from '../instruments/types.ts';
+import { voiceKindIndex } from '../instruments/types.ts';
 import { buildEffectChain } from './effectGraph.ts';
 import type { EffectChain } from './effectGraph.ts';
 import { scheduleClick } from './metronome.ts';
@@ -176,14 +176,14 @@ export class WorkletRenderer implements AudioRenderer {
 
       runtime = {
         node, gainNode, panNode, effects, effectsKey: '[]', instrument, params,
-        voiceKind: VOICE_KIND_INDEX[instrument.voice] ?? 0,
+        voiceKind: voiceKindIndex(instrument.voice),
       };
       this.tracks.set(track.id, runtime);
     }
 
     runtime.instrument = instrument;
     runtime.params = params;
-    runtime.voiceKind = VOICE_KIND_INDEX[instrument.voice] ?? 0;
+    runtime.voiceKind = voiceKindIndex(instrument.voice);
     runtime.gainNode.gain.value = track.gain;
     runtime.panNode.pan.value = track.pan;
 

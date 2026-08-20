@@ -34,7 +34,8 @@ import type { ResolvedInstrument } from '../instruments/types.ts';
 import { renderNoteToPcm } from './offlineRender.ts';
 import type { WasmVoiceEngine } from './voice/wasmEngine.ts';
 import { curveToParams } from './voice/wasmEngine.ts';
-import { VOICE_KIND_INDEX } from '../instruments/types.ts';
+import { voiceKindIndex } from '../instruments/types.ts';
+import type { VoiceType } from '../instruments/types.ts';
 import { buildEffectChain } from './effectGraph.ts';
 import { scheduleClick } from './metronome.ts';
 import type { EffectChain } from './effectGraph.ts';
@@ -443,7 +444,7 @@ export class BufferRenderer implements AudioRenderer {
       wasm.noteOn(freqHz, velocity, {
         ...params,
         ...curveToParams(curve),
-        voiceKind: VOICE_KIND_INDEX[voiceType as keyof typeof VOICE_KIND_INDEX] ?? 0,
+        voiceKind: voiceKindIndex(voiceType as VoiceType),
       });
       const total = Math.ceil(MAX_NOTE_SEC * sampleRate);
       const out = new Float32Array(total);

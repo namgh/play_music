@@ -468,8 +468,32 @@ fn read_variation_amount() -> f64 {
     sane(engine().param_in[42], 0.0, 1.0, 0.0)
 }
 
-fn read_voice_kind() -> VoiceKind {
+fn read_voice_kind() -> Option<VoiceKind> {
     VoiceKind::from_index(engine().param_in[20] as u32)
+}
+
+/// 모르는 보이스 인덱스가 몇 번 왔는가. **0 이 아니면 TS 와 ABI 가 어긋난 것이다.**
+/// 조용히 다른 소리를 내는 대신 안 울리고 세므로, 테스트와 앱이 이걸 보고 알 수 있다
+static mut UNKNOWN_VOICE_KIND: u32 = 0;
+
+#[no_mangle]
+pub extern "C" fn unknown_voice_kind_count() -> u32 {
+    unsafe { UNKNOWN_VOICE_KIND }
+}
+
+/// 보이스 종류의 개수. TS 가 시작할 때 자기 표와 대조한다
+#[no_mangle]
+pub extern "C" fn voice_kind_count() -> u32 {
+    voice::VOICE_KIND_NAMES.len() as u32
+}
+
+/// 보이스 이름 **과 순서**의 해시.
+///
+/// 개수만 맞추면 **중간에 끼워 넣은 것**을 못 잡는다 — 그때가 제일 위험하다.
+/// 뒤의 인덱스가 전부 밀려서 모든 악기가 엉뚱한 엔진으로 울리는데, 개수는 그대로다
+#[no_mangle]
+pub extern "C" fn voice_kind_abi_hash() -> u32 {
+    voice::abi_hash()
 }
 
 fn read_modal(bright: f64) -> ModalParams {
@@ -701,7 +725,13 @@ pub extern "C" fn note_on(freq_hz: f32, velocity: f32, gain: f32, variation_seed
     );
 
     // 보이스 타입에 따라 라우팅한다. **여기가 유일한 분기점**이다 (`sound.md` 9-4)
-    match read_voice_kind() {
+    let Some(kind) = read_voice_kind() else {
+        // TS 와 ABI 가 어긋났다. **아무 소리도 내지 않고 센다** — 예전처럼 드럼으로
+        // 떨어뜨리면 "뭔가 울리니까" 어긋난 줄 모른다
+        unsafe { UNKNOWN_VOICE_KIND = UNKNOWN_VOICE_KIND.saturating_add(1) };
+        return index as u32;
+    };
+    match kind {
         VoiceKind::WaveguideString => {
             let curve = read_curve();
             // **여진 잡음도 음마다 결정론적이어야 한다.** 이게 없으면 같은 음이라도

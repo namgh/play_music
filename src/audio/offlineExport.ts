@@ -23,7 +23,7 @@ import { instrumentParams, resolveInstrument } from '../instruments/resolve.ts';
 import {
   curveToParams, noteOffFields, toFreeCurve, variationSeed, WASM_PARAM_ORDER,
 } from './voice/wasmEngine.ts';
-import { VOICE_KIND_INDEX } from '../instruments/types.ts';
+import { voiceKindIndex } from '../instruments/types.ts';
 import { buildEffectChain } from './effectGraph.ts';
 
 const WORKLET_URL = '/ks-worklet.js';
@@ -102,7 +102,7 @@ export async function renderOfflineWithWorklet(
       const merged: Record<string, number | string> = {
         ...params,
         ...curveToParams(event.pitchCurve),
-        voiceKind: VOICE_KIND_INDEX[instrument.voice] ?? 0,
+        voiceKind: voiceKindIndex(instrument.voice),
       };
       node.port.postMessage({
         type: 'noteOn',

@@ -26,14 +26,65 @@ pub enum VoiceKind {
     Percussion,
 }
 
+/// ABI 순서 — **이 배열이 유일한 진실이다.** 인덱스는 여기서의 자리다.
+///
+/// TS 쪽(`src/instruments/types.ts` 의 `VOICE_KIND_INDEX`)이 같은 순서를 들고 있어야
+/// 하는데, 예전에는 그걸 **주석으로만** 약속했다. 중간에 하나를 끼워 넣으면 그 뒤가
+/// 전부 밀려서 **모든 악기가 엉뚱한 엔진으로 울리는데 컴파일도 테스트도 통과했다.**
+/// 지금은 이름과 순서를 함께 해싱해(`abi_hash`) 양쪽이 시작할 때 대조한다.
+pub const VOICE_KIND_NAMES: [&str; 5] = [
+    "waveguide-string",
+    "modal",
+    "virtual-analog",
+    "sampler",
+    "percussion",
+];
+
+/// 이름 **과 순서**의 FNV-1a. 하나라도 바뀌면 값이 달라진다
+pub const fn abi_hash() -> u32 {
+    let mut hash: u32 = 0x811c_9dc5;
+    let mut i = 0;
+    while i < VOICE_KIND_NAMES.len() {
+        let bytes = VOICE_KIND_NAMES[i].as_bytes();
+        let mut j = 0;
+        while j < bytes.len() {
+            hash ^= bytes[j] as u32;
+            hash = hash.wrapping_mul(0x0100_0193);
+            j += 1;
+        }
+        // 구분자를 섞어 "ab","c" 와 "a","bc" 가 같은 값이 되지 않게 한다
+        hash ^= b'|' as u32;
+        hash = hash.wrapping_mul(0x0100_0193);
+        i += 1;
+    }
+    hash
+}
+
 impl VoiceKind {
-    pub fn from_index(index: u32) -> Self {
-        match index {
+    /// **모르는 인덱스는 소리를 내지 않는다.**
+    ///
+    /// 예전에는 `_ => Percussion` 으로 떨어뜨렸다. 그러면 TS 와 인덱스가 어긋나도
+    /// "뭔가 울리니까" 아무도 눈치채지 못한다 — 드럼 소리가 나는 기타가 된다.
+    /// 조용히 틀리는 것보다 안 울리고 세는 편이 낫다 (`unknown_voice_kind_count`).
+    pub fn from_index(index: u32) -> Option<Self> {
+        Some(match index {
             0 => Self::WaveguideString,
             1 => Self::Modal,
             2 => Self::VirtualAnalog,
             3 => Self::Sampler,
-            _ => Self::Percussion,
+            4 => Self::Percussion,
+            _ => return None,
+        })
+    }
+
+    /// 역방향. **와일드카드가 없어서** 종류를 늘리면 컴파일러가 여기서 막는다
+    pub fn index(self) -> u32 {
+        match self {
+            Self::WaveguideString => 0,
+            Self::Modal => 1,
+            Self::VirtualAnalog => 2,
+            Self::Sampler => 3,
+            Self::Percussion => 4,
         }
     }
 }
@@ -252,9 +303,14 @@ impl AnyVoice {
 
     /// 지금 울리는 주파수 (앰프의 픽업 콤이 알아야 한다). 모르면 0
     pub fn freq_hz(&self) -> f64 {
+        // **와일드카드를 두지 않는다.** 새 보이스를 넣을 때 "여기는 0 이 맞나"를
+        // 컴파일러가 묻게 한다 — 앰프의 픽업 콤이 이 값을 쓴다
         match self.kind {
             VoiceKind::WaveguideString => self.string.freq_hz(),
-            _ => 0.0,
+            VoiceKind::Modal
+            | VoiceKind::VirtualAnalog
+            | VoiceKind::Sampler
+            | VoiceKind::Percussion => 0.0,
         }
     }
 

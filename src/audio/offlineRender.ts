@@ -20,7 +20,8 @@ import { ticksToSeconds } from '../model/time.ts';
 import { pitchToHz } from '../model/pitch.ts';
 import { applyLegato, applySwing, collectNoteEvents } from './scheduler.ts';
 import type { InstrumentDefinition } from '../instruments/types.ts';
-import { VOICE_KIND_INDEX } from '../instruments/types.ts';
+import { voiceKindIndex } from '../instruments/types.ts';
+import type { VoiceType } from '../instruments/types.ts';
 import { instrumentParams, resolveInstrument } from '../instruments/resolve.ts';
 import { WaveguideStringVoice } from './voice/waveguideString.ts';
 import type { Rng, Voice } from './voice/types.ts';
@@ -155,7 +156,7 @@ export function renderProjectOffline(
           {
             ...setup.params,
             ...curveToParams(event.pitchCurve),
-            voiceKind: VOICE_KIND_INDEX[setup.voiceType as keyof typeof VOICE_KIND_INDEX] ?? 0,
+            voiceKind: voiceKindIndex(setup.voiceType as VoiceType),
           },
           setup.gain,
           // 자유곡선. 안 넘기면 **데이터에는 있고 소리에는 없는** 상태가 된다 —

@@ -13,7 +13,15 @@ export type VoiceType =
   | 'sampler'          // 드럼·보컬·앙상블 (Tier 4)
   | 'percussion';      // 합성 드럼 (에셋 없이 리듬을 만들 수 있게)
 
-/** Rust 쪽 `VoiceKind::from_index` 와 순서가 같아야 한다 */
+/**
+ * Rust 쪽 `VoiceKind::from_index` 와 **순서가 같아야 한다.**
+ *
+ * 예전에는 그걸 이 주석으로만 약속했다. 중간에 하나를 끼워 넣으면 뒤가 전부 밀려서
+ * **모든 악기가 엉뚱한 엔진으로 울리는데 컴파일도 테스트도 통과했다.** 지금은
+ * `voiceKindAbiHash()` 로 이름과 순서를 함께 해싱해, wasm 을 열 때 양쪽을 대조한다.
+ *
+ * `Record<VoiceType, number>` 이라 **키를 빠뜨리면 타입 검사에서 걸린다.**
+ */
 export const VOICE_KIND_INDEX: Record<VoiceType, number> = {
   'waveguide-string': 0,
   modal: 1,
@@ -21,6 +29,43 @@ export const VOICE_KIND_INDEX: Record<VoiceType, number> = {
   sampler: 3,
   percussion: 4,
 };
+
+/** 인덱스 순서대로 나열한 이름 — 해시의 입력이자, 사람이 읽는 순서 */
+export const VOICE_KIND_ORDER: readonly VoiceType[] = (
+  Object.entries(VOICE_KIND_INDEX) as [VoiceType, number][]
+)
+  .sort((a, b) => a[1] - b[1])
+  .map(([name]) => name);
+
+/**
+ * 이름 **과 순서**의 FNV-1a. `dsp/src/voice.rs` 의 `abi_hash()` 와 같은 계산이다.
+ *
+ * 개수만 맞추면 중간에 끼워 넣은 것을 못 잡는데, 그때가 제일 위험하다 —
+ * 개수는 그대로인 채 모든 악기가 밀린다.
+ */
+export function voiceKindAbiHash(): number {
+  let hash = 0x811c9dc5;
+  const mix = (byte: number) => {
+    hash ^= byte;
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  };
+  for (const name of VOICE_KIND_ORDER) {
+    for (const byte of new TextEncoder().encode(name)) mix(byte);
+    mix(0x7c); // '|' — "ab","c" 와 "a","bc" 가 같은 값이 되지 않게
+  }
+  return hash >>> 0;
+}
+
+/** 모르는 보이스 타입을 **조용히 0번으로 떨어뜨리지 않는다.** */
+export function voiceKindIndex(voice: VoiceType): number {
+  const index = VOICE_KIND_INDEX[voice];
+  if (index === undefined) {
+    // 예전에는 `?? 0` 이라 줄 소리로 울렸다 — 새 보이스를 붙이고 표에 안 적으면
+    // "왜 신스가 기타 소리지"를 한참 헤매게 된다
+    throw new Error(`보이스 타입을 모른다: ${voice}. VOICE_KIND_INDEX 에 추가할 것`);
+  }
+  return index;
+}
 
 /**
  * 파라미터 선언. UI 를 자동 생성하기 위한 메타데이터 (`sound.md` 9-5).
