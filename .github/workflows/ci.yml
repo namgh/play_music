@@ -71,6 +71,9 @@ jobs:
 
       # 여기가 이 워크플로의 존재 이유다.
       # 모델·스케줄러·악기·종단·wasm 테스트가 전부 여기서 돈다
+      - name: 악기 인덱스가 최신인가 (파일만 만들고 인덱스를 안 돌린 경우)
+        run: npm run instruments:check
+
       - name: 테스트 (음정 ±1센트 회귀 포함)
         run: npm run test:model
 

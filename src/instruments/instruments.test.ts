@@ -229,3 +229,54 @@ test('기타를 한 곳에서 다 볼 수 있다', () => {
   assert.ok(guitars);
   assert.ok(guitars.instruments.length >= 3, '기타가 흩어져 있다');
 });
+
+// --- 확장성 계약 -------------------------------------------------------------
+//
+// 악기는 이번 주에 100개, 곧 1000개가 된다. **한 악기를 고칠 때 다른 악기 파일을
+// 열지 않아도 되는 것**이 이 구조의 목적이라, 그 전제가 유지되는지 여기서 본다.
+
+test('악기 하나가 파일 하나다 — 폴더가 곧 목록이다', async () => {
+  const { readdirSync, statSync } = await import('node:fs');
+  const { join } = await import('node:path');
+  const { fileURLToPath } = await import('node:url');
+
+  const defsDir = fileURLToPath(new URL('./defs', import.meta.url));
+  let files = 0;
+  for (const family of readdirSync(defsDir)) {
+    const dir = join(defsDir, family);
+    if (!statSync(dir).isDirectory()) continue;
+    files += readdirSync(dir).filter((f) => f.endsWith('.ts') && !f.startsWith('_')).length;
+  }
+
+  // 생성된 인덱스가 낡으면 파일은 있는데 목록에 안 나온다 — 원인을 찾기 어렵다
+  assert.equal(
+    BUILT_IN_INSTRUMENTS.length,
+    files,
+    '악기 파일 수와 인덱스가 다르다 — `npm run instruments:index` 를 돌릴 것',
+  );
+});
+
+test('어떤 악기 파일도 다른 악기 파일을 임포트하지 않는다', async () => {
+  // **여기가 무너지면 "하나 고쳐도 남에게 피해 없다"가 거짓이 된다.**
+  // 공유가 필요하면 계열 기준 정의(`extends`)나 `specs.ts` 로 간다
+  const { readdirSync, readFileSync, statSync } = await import('node:fs');
+  const { join } = await import('node:path');
+  const { fileURLToPath } = await import('node:url');
+
+  const defsDir = fileURLToPath(new URL('./defs', import.meta.url));
+  const offenders: string[] = [];
+  for (const family of readdirSync(defsDir)) {
+    const dir = join(defsDir, family);
+    if (!statSync(dir).isDirectory()) continue;
+    for (const file of readdirSync(dir).filter((f) => f.endsWith('.ts'))) {
+      const text = readFileSync(join(dir, file), 'utf8');
+      for (const m of text.matchAll(/from '([^']+)'/g)) {
+        const target = m[1]!;
+        if (target.includes('/defs/') || /^\.\/[^.]/.test(target)) {
+          offenders.push(`${family}/${file} → ${target}`);
+        }
+      }
+    }
+  }
+  assert.deepEqual(offenders, [], '악기 파일끼리 서로를 임포트한다');
+});
