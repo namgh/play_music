@@ -404,6 +404,22 @@ async def test_scheduler_charges_due_subscriptions(client, unique_email, db, set
     )
     await db.commit()
 
+    # **다른 구독이 이 시험에 끼어들지 못하게 한다.**
+    #
+    # 스케줄러는 전역으로 훑고 배치 상한(`CHARGE_BATCH`)이 있다. 개발 서버가 같은
+    # DB 를 쓰거나 앞선 시험이 결제 대상을 남기면, 이 조직이 배치에 안 들어가서
+    # "스케줄러가 안 긁었다"로 보인다 — 실제로 그렇게 한 번 빨간불이 났고 재현이
+    # 안 돼 원인을 찾는 데 오래 걸렸다. 여기서 보려는 것은 배치 용량이 아니라
+    # "갱신일이 된 구독을 긁는가"다
+    await db.execute(
+        text(
+            "UPDATE subscriptions SET next_charge_at = NULL "
+            "WHERE org_id <> :o AND next_charge_at IS NOT NULL AND next_charge_at <= now()"
+        ),
+        {"o": org_id},
+    )
+    await db.commit()
+
     with toss.use_transport(_charge_ok("pk_sched")):
         await sched.charge_due_subscriptions()
 

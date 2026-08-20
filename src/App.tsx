@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { CloudPanel } from './ui/CloudPanel.tsx';
 
 import { BRAND } from './brand.ts';
 import {
@@ -658,6 +659,13 @@ export function App() {
             onClick={() => fileInput.current?.click()}
             className="rounded border border-neutral-700 px-3 py-1.5 text-sm"
           >열기</button>
+
+          {/* 클라우드는 **얹는 기능**이다 — 로그인하지 않아도 위의 파일 저장·열기는 그대로 된다 */}
+          <CloudPanel
+            project={project}
+            onOpen={(loaded) => editor.commit(loaded)}
+            onNotice={setNotice}
+          />
           <input
             ref={fileInput}
             type="file"

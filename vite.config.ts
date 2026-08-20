@@ -10,6 +10,11 @@ import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
-  server: { port: 5173 },
+  server: {
+    port: 5173,
+    // **`/v1` 을 서버로 넘긴다.** 이게 없으면 프론트가 자기 자신(5173)에게 물어보고
+    // 404 를 받는다. 같은 오리진으로 보내야 리프레시 쿠키(path=/v1/auth)도 실린다
+    proxy: { '/v1': { target: 'http://localhost:8000', changeOrigin: true } },
+  },
   build: { target: 'es2022' },
 });
