@@ -93,9 +93,9 @@ test('모르는 보이스 타입은 조용히 0번이 되지 않는다', () => {
 test('실제로 쓰는 보이스는 전부 표에 있다', async () => {
   // **원본 정의가 아니라 해석된 것을 본다.** `voice` 는 계열에서 상속되므로,
   // 정의 그대로 보면 대부분 `undefined` 다 (여기서 한 번 속았다)
-  const { createRegistry } = await import('./definitions.ts');
+  const { loadAllInstruments } = await import('./definitions.ts');
   const { resolveInstrument } = await import('./resolve.ts');
-  const registry = createRegistry();
+  const registry = await loadAllInstruments();
 
   const missing: string[] = [];
   for (const id of registry.keys()) {

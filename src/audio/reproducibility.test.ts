@@ -26,13 +26,13 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
 import { WasmVoiceEngine } from './voice/wasmEngine.ts';
-import { createRegistry, playableInstrumentIds } from '../instruments/definitions.ts';
+import { loadAllInstruments, playableInstrumentIds } from '../instruments/definitions.ts';
 import { instrumentParams, resolveInstrument } from '../instruments/resolve.ts';
 import { voiceKindIndex } from '../instruments/types.ts';
 
 const FS = 48000;
 const BLOCK = 128;
-const registry = createRegistry();
+const registry = await loadAllInstruments();
 const wasmPath = fileURLToPath(new URL('../generated/dsp.wasm', import.meta.url));
 
 async function engine(): Promise<WasmVoiceEngine> {

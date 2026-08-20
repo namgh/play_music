@@ -25,7 +25,7 @@ import { PPQ, ticksToSeconds } from '../model/time.ts';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
-import { createRegistry, playableInstrumentIds } from '../instruments/definitions.ts';
+import { createRegistry, loadAllInstruments, playableInstrumentIds } from '../instruments/definitions.ts';
 import { instrumentParams, resolveInstrument } from '../instruments/resolve.ts';
 import { DEFAULT_RELEASE_MS, noteOffFields, WasmVoiceEngine } from './voice/wasmEngine.ts';
 import { measureCentsError, measureCentsErrorInContext, seededRng } from './analysis.ts';
@@ -35,7 +35,7 @@ import type { ParamValue } from '../instruments/types.ts';
 
 const SAMPLE_RATE = 48000;
 const TOLERANCE_CENTS = 1;
-const registry = createRegistry();
+const registry = await loadAllInstruments();
 const wasmPath = fileURLToPath(new URL('../generated/dsp.wasm', import.meta.url));
 
 /** Float32Array 는 스프레드하면 스택이 터진다 (수십만 인자) */
@@ -453,7 +453,7 @@ test('같은 음을 반복해도 파형이 조금씩 다르다', async () => {
   project.tracks.push(track);
 
   const wasm = await WasmVoiceEngine.create(await readFile(wasmPath), 48000);
-  const { pcm } = renderProjectOffline(project, createRegistry(), {
+  const { pcm } = renderProjectOffline(project, await loadAllInstruments(), {
     sampleRate: 48000, rng: seededRng(), tailSec: 0.5, wasm,
   });
 
@@ -482,7 +482,7 @@ test('변주가 결정론적이다 — 두 번 렌더하면 같다', async () =>
 
   const render = async () => {
     const wasm = await WasmVoiceEngine.create(await readFile(wasmPath), 48000);
-    return renderProjectOffline(project, createRegistry(), {
+    return renderProjectOffline(project, await loadAllInstruments(), {
       sampleRate: 48000, rng: seededRng(), tailSec: 0.5, wasm,
     }).pcm;
   };

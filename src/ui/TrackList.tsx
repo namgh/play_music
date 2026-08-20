@@ -3,11 +3,11 @@ import { addClip, addTrack, deleteTrack, updateTrack } from '../editor/edits.ts'
 import { ticksPerBar } from '../model/time.ts';
 import type { ProjectEditor } from '../editor/useProjectEditor.ts';
 import {
-  createRegistry, instrumentsByCategory, playableInstrumentIds,
+  INSTRUMENT_CATALOG, instrumentsByCategory, playableInstrumentIds,
 } from '../instruments/definitions.ts';
+import { useInstruments } from '../instruments/useInstruments.ts';
 import { resolveInstrument } from '../instruments/resolve.ts';
 
-const registry = createRegistry();
 const INSTRUMENT_IDS = playableInstrumentIds();
 /**
  * 분류별로 묶은 목록. 평면으로 20개를 늘어놓으면 "기타 중에 뭐가 있나"를 볼 수 없다 —
@@ -17,7 +17,9 @@ const INSTRUMENT_IDS = playableInstrumentIds();
  * 그걸 전부 다시 구현해야 하고, 여기서 이길 것이 없다.
  */
 const INSTRUMENT_GROUPS = instrumentsByCategory();
-const instrumentName = (id: string) => resolveInstrument(id, registry).name;
+// **이름은 기다리지 않는다.** 카탈로그에 상속을 펼쳐 박아 뒀다
+const instrumentName = (id: string) =>
+  INSTRUMENT_CATALOG.find((e) => e.id === id)?.name ?? id;
 
 // 켜짐/꺼짐 스타일을 문자열 하나에 섞지 않는다. 색 배경일 때는 어두운 같은 계열 글자,
 // 투명 배경일 때만 회색 글자를 쓴다
@@ -40,6 +42,8 @@ export interface TrackListProps {
  */
 export function TrackList({ editor, selectedTrackId, onSelectTrack }: TrackListProps) {
   const { project } = editor;
+  // 이 곡이 쓰는 악기만. 이름은 카탈로그에서 바로 나오므로 목록은 안 기다린다
+  const { registry, ready } = useInstruments(project.tracks.map((t) => t.instrumentId));
 
   const onAdd = () => {
     const instrumentId = INSTRUMENT_IDS[project.tracks.length % INSTRUMENT_IDS.length]!;
@@ -109,7 +113,11 @@ export function TrackList({ editor, selectedTrackId, onSelectTrack }: TrackListP
                 onChange={(e) => editor.commit(updateTrack(project, track.id, { toneId: e.target.value }))}
                 className="rounded border border-neutral-700 bg-neutral-900 px-2 py-1 text-xs"
               >
-                {Object.keys(resolveInstrument(track.instrumentId, registry).tones).map((tone) => (
+                {/* 음색은 정의가 와야 안다 — 오는 동안은 지금 고른 것만 보여 준다 */}
+                {(ready
+                  ? Object.keys(resolveInstrument(track.instrumentId, registry).tones)
+                  : [track.toneId]
+                ).map((tone) => (
                   <option key={tone} value={tone}>{tone === 'default' ? '기본' : tone}</option>
                 ))}
               </select>

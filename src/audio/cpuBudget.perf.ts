@@ -35,7 +35,7 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
 import { WasmVoiceEngine } from './voice/wasmEngine.ts';
-import { createRegistry, playableInstrumentIds } from '../instruments/definitions.ts';
+import { loadAllInstruments, playableInstrumentIds } from '../instruments/definitions.ts';
 import { instrumentParams, resolveInstrument } from '../instruments/resolve.ts';
 import { voiceKindIndex } from '../instruments/types.ts';
 
@@ -43,7 +43,7 @@ const FS = 48000;
 const BLOCK = 128;
 /** 워크렛 블록 하나가 실제로 쓰는 시간의 상한 (`sound.md` 11-4: 2.67ms) */
 const BLOCK_DEADLINE_MS = (BLOCK / FS) * 1000;
-const registry = createRegistry();
+const registry = await loadAllInstruments();
 const wasmPath = fileURLToPath(new URL('../generated/dsp.wasm', import.meta.url));
 
 /**

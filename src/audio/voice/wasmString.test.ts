@@ -19,14 +19,14 @@ import { fileURLToPath } from 'node:url';
 import { WasmVoiceEngine } from './wasmEngine.ts';
 import { WaveguideStringVoice } from './waveguideString.ts';
 import { measureCentsError, measureFundamentalT60, seededRng } from '../analysis.ts';
-import { createRegistry, playableInstrumentIds } from '../../instruments/definitions.ts';
+import { loadAllInstruments, playableInstrumentIds } from '../../instruments/definitions.ts';
 import { instrumentParams, resolveInstrument } from '../../instruments/resolve.ts';
 import type { ParamValue } from '../../instruments/types.ts';
 
 const FS = 48000;
 const BLOCK = 128;
 const TOLERANCE_CENTS = 1;
-const registry = createRegistry();
+const registry = await loadAllInstruments();
 
 const wasmPath = fileURLToPath(new URL('../../generated/dsp.wasm', import.meta.url));
 

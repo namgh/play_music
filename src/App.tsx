@@ -14,7 +14,8 @@ import { createEmptyProject } from './model/factory.ts';
 import type { ClipId, MusicalKey, Note, Project, TrackId } from './model/project.ts';
 import { NOTE_NAMES } from './model/pitch.ts';
 import { PPQ, ticksPerBar, ticksToBarBeat } from './model/time.ts';
-import { createRegistry, playableInstrumentIds } from './instruments/definitions.ts';
+import { INSTRUMENT_CATALOG, playableInstrumentIds } from './instruments/definitions.ts';
+import { useInstruments } from './instruments/useInstruments.ts';
 import { resolveInstrument } from './instruments/resolve.ts';
 import { ENGINE_LABELS, useAudioEngine } from './audio/useAudioEngine.ts';
 import { PianoRoll } from './ui/PianoRoll.tsx';
@@ -31,7 +32,6 @@ import { TuningLab } from './ui/TuningLab.tsx';
 import { Timeline } from './ui/Timeline.tsx';
 import { Mixer } from './ui/Mixer.tsx';
 
-const registry = createRegistry();
 
 /** 트랙·악기가 없을 때 쓰는 음역. 화면이 비지 않게만 하면 된다 */
 const FALLBACK_RANGE = { low: 36, high: 84 };
@@ -58,7 +58,7 @@ function starterProject(): Project {
 
   const instrumentId = playableInstrumentIds()[0] ?? 'acoustic-guitar';
   const withTrack = addTrack(empty, {
-    name: resolveInstrument(instrumentId, registry).name,
+    name: INSTRUMENT_CATALOG.find((e) => e.id === instrumentId)?.name ?? instrumentId,
     instrumentId,
   });
   const withClip = addClip(withTrack.project, {
@@ -124,11 +124,17 @@ export function App() {
    */
   const [ghostModes, setGhostModes] = useState<Record<string, GhostMode>>({});
 
+  // **이 곡이 쓰는 악기만 불러온다.** 1000개를 다 받을 이유가 없다 —
+  // 목록·이름은 카탈로그에 있어서 기다리지 않는다
+  const { registry, ready: instrumentsReady } = useInstruments(
+    project.tracks.map((t) => t.instrumentId),
+  );
   const engine = useAudioEngine(project, registry);
 
   const track = project.tracks.find((t) => t.id === selectedTrackId) ?? project.tracks[0] ?? null;
   const clip = track?.clips.find((c) => c.id === selectedClipId) ?? track?.clips[0] ?? null;
-  const instrument = track ? resolveInstrument(track.instrumentId, registry) : null;
+  const instrument =
+    track && instrumentsReady ? resolveInstrument(track.instrumentId, registry) : null;
 
   // 자동 저장 — 편집이 멈춘 뒤 잠깐 기다렸다 쓴다 (매 편집마다 쓰면 낭비다)
   useEffect(() => {

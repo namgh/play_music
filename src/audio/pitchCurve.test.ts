@@ -20,11 +20,11 @@ import { createClip, createEmptyProject, createNote, createTrack } from '../mode
 import { pitchToHz } from '../model/pitch.ts';
 import { PPQ } from '../model/time.ts';
 import type { PitchCurve, Project } from '../model/project.ts';
-import { createRegistry } from '../instruments/definitions.ts';
+import { loadAllInstruments } from '../instruments/definitions.ts';
 import { curveCentsAt, isCurveFlat } from '../model/curve.ts';
 
 const FS = 48000;
-const registry = createRegistry();
+const registry = await loadAllInstruments();
 const wasmPath = fileURLToPath(new URL('../generated/dsp.wasm', import.meta.url));
 
 async function core(): Promise<WasmVoiceEngine> {

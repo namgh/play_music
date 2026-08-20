@@ -9,12 +9,13 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  BUILT_IN_INSTRUMENTS, createRegistry, instrumentsByCategory, playableInstrumentIds,
+  createRegistry, instrumentsByCategory, loadAllInstruments, playableInstrumentIds,
 } from './definitions.ts';
 import { clampParams, instrumentParams, InstrumentResolveError, resolveInstrument } from './resolve.ts';
 import type { InstrumentDefinition } from './types.ts';
 
-const registry = createRegistry();
+const registry = await loadAllInstruments();
+const BUILT_IN_INSTRUMENTS = [...registry.values()];
 
 test('모든 내장 악기가 해석된다', () => {
   for (const id of playableInstrumentIds()) {
@@ -182,7 +183,6 @@ test('기준 정의는 연주용 악기 목록에 없다', () => {
 
 test('모든 연주 가능한 악기가 분류를 갖는다', () => {
   // 없으면 목록에서 사라지거나 엉뚱한 그룹에 나온다
-  const registry = createRegistry();
   for (const id of playableInstrumentIds()) {
     assert.ok(resolveInstrument(id, registry).category, `${id} 에 분류가 없다`);
   }
@@ -197,7 +197,6 @@ test('분류가 없으면 조용히 넘어가지 않고 실패한다', () => {
 });
 
 test('분류는 상속되지만 자식이 덮어쓸 수 있다', () => {
-  const registry = createRegistry();
   // 우쿨렐레는 어쿠스틱 기타를 상속하지만 기타가 아니다
   assert.equal(resolveInstrument('acoustic-guitar', registry).category, '기타');
   assert.equal(resolveInstrument('ukulele-soprano', registry).category, '줄');
@@ -268,7 +267,10 @@ test('어떤 악기 파일도 다른 악기 파일을 임포트하지 않는다'
   for (const family of readdirSync(defsDir)) {
     const dir = join(defsDir, family);
     if (!statSync(dir).isDirectory()) continue;
-    for (const file of readdirSync(dir).filter((f) => f.endsWith('.ts'))) {
+    // `_` 로 시작하는 것은 생성된 계열 배럴이다 — **형제를 모으는 것이 그 일**이라
+    // 여기 규칙의 대상이 아니다. 규칙은 손으로 쓰는 악기 파일에 대한 것이다
+    const handWritten = readdirSync(dir).filter((f) => f.endsWith('.ts') && !f.startsWith('_'));
+    for (const file of handWritten) {
       const text = readFileSync(join(dir, file), 'utf8');
       for (const m of text.matchAll(/from '([^']+)'/g)) {
         const target = m[1]!;

@@ -2,7 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { LiveEngine } from '../audio/liveEngine.ts';
 import wasmUrl from '../generated/dsp.wasm?url';
-import { createRegistry, playableInstrumentIds } from '../instruments/definitions.ts';
+import { INSTRUMENT_CATALOG, playableInstrumentIds } from '../instruments/definitions.ts';
+import { useInstruments } from '../instruments/useInstruments.ts';
+import type { InstrumentDefinition } from '../instruments/types.ts';
+
+const instrumentName = (id: string) =>
+  INSTRUMENT_CATALOG.find((e) => e.id === id)?.name ?? id;
 import { clampParams, instrumentParams, resolveInstrument } from '../instruments/resolve.ts';
 import type { ParamSpec, ParamValue } from '../instruments/types.ts';
 import { NOTE_NAMES } from '../model/pitch.ts';
@@ -25,7 +30,6 @@ import { Spectrum } from './Spectrum.tsx';
  *  5. 스펙트로그램 실시간 표시
  */
 
-const registry = createRegistry();
 const INSTRUMENT_IDS = playableInstrumentIds();
 const SNAPSHOT_KEY = 'tuning-snapshots-v1';
 
@@ -56,9 +60,41 @@ function loadSnapshots(): Snapshot[] {
   }
 }
 
+/**
+ * 껍데기 — **고른 악기를 불러온 뒤에** 본체를 그린다.
+ *
+ * 본체는 `instrument` 가 반드시 있다고 보고 쓰여 있다. 그걸 전부 널 가능으로
+ * 바꾸면 코드가 물음표로 뒤덮이므로, 여기서 한 번만 막는다.
+ */
 export function TuningLab() {
   const [instrumentId, setInstrumentId] = useState(INSTRUMENT_IDS[1] ?? 'acoustic-guitar');
-  const instrument = useMemo(() => resolveInstrument(instrumentId, registry), [instrumentId]);
+  const { registry, ready, error } = useInstruments([instrumentId]);
+
+  if (error) {
+    return <div className="p-6 text-sm text-red-400">악기를 불러오지 못했습니다: {error.message}</div>;
+  }
+  if (!ready) {
+    return <div className="p-6 text-sm text-neutral-500">{instrumentName(instrumentId)} 불러오는 중…</div>;
+  }
+  return (
+    <TuningLabBody
+      key={instrumentId}
+      instrumentId={instrumentId}
+      setInstrumentId={setInstrumentId}
+      registry={registry}
+    />
+  );
+}
+
+function TuningLabBody({ instrumentId, setInstrumentId, registry }: {
+  instrumentId: string;
+  setInstrumentId: (id: string) => void;
+  registry: Map<string, InstrumentDefinition>;
+}) {
+  const instrument = useMemo(
+    () => resolveInstrument(instrumentId, registry),
+    [instrumentId, registry],
+  );
 
   const [slotA, setSlotA] = useState<Params>({});
   const [slotB, setSlotB] = useState<Params>({});
@@ -244,7 +280,7 @@ export function TuningLab() {
           className="rounded border border-neutral-700 bg-neutral-900 px-2 py-1.5 text-sm"
         >
           {INSTRUMENT_IDS.map((id) => (
-            <option key={id} value={id}>{resolveInstrument(id, registry).name}</option>
+            <option key={id} value={id}>{instrumentName(id)}</option>
           ))}
         </select>
       </section>
