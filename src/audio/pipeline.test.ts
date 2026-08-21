@@ -30,6 +30,7 @@ import { instrumentParams, resolveInstrument } from '../instruments/resolve.ts';
 import { DEFAULT_RELEASE_MS, noteOffFields, WasmVoiceEngine } from './voice/wasmEngine.ts';
 import { measureCentsError, measureCentsErrorInContext, seededRng } from './analysis.ts';
 import { renderProjectOffline, slice } from './offlineRender.ts';
+import { HEADROOM_DB, reportClipping } from './headroom.ts';
 import type { Project } from '../model/project.ts';
 import type { ParamValue } from '../instruments/types.ts';
 
@@ -516,4 +517,67 @@ test('변주가 결정론적이다 — 두 번 렌더하면 같다', async () =>
   for (let i = 0; i < a.length; i++) {
     if (a[i] !== b[i]) assert.fail(`샘플 ${i} 가 다르다 — 변주가 재현되지 않는다`);
   }
+});
+
+test('트랙을 쌓아 넘쳤을 때, 제안한 마스터 게인을 적용하면 안 넘친다', async () => {
+  // **계산만 맞는 것으로는 부족하다.** 사용자는 버튼을 누르고 "고쳤다"고 믿는데
+  // 파일이 여전히 잘리면 그게 최악이다. 그래서 제안값을 실제로 적용해 **다시
+  // 렌더한 결과**를 본다 — 계산과 렌더 경로가 어긋나면 여기서 걸린다.
+  //
+  // 트랙을 쌓으면 넘치는 것 자체는 정상이다 (합이 커지는 것은 산수다). 문제는
+  // 조용히 잘리는 것이고, 그래서 우리는 리미터로 소리를 바꾸는 대신
+  // **얼마나 내리면 되는지**를 알려 준다 (`headroom.ts`).
+  const bytes = await readFile(wasmPath);
+  const engines = (count: number) =>
+    Promise.all(Array.from({ length: count }, () => WasmVoiceEngine.create(bytes, SAMPLE_RATE)));
+
+  // 실제 편곡에 가깝게 — 서로 다른 악기가 다른 음을 낸다
+  const parts: [string, number][] = [
+    ['acoustic-guitar', 52], ['electric-bass', 40], ['acoustic-piano', 64], ['synth-pad', 59],
+    ['upright-piano', 55], ['electric-guitar', 67], ['harp', 71], ['marimba', 72],
+    ['synth-lead', 76], ['classical-guitar', 60], ['mandolin', 63], ['clavinet', 56],
+    ['ukulele-soprano', 65], ['banjo', 62], ['harpsichord', 58], ['koto', 68],
+  ];
+  const base = projectWithNotes(parts[0]![0], [{ midi: parts[0]![1] }]);
+  const stacked: Project = {
+    ...base,
+    tracks: parts.map(([id, midi], i) => {
+      const p = projectWithNotes(id, [{ midi }]);
+      const track = p.tracks[0]!;
+      // 노트 id 가 겹치면 변주 씨앗이 같아져 위상이 정렬된다 — 실제보다 더 잘 넘친다
+      track.clips[0]!.notes[0]!.id = `not_stack-${i}`;
+      return track;
+    }),
+  };
+
+  const render = async (project: Project) =>
+    renderProjectOffline(project, registry, {
+      sampleRate: SAMPLE_RATE,
+      rng: seededRng(),
+      tailSec: 1,
+      wasm: await engines(project.tracks.length),
+    }).pcm;
+
+  // **넘치는 상황을 확실히 만든다.** 16트랙 한 음씩으로 실제 넘칠지는 악기 음량에
+  // 달려 있어서, 그대로 두면 이 테스트가 어느 날 조용히 **아무것도 검증하지 않는**
+  // 상태가 된다. 마스터를 올려 넘치게 만들면 조건이 고정되고, 검증하려는 것
+  // (제안값을 적용하면 천장 아래로 들어온다)은 그대로 남는다
+  const loud: Project = { ...stacked, master: { ...stacked.master, gain: 4 } };
+  const before = peakAbs(await render(loud));
+  assert.ok(before > 1, `넘치는 상황을 못 만들었다 (피크 ${before.toFixed(3)})`);
+
+  const report = reportClipping(before, loud.master.gain);
+  assert.ok(report, '넘쳤으면 보고해야 한다');
+
+  const fixed: Project = {
+    ...loud,
+    master: { ...loud.master, gain: report.suggestedGain },
+  };
+  const after = peakAbs(await render(fixed));
+  const ceiling = Math.pow(10, -HEADROOM_DB / 20);
+  assert.ok(
+    after <= ceiling + 1e-6,
+    `적용 후에도 ${after.toFixed(4)} 로 천장 ${ceiling.toFixed(4)} 을 넘는다`,
+  );
+  assert.ok(report.reductionDb > 0, '넘쳤으면 내리는 양이 있어야 한다');
 });

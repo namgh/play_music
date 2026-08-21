@@ -738,11 +738,30 @@ export function App() {
           >{engine.exporting ? '내보내는 중…' : 'WAV 내보내기'}</button>
         </section>
 
-        {/* 피크 경고 — 조용히 잘린 파일이 나가는 것을 막는다 (`ROADMAP.md` P3) */}
-        {engine.clipWarning && (
-          <p className="mt-3 rounded-md border border-amber-900 bg-amber-950/40 px-4 py-3 text-sm text-amber-300">
-            {engine.clipWarning}
-          </p>
+        {/* 피크 경고 — 조용히 잘린 파일이 나가는 것을 막는다 (`ROADMAP.md` P3).
+            **고칠 방법까지 같이 준다.** 얼마나 내려야 하는지 사용자가 찾아 헤매지
+            않도록, 여유 안으로 들어오는 마스터 게인을 계산해 한 번에 적용한다 */}
+        {engine.clip && (
+          <div className="mt-3 flex flex-wrap items-center gap-3 rounded-md border border-amber-900 bg-amber-950/40 px-4 py-3 text-sm text-amber-300">
+            <span>
+              피크가 {engine.clip.peakDb.toFixed(1)}dBFS 입니다 — 파일에서 잘렸습니다
+            </span>
+            <button
+              type="button"
+              className="rounded border border-amber-700 px-2.5 py-1 text-xs text-amber-200 hover:bg-amber-900/40"
+              onClick={() => {
+                // 프로젝트 값을 바꾸므로 미리듣기와 내보내기가 자동으로 같아진다.
+                // 되돌리기 한 단계로 취소할 수 있게 commit 으로 넣는다
+                editor.commit({
+                  ...project,
+                  master: { ...project.master, gain: engine.clip!.suggestedGain },
+                });
+              }}
+            >
+              마스터 {engine.clip.reductionDb.toFixed(1)}dB 내리기
+            </button>
+            <span className="text-xs text-amber-500/80">적용한 뒤 다시 내보내세요</span>
+          </div>
         )}
 
         {(engine.error || notice) && (
