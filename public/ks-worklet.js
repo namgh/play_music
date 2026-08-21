@@ -71,6 +71,9 @@ class KsProcessor extends AudioWorkletProcessor {
         // 자체 카운터를 쓰면 컨텍스트가 먼저 시작된 만큼 어긋난다
         this.pending.push({
           frame: Math.max(message.frame, currentFrame),
+          // **요청한 원래 시각.** 위에서 현재 시각으로 당겨 버리면 "늦게 온 예약"과
+          // "제때 온 예약"을 구분할 수 없게 된다 (`load` 가 그것으로 판정한다)
+          requestedFrame: message.frame,
           freq: message.freq,
           velocity: message.velocity,
           params: message.params,
@@ -113,9 +116,20 @@ class KsProcessor extends AudioWorkletProcessor {
     this.refreshViews();
     // 소유권 표는 wasm 의 슬롯 수에 맞춘다 — 상수를 양쪽에 두면 어긋난다
     this.voiceOwner = new Int32Array(exports.max_voices());
-    // 준비되기 전에 쌓인 예약은 버린다 — 지금 내면 전부 한 지점에 몰린다
-    this.pending.length = 0;
-    this.pendingOff.length = 0;
+    // **지난 예약만 버린다.** 통째로 비우면 안 된다.
+    //
+    // 원래 의도는 재생 쪽이었다: 로딩 중에 쌓인 예약을 지금 내면 전부 한 지점에
+    // 몰려 "쾅" 하고 난다. 그런데 **내보내기는 모든 음을 한 번에, 미래 시각으로**
+    // 예약한 뒤 `ready` 를 기다린다. 통째로 비우면 그 음들이 전부 사라져서
+    // **완전 무음 파일**이 나온다 — 실제로 그랬다. 16트랙 곡을 내보냈더니
+    // 3.4MB 짜리 WAV 가 전 표본 0 이었다. 재생은 룩어헤드가 계속 다시 예약하므로
+    // 멀쩡했고, 그래서 이 결함은 브라우저에서 내보내기를 눌러 봐야만 드러났다.
+    //
+    // 요청 시각이 이미 지난 것만 버리면 두 경우가 모두 산다: 재생에서 늦게 온
+    // 예약은 여전히 버려지고(몰리지 않는다), 내보내기의 미래 예약은 살아남는다.
+    const stillAhead = (item) => (item.requestedFrame ?? item.frame) >= currentFrame;
+    this.pending = this.pending.filter(stillAhead);
+    this.pendingOff = this.pendingOff.filter(stillAhead);
     this.port.postMessage({ type: 'ready', sampleRate });
   }
 
