@@ -1,5 +1,5 @@
 /**
- * **자동 생성 — 손으로 고치지 말 것.** (악기 54개)
+ * **자동 생성 — 손으로 고치지 말 것.** (악기 58개)
  *
  * `npm run instruments:index` 가 `defs/` 폴더를 읽어 만든다.
  * 악기를 추가하려면 `defs/<계열>/<id>.ts` 를 만들고 이 명령을 돌린다.
@@ -28,6 +28,7 @@ export const INSTRUMENT_CATALOG: readonly CatalogEntry[] = [
   { id: 'archtop-jazz-guitar', name: '재즈 기타 (아치탑)', category: '기타', family: 'string', abstract: false, chunks: ['string'] },
   { id: 'classical-guitar', name: '클래식 기타 (나일론)', category: '기타', family: 'string', abstract: false, chunks: ['string'] },
   { id: 'bass-5-string', name: '5현 베이스', category: '베이스', family: 'string', abstract: false, chunks: ['string'] },
+  { id: 'sub-bass', name: '서브 베이스', category: '베이스', family: 'synth', abstract: false, chunks: ['synth'] },
   { id: 'synth-bass', name: '신스 베이스', category: '베이스', family: 'synth', abstract: false, chunks: ['synth'] },
   { id: 'electric-bass', name: '일렉 베이스', category: '베이스', family: 'string', abstract: false, chunks: ['string'] },
   { id: 'double-bass-pizz', name: '콘트라베이스 (피치카토)', category: '베이스', family: 'string', abstract: false, chunks: ['string'] },
@@ -37,8 +38,11 @@ export const INSTRUMENT_CATALOG: readonly CatalogEntry[] = [
   { id: 'electric-piano-wurlitzer', name: '일렉 피아노 (윌리처)', category: '피아노', family: 'piano', abstract: false, chunks: ['modal', 'piano'] },
   { id: 'clavinet', name: '클라비넷', category: '피아노', family: 'piano', abstract: false, chunks: ['piano', 'string'] },
   { id: 'harpsichord', name: '하프시코드', category: '피아노', family: 'string', abstract: false, chunks: ['string'] },
+  { id: 'supersaw-lead', name: '슈퍼소우 리드', category: '건반·신스', family: 'synth', abstract: false, chunks: ['synth'] },
   { id: 'synth-lead', name: '신스 리드', category: '건반·신스', family: 'synth', abstract: false, chunks: ['synth'] },
+  { id: 'synth-organ', name: '신스 오르간', category: '건반·신스', family: 'synth', abstract: false, chunks: ['synth'] },
   { id: 'synth-pad', name: '신스 패드', category: '건반·신스', family: 'synth', abstract: false, chunks: ['synth'] },
+  { id: 'synth-pluck', name: '신스 플럭', category: '건반·신스', family: 'synth', abstract: false, chunks: ['synth'] },
   { id: 'glockenspiel', name: '글로켄슈필', category: '말렛·벨', family: 'modal', abstract: false, chunks: ['modal'] },
   { id: 'marimba', name: '마림바', category: '말렛·벨', family: 'modal', abstract: false, chunks: ['modal'] },
   { id: 'music-box', name: '뮤직박스', category: '말렛·벨', family: 'modal', abstract: false, chunks: ['modal'] },

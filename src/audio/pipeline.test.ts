@@ -63,6 +63,17 @@ function projectWithNotes(
       lengthTick: PPQ,
       midi: n.midi,
     });
+    // **id 를 고정한다 — 이것이 변주의 씨앗이기 때문이다.**
+    //
+    // `createNote` 는 id 를 무작위로 만들고, 렌더러는 그 id 에서 변주 씨앗을 뽑는다
+    // (`variationSeed(event.noteId)`). 씨앗은 음정을 직접 흔들지는 않지만
+    // **여진 노이즈**를 바꾸고, 음정 측정기는 노이즈에 끌린다.
+    //
+    // 그래서 고정하기 전에는 같은 구성으로 5번 돌리면 3번은 통과하고 한 번은
+    // 엉뚱한 악기가 깨졌다 — 실행마다 깨지는 악기가 달랐다. ±1센트는
+    // **엔진에 대한 주장**이지 씨앗 운에 대한 주장이 아니므로, 여기서 씨앗을
+    // 고정해야 이 테스트가 비로소 그 주장을 지킨다 (`CLAUDE.md` 절대 타협 불가).
+    note.id = `not_${instrumentId}-${i}-${n.midi}`;
     if (n.cents) note.pitch = detune(note.pitch, n.cents);
     clip.notes.push(note);
   });
@@ -97,7 +108,21 @@ function centsErrorOf(
   //  - 벌리는 배치의 대칭성 — `synth.rs` 의 `unison_detune_offsets` 단위 테스트가
   //    오프셋 합이 정확히 0 인지 본다 (한쪽으로 쏠리면 평균이 밀린다)
   // 어느 쪽도 검증에서 빠지지 않는다
-  project.tracks[0]!.toneParams = { ampEnabled: 0, synthUnison: 1 };
+  //
+  // **같은 이유로 편광 디튠과 공명현도 끈다.** 부주키는 두 줄을 2센트 벌려 놓은 악기라
+  // 기본음이 애초에 한 점이 아니고, 시타르는 옆에서 공명현이 같이 운다. 그 상태로 재면
+  // "엔진의 오차"가 아니라 **의도한 어긋남**을 재게 된다 — 실측으로 부주키 1.18센트,
+  // 시타르 1.20센트가 여기서 나왔고, 끄면 0.82·0.54센트로 들어온다.
+  //
+  // 끈 만큼은 다른 곳에서 지킨다: 편광 쌍의 **중심 음정**은 `voice.rs` 의
+  // `dual_polarization_does_not_shift_the_pitch`, 벌린 폭은 `detune_spread_is_preserved`
+  // 가 FFT 서브빈 정밀도로 직접 본다. 검증에서 빠지는 성질은 없다
+  project.tracks[0]!.toneParams = {
+    ampEnabled: 0,
+    synthUnison: 1,
+    polarizationDetuneCents: 0,
+    sympatheticAmount: 0,
+  };
   const { pcm } = renderProjectOffline(project, registry, {
     sampleRate: SAMPLE_RATE,
     rng: seededRng(),
