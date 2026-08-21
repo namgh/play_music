@@ -97,15 +97,20 @@ export function EditorToolbar({
       {ghosts.length > 0 && (
         <>
           <Divider />
+          {/* **켜진 것만 칩으로 둔다.**
+              트랙마다 칩을 하나씩 그리면 16트랙에서 칩이 15개가 되고, 그중 열넷은
+              "숨김"이다 — 안 쓰는 상태가 화면의 대부분을 먹는다. 트랙이 늘수록
+              나빠지는 컨트롤이라, 겹쳐 보는 것만 남기고 나머지는 목록으로 접는다.
+              할 수 있는 일은 그대로다: 어느 트랙이든 숨김·표시·편집을 오간다 */}
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs text-neutral-400">다른 트랙</span>
             <div className="flex flex-wrap gap-1">
-              {ghosts.map((ghost) => (
+              {ghosts.filter((g) => g.mode !== 'hidden').map((ghost) => (
                 <button
                   key={ghost.trackId}
                   type="button"
                   onClick={() => onGhostMode(ghost.trackId, nextMode(ghost.mode))}
-                  title={`${ghost.name} — 눌러서 숨김 → 표시 → 편집 순으로 바꿉니다`}
+                  title={`${ghost.name} — 눌러서 표시 → 편집 → 숨김 순으로 바꿉니다`}
                   className={`rounded border px-2.5 py-1 text-xs transition-colors ${GHOST_CLASS[ghost.mode]}`}
                 >
                   {ghost.name}
@@ -113,6 +118,21 @@ export function EditorToolbar({
                 </button>
               ))}
             </div>
+            {ghosts.some((g) => g.mode === 'hidden') && (
+              <select
+                value=""
+                aria-label="겹쳐 볼 트랙 고르기"
+                onChange={(event) => {
+                  if (event.target.value) onGhostMode(event.target.value, 'show');
+                }}
+                className="rounded border border-neutral-700 bg-neutral-900 px-2 py-1 text-xs text-neutral-300"
+              >
+                <option value="">겹쳐 보기…</option>
+                {ghosts.filter((g) => g.mode === 'hidden').map((ghost) => (
+                  <option key={ghost.trackId} value={ghost.trackId}>{ghost.name}</option>
+                ))}
+              </select>
+            )}
           </div>
         </>
       )}

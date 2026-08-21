@@ -27,7 +27,10 @@ import { deserializeProject, serializeProject } from '../model/persistence.ts';
 import type { Project } from '../model/project.ts';
 import { navigate } from './route.ts';
 
-const btn = 'rounded border border-neutral-700 px-3 py-1.5 text-sm disabled:opacity-40';
+// 헤더의 세션 동작 줄에 놓이므로 `App.tsx` 의 CHROME_BTN 과 같은 무게여야 한다 —
+// 여기만 크면 클라우드 기능이 저장·내보내기보다 중요해 보인다
+const btn = 'rounded border border-neutral-800 px-2.5 py-1 text-xs text-neutral-400'
+  + ' hover:border-neutral-700 hover:text-neutral-100 disabled:opacity-40';
 
 export interface CloudPanelProps {
   project: Project;

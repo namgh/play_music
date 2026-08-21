@@ -77,7 +77,9 @@ export function RangeControl({
       <span className="text-xs text-neutral-400">음역</span>
 
       <div
-        className="flex overflow-hidden rounded-md border border-neutral-700"
+        // 좁은 열(오른쪽 패널)에서는 옥타브가 다 안 들어간다. 잘라 버리면
+        // 높은 옥타브가 **있는 줄도 모르게** 되므로, 가로로 밀어 볼 수 있게 한다
+        className="flex overflow-x-auto overflow-y-hidden rounded-md border border-neutral-700"
         onPointerLeave={() => { if (dragFrom.current === null) setHovering(null); }}
         onPointerUp={commitDrag}
         role="group"

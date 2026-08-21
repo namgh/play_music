@@ -41,6 +41,11 @@ const DRAG_THRESHOLD_PX = 4;
 export interface PianoRollProps {
   editor: ProjectEditor;
   clip: Clip;
+  /**
+   * 바깥 레이아웃이 정하는 크기. **앱 프레임이 남은 높이를 여기로 넘긴다** —
+   * 안 주면 내용만큼 자라서 화면 밖으로 나간다
+   */
+  className?: string;
   /** **표시할** 음역. 사용자가 조절한다 (`RangeControl`) */
   range: { low: number; high: number };
   /**
@@ -123,6 +128,7 @@ const snap = (ticks: number, gridTicks: number, free: boolean): number =>
 export function PianoRoll({
   editor, clip, range, instrumentRange, zoomX, zoomY, velocity, gridTicks, noteLengthTicks,
   playheadTick, cursorTick, onMoveCursor, musicalKey, fold, ghosts, onAudition,
+  className = '',
 }: PianoRollProps) {
   // 배율을 곱한 실제 크기. 아래 계산은 전부 이 두 값만 본다
   const ROW_HEIGHT = Math.max(6, Math.round(BASE_ROW_HEIGHT * zoomY));
@@ -358,7 +364,7 @@ export function PianoRoll({
     : null;
 
   return (
-    <div className="flex overflow-auto rounded-lg border border-neutral-800 bg-neutral-950">
+    <div className={`flex overflow-auto rounded-lg border border-neutral-800 bg-neutral-950 ${className}`}>
       {/* 건반 */}
       <div className="sticky left-0 z-20 shrink-0 border-r border-neutral-800 bg-neutral-950">
         <div className="h-6 border-b border-neutral-800" />
