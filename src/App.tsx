@@ -27,7 +27,6 @@ import type { FoldMode, NoteRange } from './ui/noteRange.ts';
 import { VelocityLane } from './ui/VelocityLane.tsx';
 import { PitchCurveLane } from './ui/PitchCurveLane.tsx';
 import { NoteInspector } from './ui/NoteInspector.tsx';
-import { TrackList } from './ui/TrackList.tsx';
 import { TuningLab } from './ui/TuningLab.tsx';
 import { Timeline } from './ui/Timeline.tsx';
 import { Mixer } from './ui/Mixer.tsx';
@@ -814,28 +813,24 @@ export function App() {
 
         {view === 'editor' && (
           <div className="mt-4 grid gap-5 lg:min-h-0 lg:flex-1 lg:grid-cols-[1fr_320px]">
-            {/* **왼쪽 열이 세로를 나눠 갖는다.** 트랙 목록은 자기 몫 안에서 스크롤하고,
+            {/* **왼쪽 열이 세로를 나눠 갖는다.** 편곡 영역은 자기 몫 안에서 스크롤하고,
                 남는 높이는 전부 피아노롤이 가져간다 — 트랙이 몇 개든 주인공이 밀리지 않는다 */}
             <div className="flex min-w-0 flex-col gap-4 lg:min-h-0">
-              {/* **편곡 영역은 하나다.** 트랙 목록도 타임라인도 트랙마다 한 줄씩
-                  늘어나므로, 따로 두면 둘이 합쳐 세로를 다 먹고 피아노롤이 0이 된다.
-                  하나로 묶어 함께 스크롤시키고 남는 높이는 전부 롤에 준다 */}
-              <div className="shrink-0 space-y-3 overflow-y-auto pr-1 lg:max-h-[22vh]">
-              <TrackList
-                editor={editor}
-                selectedTrackId={track?.id ?? null}
-                onSelectTrack={(id) => {
-                  setSelectedTrackId(id);
-                  setSelectedClipId(project.tracks.find((t) => t.id === id)?.clips[0]?.id ?? null);
-                }}
-              />
-
+              {/* **편곡 영역은 한 행에 트랙 하나다.** 왼쪽이 그 트랙의 설정,
+                  오른쪽이 그 트랙의 클립 레인이다. 전에는 트랙 목록과 타임라인이
+                  위아래로 따로 있어서 16트랙이면 합쳐 1200px 을 먹었고, 한 트랙을
+                  보려면 두 곳을 오가야 했다 */}
+              <div className="shrink-0 overflow-y-auto pr-1 lg:max-h-[22vh]">
               <Timeline
                 editor={editor}
                 selectedTrackId={track?.id ?? null}
                 selectedClipId={clip?.id ?? null}
                 playheadTick={engine.playheadTick}
                 onSelect={(trackId, clipId) => { setSelectedTrackId(trackId); setSelectedClipId(clipId); }}
+                onSelectTrack={(id) => {
+                  setSelectedTrackId(id);
+                  setSelectedClipId(project.tracks.find((t) => t.id === id)?.clips[0]?.id ?? null);
+                }}
               />
               </div>
 
