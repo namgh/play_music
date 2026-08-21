@@ -91,16 +91,16 @@ test('레스폴과 스트랫은 줄 길이와 픽업으로 갈린다', () => {
 test('정의만 추가해서 새 악기가 나온다 — 엔진 코드 수정 0줄', () => {
   // sound.md 9-1 의 판정 기준 그 자체.
   // 밴조를 20줄이 아니라 6줄로 추가한다
-  const banjo: InstrumentDefinition = {
-    id: 'banjo',
+  const 가상악기: InstrumentDefinition = {
+    id: 'zzz-fictional-instrument',
     schemaVersion: 1,
     name: '밴조',
     extends: 'acoustic-guitar',
     params: { scaleLengthMm: 673, stiffness: 0.03, damping: 0.09, sustainSec: 0.9, pluckHardness: 0.9 },
   };
 
-  const extended = createRegistry([...BUILT_IN_INSTRUMENTS, banjo]);
-  const r = resolveInstrument('banjo', extended);
+  const extended = createRegistry([...BUILT_IN_INSTRUMENTS, 가상악기]);
+  const r = resolveInstrument('zzz-fictional-instrument', extended);
 
   assert.equal(r.voice, 'waveguide-string', '보이스 타입은 상속받는다');
   assert.equal(r.params.scaleLengthMm, 673);

@@ -9,6 +9,23 @@ export const definition: InstrumentDefinition = {
   voice: 'virtual-analog',
   range: { low: 24, high: 108 },
   paramSpecs: {
+    // **앰프를 켜려면 앰프 파라미터가 선언돼 있어야 한다.**
+    // `ampEnabled` 만 있고 `ampLevel` 이 없으면 앰프를 켰을 때 레벨이 0 으로 들어가
+    // **완전 무음**이 된다. 출시된 신스가 전부 앰프를 꺼 두고 있어서 아무도 몰랐다.
+    //
+    // ⚠ `...AMP_SPECS` 를 통째로 펼치면 안 된다. 그 묶음에는 앰프뿐 아니라 **줄 전용
+    // 파라미터**(비조화·편광·바디·공명현)가 들어 있어서, 신스에 그 기본값이 실리면
+    // 공유 슬롯을 통해 음정이 -30센트까지 밀린다 — 실제로 그렇게 기존 `synth-lead`
+    // 가 깨졌다. 필요한 것만 적는다
+    ampCharacter: {
+      type: 'enum', min: 0, max: 3, default: 1,
+      label: '앰프 성격', group: '앰프', options: ['클린', '크런치', '디스토션', '퍼즈'],
+    },
+    ampToneLow: { type: 'float', min: 0, max: 1, default: 0.5, label: '저역', group: '앰프' },
+    ampToneMid: { type: 'float', min: 0, max: 1, default: 0.5, label: '중역', group: '앰프' },
+    ampToneHigh: { type: 'float', min: 0, max: 1, default: 0.55, label: '고역', group: '앰프' },
+    ampLevel: { type: 'float', min: 0, max: 1, default: 0.7, label: '앰프 볼륨', group: '앰프' },
+    ampCabinet: { type: 'int', min: 0, max: 1, default: 1, label: '캐비닛', group: '앰프' },
     synthWaveform: {
       type: 'enum', min: 0, max: 3, default: 0,
       label: '파형', group: '오실레이터',
@@ -93,6 +110,9 @@ export const definition: InstrumentDefinition = {
     damping: 0.6,
     sustainSec: 250,
     ampEnabled: 0,
+    // ⚠ **앰프 기본값을 여기 넣지 않는다.** 신스는 줄 모델과 파라미터 슬롯을
+    // 일부 공유해서, 앰프 값을 기본으로 실으면 앰프를 꺼도 음정이 -30센트 밀린다
+    // (실제로 그렇게 `synth-lead` 가 깨졌다). 앰프를 쓰는 악기가 직접 적는다
     ampDrive: 0,
     // 신스는 **반드시** 노트오프를 받아야 한다. 안 받으면 ADSR 이 Sustain 단계에서
     // 멈춰 영원히 울린다 (거기서 나올 길이 노트오프뿐이다).
