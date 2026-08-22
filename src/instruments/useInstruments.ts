@@ -55,5 +55,16 @@ export function useInstruments(ids: readonly string[]): InstrumentsState {
     return () => { alive = false; };
   }, [key]);
 
-  return state;
+  // **`ready` 는 지금 요청한 악기 기준으로 매 렌더 다시 판정한다.**
+  //
+  // 상태에 담아 두면 한 렌더 늦는다: 프로젝트가 바뀐 렌더에서는 아직 **이전 곡
+  // 기준의 `ready: true`** 가 남아 있고(효과는 렌더 뒤에 돈다), 화면은 그걸 믿고
+  // 아직 안 온 악기를 resolve 하다 죽는다.
+  //
+  // 실제로 그랬다 — MIDI 를 가져오면 악기가 통째로 바뀌는데, 그 순간
+  // `InstrumentResolveError: 악기 정의 "acoustic-piano" 없음` 으로 편집기가 내려갔다.
+  // 가져오기가 전부 기타로 들어오던 때에는 이미 불러온 악기라 드러나지 않았다.
+  const wanted = key ? key.split(',') : [];
+  const ready = state.error === null && wanted.every((id) => state.registry.has(id));
+  return { ...state, ready };
 }

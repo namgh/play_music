@@ -20,6 +20,9 @@
 
 import type { Clip, Project, Track } from './project.ts';
 import { createClip, createEmptyProject, createNote, createTrack } from './factory.ts';
+import {
+  GM_DEFAULT_PROGRAM, instrumentForDrumNote, instrumentForProgram,
+} from './gmInstruments.ts';
 import { PPQ } from './time.ts';
 
 export class MidiError extends Error {}
@@ -206,6 +209,17 @@ interface OpenNote { tick: number; velocity: number }
  * 다른 분해능(division)으로 온 파일은 **우리 PPQ 로 환산한다.** 안 하면 템포가
  * 맞는데 음 길이만 배로 틀어진다.
  */
+/**
+ * 한 MTrk 안의 음들. **채널을 함께 들고 다닌다** — 포맷 0 은 16채널이 한 트랙에
+ * 섞여 있고, 10번 채널은 타악기라 다르게 다뤄야 한다
+ */
+interface ParsedNote {
+  startTick: number; lengthTick: number; midi: number; velocity: number; channel: number;
+}
+
+/** GM 에서 10번 채널(0부터 세면 9)은 음 높이가 아니라 타악기 종류다 */
+const DRUM_CHANNEL = 9;
+
 export function decodeMidi(bytes: Uint8Array, name = '가져온 곡'): Project {
   const reader = new Reader(bytes);
   if (reader.tag() !== 'MThd') throw new MidiError('MIDI 파일이 아니다');
@@ -221,6 +235,8 @@ export function decodeMidi(bytes: Uint8Array, name = '가져온 곡'): Project {
   project.tracks = [];
   const scale = PPQ / division;
   let longestTick = 0;
+  /** 채널 → GM 프로그램. **트랙 경계를 넘어 이어진다** */
+  const programs = new Map<number, number>();
 
   for (let index = 0; index < trackCount && !reader.done; index++) {
     const tag = reader.tag();
@@ -228,7 +244,9 @@ export function decodeMidi(bytes: Uint8Array, name = '가져온 곡'): Project {
     const end = reader.position + length;
     if (tag !== 'MTrk') { reader.seek(end); continue; }
 
-    const notes: { startTick: number; lengthTick: number; midi: number; velocity: number }[] = [];
+    const notes: ParsedNote[] = [];
+    // **채널까지 키에 넣는다.** 음 번호만으로 잡으면 포맷 0 에서 다른 채널의 같은
+    // 음이 서로의 노트오프를 훔쳐 간다
     const open = new Map<number, OpenNote>();
     let tick = 0;
     let running = 0;
@@ -270,27 +288,33 @@ export function decodeMidi(bytes: Uint8Array, name = '가져온 곡'): Project {
       }
 
       const kind = status & 0xf0;
+      const channel = status & 0x0f;
       if (kind === 0x90 || kind === 0x80) {
         const key = reader.byte();
         const velocity = reader.byte();
+        const slot = channel * 128 + key;
         // **벨로시티 0 인 노트온은 노트오프다.** 많은 파일이 이 형태를 쓴다 —
         // 안 다루면 음이 영원히 안 꺼지고 길이가 곡 끝까지 늘어난다
         if (kind === 0x90 && velocity > 0) {
-          open.set(key, { tick, velocity });
+          open.set(slot, { tick, velocity });
         } else {
-          const started = open.get(key);
+          const started = open.get(slot);
           if (started) {
-            open.delete(key);
+            open.delete(slot);
             const lengthTick = Math.max(1, Math.round(tick - started.tick));
             notes.push({
               startTick: Math.round(started.tick),
               lengthTick,
               midi: key,
               velocity: started.velocity / 127,
+              channel,
             });
           }
         }
-      } else if (kind === 0xc0 || kind === 0xd0) {
+      } else if (kind === 0xc0) {
+        // **프로그램 체인지 = 악기 지정.** 이걸 버리면 모든 트랙이 같은 소리가 난다
+        programs.set(channel, reader.byte());
+      } else if (kind === 0xd0) {
         reader.byte();
       } else {
         reader.byte();
@@ -301,21 +325,46 @@ export function decodeMidi(bytes: Uint8Array, name = '가져온 곡'): Project {
 
     if (notes.length === 0) continue;
 
-    const track = createTrack({ name: trackName, instrumentId: 'acoustic-guitar' });
-    const lastTick = Math.max(...notes.map((n) => n.startTick + n.lengthTick));
-    longestTick = Math.max(longestTick, lastTick);
+    // **한 MTrk 이 곧 한 트랙은 아니다.**
+    //
+    // 포맷 0 은 16채널이 한 덩어리로 들어 있고, 포맷 1 이라도 한 트랙에 두 채널을
+    // 쓰는 파일이 있다. 채널이 곧 악기이므로 채널로 가른다. 그리고 10번 채널은
+    // 음 높이가 아니라 **타악기 종류**라, 우리 모델(드럼 하나 = 악기 하나)에
+    // 맞추려면 음 번호로 한 번 더 갈라야 한다.
+    const groups = new Map<string, { instrumentId: string; label: string; notes: ParsedNote[] }>();
+    for (const note of notes) {
+      const drums = note.channel === DRUM_CHANNEL;
+      const instrumentId = drums
+        ? instrumentForDrumNote(note.midi)
+        : instrumentForProgram(programs.get(note.channel) ?? GM_DEFAULT_PROGRAM);
+      const key = drums ? `d:${instrumentId}` : `c:${note.channel}`;
+      let group = groups.get(key);
+      if (!group) {
+        // 이름은 원본을 살린다 — 갈라진 것이면 무엇으로 갈렸는지 덧붙인다
+        const suffix = drums ? ` · ${instrumentId}` : '';
+        group = { instrumentId, label: `${trackName}${suffix}`, notes: [] };
+        groups.set(key, group);
+      }
+      group.notes.push(note);
+    }
 
-    const clip: Clip = createClip({ startTick: 0, lengthTick: lastTick, label: trackName });
-    clip.notes = notes.map((n) => {
-      const note = createNote({
-        startTick: n.startTick,
-        lengthTick: n.lengthTick,
-        midi: n.midi,
+    for (const group of groups.values()) {
+      const track = createTrack({ name: group.label, instrumentId: group.instrumentId });
+      const lastTick = Math.max(...group.notes.map((n) => n.startTick + n.lengthTick));
+      longestTick = Math.max(longestTick, lastTick);
+
+      const clip: Clip = createClip({ startTick: 0, lengthTick: lastTick, label: group.label });
+      clip.notes = group.notes.map((n) => {
+        const note = createNote({
+          startTick: n.startTick,
+          lengthTick: n.lengthTick,
+          midi: n.midi,
+        });
+        return { ...note, velocity: n.velocity };
       });
-      return { ...note, velocity: n.velocity };
-    });
-    track.clips.push(clip);
-    project.tracks.push(track);
+      track.clips.push(clip);
+      project.tracks.push(track);
+    }
   }
 
   if (project.tracks.length === 0) throw new MidiError('음이 하나도 없다');

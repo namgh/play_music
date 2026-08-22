@@ -469,7 +469,8 @@ export function App() {
                   setSelectedClipId(loaded.tracks[0]?.clips[0]?.id ?? null);
                   editor.select([]);
                   setNotice(`"${loaded.name}" 을 가져왔습니다 (트랙 ${loaded.tracks.length}개). `
-                    + '악기는 전부 어쿠스틱 기타로 시작합니다 — 트랙마다 바꾸세요');
+                    + 'MIDI 의 악기 지정을 따라 배정했습니다 — 현악·관악처럼 아직 없는 '
+                    + '악기는 가장 가까운 것으로 대신했으니 트랙마다 바꿔 보세요');
                 } catch (err) {
                   setNotice(`MIDI 를 읽을 수 없습니다: ${err instanceof Error ? err.message : String(err)}`);
                 }

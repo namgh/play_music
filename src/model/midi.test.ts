@@ -11,6 +11,8 @@ import assert from 'node:assert/strict';
 import { decodeMidi, encodeMidi, MidiError } from './midi.ts';
 import { createClip, createEmptyProject, createNote, createTrack } from './factory.ts';
 import { PPQ } from './time.ts';
+import { GM_DRUM_INSTRUMENTS, GM_PROGRAM_INSTRUMENTS } from './gmInstruments.ts';
+import { playableInstrumentIds } from '../instruments/definitions.ts';
 import type { Project } from './project.ts';
 
 function songProject(): Project {
@@ -171,4 +173,96 @@ test('음이 없는 파일은 실패한다', () => {
     0x4d, 0x54, 0x72, 0x6b, 0, 0, 0, body.length, ...body,
   ]);
   assert.throws(() => decodeMidi(bytes), /음이 하나도 없다/);
+});
+
+// ---------------------------------------------------------------------------
+// GM 악기 지정 — 밖에서 받은 곡 MIDI 를 넣는 경로
+//
+// 이게 없으면 트랙이 전부 같은 소리로 들어와서, 16트랙짜리 곡을 넣은 사람은
+// 악기를 열여섯 번 손으로 고른 뒤에야 들어 볼 수 있다.
+
+/** 한 트랙짜리 SMF 를 만든다 (기존 테스트들과 같은 형태) */
+function smf(body: number[], division = PPQ, trackCount = 1, format = 1): Uint8Array {
+  return Uint8Array.from([
+    0x4d, 0x54, 0x68, 0x64, 0, 0, 0, 6, 0, format, 0, trackCount,
+    (division >> 8) & 0xff, division & 0xff,
+    0x4d, 0x54, 0x72, 0x6b,
+    (body.length >> 24) & 0xff, (body.length >> 16) & 0xff,
+    (body.length >> 8) & 0xff, body.length & 0xff,
+    ...body,
+  ]);
+}
+
+test('프로그램 체인지를 악기로 읽는다', () => {
+  // GM 34(0부터 세면 33) = Electric Bass (finger)
+  const project = decodeMidi(smf([
+    0x00, 0xc0, 33,
+    0x00, 0x90, 40, 100,
+    0x60, 0x90, 40, 0,
+    0x00, 0xff, 0x2f, 0x00,
+  ]));
+  assert.equal(project.tracks[0]!.instrumentId, 'electric-bass');
+});
+
+test('프로그램 체인지가 없으면 GM 기본값(피아노)이다', () => {
+  // 기타로 두면 "왜 전부 기타지"가 된다 — 규격의 기본값을 따른다
+  const project = decodeMidi(smf([
+    0x00, 0x90, 60, 100,
+    0x60, 0x90, 60, 0,
+    0x00, 0xff, 0x2f, 0x00,
+  ]));
+  assert.equal(project.tracks[0]!.instrumentId, 'acoustic-piano');
+});
+
+test('10번 채널은 타악기별로 트랙이 갈린다', () => {
+  // GM 에서 10번 채널은 음 높이가 아니라 **어떤 타악기인지**를 가리킨다.
+  // 우리는 드럼 하나가 악기 하나라, 한 트랙으로 두면 킥·스네어가 같은 소리가 난다
+  const project = decodeMidi(smf([
+    0x00, 0x99, 36, 100, 0x00, 0x99, 36, 0, // 킥
+    0x00, 0x99, 38, 100, 0x00, 0x99, 38, 0, // 스네어
+    0x00, 0x99, 42, 90, 0x00, 0x99, 42, 0, // 하이햇
+    0x00, 0xff, 0x2f, 0x00,
+  ]));
+  const ids = project.tracks.map((t) => t.instrumentId).sort();
+  assert.deepEqual(ids, ['hihat', 'kick', 'snare']);
+  assert.ok(project.tracks.every((t) => t.clips[0]!.notes.length === 1));
+});
+
+test('한 트랙에 여러 채널이 섞여 있으면 채널로 가른다', () => {
+  // 포맷 0 은 16채널이 한 덩어리다. 안 가르면 베이스와 리드가 한 악기로 합쳐진다
+  const project = decodeMidi(smf([
+    0x00, 0xc0, 0, // 채널1 = 피아노
+    0x00, 0xc1, 33, // 채널2 = 일렉 베이스
+    0x00, 0x90, 60, 100, 0x00, 0x90, 60, 0,
+    0x00, 0x91, 40, 100, 0x00, 0x91, 40, 0,
+    0x00, 0xff, 0x2f, 0x00,
+  ], PPQ, 1, 0));
+  assert.equal(project.tracks.length, 2);
+  assert.deepEqual(project.tracks.map((t) => t.instrumentId).sort(),
+    ['acoustic-piano', 'electric-bass']);
+});
+
+test('채널이 다르면 같은 음이라도 서로의 노트오프를 훔치지 않는다', () => {
+  // 음 번호만으로 짝을 맞추면 포맷 0 에서 길이가 엉킨다
+  const project = decodeMidi(smf([
+    0x00, 0x90, 60, 100, // 채널1 시작
+    0x00, 0x91, 60, 100, // 채널2 시작 (같은 음)
+    0x30, 0x91, 60, 0, // 채널2 만 끝
+    0x30, 0x90, 60, 0, // 채널1 끝
+    0x00, 0xff, 0x2f, 0x00,
+  ], PPQ, 1, 0));
+  const lengths = project.tracks
+    .map((t) => t.clips[0]!.notes[0]!.lengthTick)
+    .sort((a, b) => a - b);
+  assert.deepEqual(lengths, [0x30, 0x60]);
+});
+
+test('GM 표의 악기가 전부 실재한다', () => {
+  // 오타 하나면 그 프로그램을 쓴 곡이 렌더에서 터진다. 표는 코드가 아니라
+  // 데이터라 타입이 안 잡아 준다 — 그래서 여기서 잡는다
+  const known = new Set(playableInstrumentIds());
+  const missing = [...new Set([...GM_PROGRAM_INSTRUMENTS, ...Object.values(GM_DRUM_INSTRUMENTS)])]
+    .filter((id) => !known.has(id));
+  assert.deepEqual(missing, [], `없는 악기를 가리킨다: ${missing.join(', ')}`);
+  assert.equal(GM_PROGRAM_INSTRUMENTS.length, 128, 'GM 프로그램은 128개다');
 });
