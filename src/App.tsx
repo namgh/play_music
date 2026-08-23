@@ -144,6 +144,12 @@ export function App() {
   );
   const engine = useAudioEngine(project, registry);
 
+  // **튜닝 도구로 넘어가면 곡 재생을 멈춘다.** 그 화면은 자체 엔진으로 소리를 내므로
+  // 곡이 계속 흐르면 둘이 겹쳐 들리고, 그 상태로는 음색을 판정할 수 없다
+  useEffect(() => {
+    if (view === 'tuning') engine.stop();
+  }, [view]);
+
   const track = project.tracks.find((t) => t.id === selectedTrackId) ?? project.tracks[0] ?? null;
   const clip = track?.clips.find((c) => c.id === selectedClipId) ?? track?.clips[0] ?? null;
   const instrument =
@@ -503,268 +509,273 @@ export function App() {
           ))}
         </nav>
 
-        {/* 트랜스포트 — 어느 화면에서든 보인다 */}
         {/* 트랜스포트와 편집 — **매분 쓰는 것만 둔다.** 저장·내보내기처럼 한 세션에
             몇 번 쓰는 것은 헤더로 올렸다. 버튼 23개가 같은 무게로 늘어서 있으면
-            그중 무엇이 지금 필요한 것인지 매번 다시 읽어야 한다 */}
-        <section className="mt-4 shrink-0 rounded-lg border border-neutral-800">
-          {/* 듣는 것 — 재생과 곡 전체 설정 */}
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-2 px-3 py-2">
-            <button
-              type="button"
-              onClick={() => (engine.state === 'playing'
-                ? engine.stop()
-                : void engine.play(cursorTick + (clip?.startTick ?? 0)))}
-              className="rounded-md bg-teal-300 px-5 py-2 text-sm font-semibold text-teal-950 hover:bg-teal-200"
-            >
-              {engine.state === 'playing' ? '정지' : '재생'}
-            </button>
-            <button
-              type="button"
-              onClick={() => { engine.stop(); setCursorTick(0); }}
-              title="맨 앞으로"
-              className="rounded border border-neutral-700 px-2.5 py-2 text-sm text-neutral-300"
-            >처음</button>
-            <span className="w-20 text-center font-mono text-sm text-neutral-300">{position}</span>
+            그중 무엇이 지금 필요한 것인지 매번 다시 읽어야 한다.
+            **튜닝 도구에서는 이 줄을 통째로 걷는다.** 거기엔 자체 시험 엔진과 자체
+            트랜스포트(뜯기·반복)가 있다. 격자·음 길이·복사·퀀타이즈는 그 화면에 없는
+            음을 가리키고, 무엇보다 `재생` 은 프로젝트 엔진을 띄워 **시험 중인 소리 위에
+            곡이 겹쳐 난다.** 음색을 판정하는 화면에서 그것보다 나쁜 것이 없다 */}
+        {view !== 'tuning' && (
+          <section className="mt-4 shrink-0 rounded-lg border border-neutral-800">
+            {/* 듣는 것 — 재생과 곡 전체 설정 */}
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-2 px-3 py-2">
+              <button
+                type="button"
+                onClick={() => (engine.state === 'playing'
+                  ? engine.stop()
+                  : void engine.play(cursorTick + (clip?.startTick ?? 0)))}
+                className="rounded-md bg-teal-300 px-5 py-2 text-sm font-semibold text-teal-950 hover:bg-teal-200"
+              >
+                {engine.state === 'playing' ? '정지' : '재생'}
+              </button>
+              <button
+                type="button"
+                onClick={() => { engine.stop(); setCursorTick(0); }}
+                title="맨 앞으로"
+                className="rounded border border-neutral-700 px-2.5 py-2 text-sm text-neutral-300"
+              >처음</button>
+              <span className="w-20 text-center font-mono text-sm text-neutral-300">{position}</span>
 
-            <span className="mx-1 h-5 w-px bg-neutral-800" />
+              <span className="mx-1 h-5 w-px bg-neutral-800" />
 
-            <button
-              type="button"
-              onClick={() => setMetronome((on) => !on)}
-              aria-pressed={metronome}
-              title="메트로놈"
-              className={`rounded border px-2.5 py-1.5 text-sm ${
-                metronome
-                  ? 'border-teal-600 bg-teal-950/60 text-teal-200'
-                  : 'border-neutral-700 text-neutral-400'
-              }`}
-            >메트로놈</button>
-            <button
-              type="button"
-              onClick={() => {
-                if (project.loop === null) loopFromSelection();
-                else editor.commit(setLoopEnabled(project, !project.loop.enabled));
-              }}
-              aria-pressed={project.loop?.enabled ?? false}
-              title="반복 구간 (⌘L 로 선택 구간을 잡습니다)"
-              className={`rounded border px-2.5 py-1.5 text-sm ${
-                project.loop?.enabled
-                  ? 'border-teal-600 bg-teal-950/60 text-teal-200'
-                  : 'border-neutral-700 text-neutral-400'
-              }`}
-            >반복</button>
-            {project.loop && (
-              <span className="font-mono text-xs text-neutral-300">
-                {(project.loop.startTick / barTicks + 1).toFixed(2)}–
-                {(project.loop.endTick / barTicks + 1).toFixed(2)}
-                <button
-                  type="button"
-                  onClick={() => editor.commit(setLoop(project, null))}
-                  className="ml-1.5 text-neutral-400 hover:text-neutral-100"
-                  title="반복 구간 지우기"
-                >지우기</button>
-              </span>
-            )}
+              <button
+                type="button"
+                onClick={() => setMetronome((on) => !on)}
+                aria-pressed={metronome}
+                title="메트로놈"
+                className={`rounded border px-2.5 py-1.5 text-sm ${
+                  metronome
+                    ? 'border-teal-600 bg-teal-950/60 text-teal-200'
+                    : 'border-neutral-700 text-neutral-400'
+                }`}
+              >메트로놈</button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (project.loop === null) loopFromSelection();
+                  else editor.commit(setLoopEnabled(project, !project.loop.enabled));
+                }}
+                aria-pressed={project.loop?.enabled ?? false}
+                title="반복 구간 (⌘L 로 선택 구간을 잡습니다)"
+                className={`rounded border px-2.5 py-1.5 text-sm ${
+                  project.loop?.enabled
+                    ? 'border-teal-600 bg-teal-950/60 text-teal-200'
+                    : 'border-neutral-700 text-neutral-400'
+                }`}
+              >반복</button>
+              {project.loop && (
+                <span className="font-mono text-xs text-neutral-300">
+                  {(project.loop.startTick / barTicks + 1).toFixed(2)}–
+                  {(project.loop.endTick / barTicks + 1).toFixed(2)}
+                  <button
+                    type="button"
+                    onClick={() => editor.commit(setLoop(project, null))}
+                    className="ml-1.5 text-neutral-400 hover:text-neutral-100"
+                    title="반복 구간 지우기"
+                  >지우기</button>
+                </span>
+              )}
 
-            <span className="mx-1 h-5 w-px bg-neutral-800" />
+              <span className="mx-1 h-5 w-px bg-neutral-800" />
 
-            <label className="ml-2 text-xs text-neutral-500" htmlFor="bpm">BPM</label>
-            <input
-              id="bpm"
-              type="number"
-              min={20} max={300}
-              value={project.tempo.bpm}
-              onChange={(e) => editor.commit(setTempo(project, Number(e.target.value)))}
-              className="w-16 rounded border border-neutral-700 bg-neutral-900 px-2 py-1 font-mono text-sm"
-            />
-            <label className="ml-2 text-xs text-neutral-500" htmlFor="bars">마디</label>
-            <input
-              id="bars"
-              type="number"
-              min={1} max={512}
-              value={project.lengthBars}
-              onChange={(e) =>
-                editor.commit({ ...project, lengthBars: Math.max(1, Math.round(Number(e.target.value))) })}
-              className="w-16 rounded border border-neutral-700 bg-neutral-900 px-2 py-1 font-mono text-sm"
-            />
-            {/* 템포 변화 — 커서 위치에 지점을 놓는다 */}
-            <button
-              type="button"
-              onClick={() => {
-                const at = cursorTick + (clip?.startTick ?? 0);
-                if (at <= 0) {
-                  setNotice('곡 시작 템포는 BPM 칸에서 바꿉니다');
-                  return;
-                }
-                const existing = (project.tempo.changes ?? []).find((c) => c.tick === at);
-                if (existing) {
-                  editor.commit(setTempoChange(project, at, null));
-                  setNotice('템포 변화를 지웠습니다');
-                  return;
-                }
-                editor.commit(setTempoChange(project, at, project.tempo.bpm));
-                setNotice('커서 위치에 템포 변화를 놓았습니다 — BPM 칸에서 값을 바꾸세요');
-              }}
-              className="rounded border border-neutral-700 px-2 py-1 text-sm"
-              title="커서 위치에 템포 변화를 놓거나 지웁니다"
-            >템포 변화{(project.tempo.changes?.length ?? 0) > 0 ? ` (${project.tempo.changes!.length})` : ''}</button>
-            {/* 조성 — 피아노롤 스케일 표시용. 렌더에는 영향이 없다 */}
-            <label className="ml-2 text-xs text-neutral-500" htmlFor="key">조성</label>
-            <select
-              id="key"
-              value={project.key === null ? '' : `${project.key.tonic}|${project.key.mode}`}
-              onChange={(e) => {
-                const raw = e.target.value;
-                if (raw === '') { editor.commit(setKey(project, null)); return; }
-                const [tonic, mode] = raw.split('|');
-                editor.commit(setKey(project, { tonic: tonic!, mode: mode as MusicalKey['mode'] }));
-              }}
-              className="rounded border border-neutral-700 bg-neutral-900 px-2 py-1 text-sm"
-            >
-              <option value="">없음</option>
-              {NOTE_NAMES.map((tonic) => (
-                <option key={`${tonic}-major`} value={`${tonic}|major`}>{tonic} 장조</option>
-              ))}
-              {NOTE_NAMES.map((tonic) => (
-                <option key={`${tonic}-minor`} value={`${tonic}|minor`}>{tonic} 단조</option>
-              ))}
-            </select>
-          </div>
-
-          {/* 찍고 고치는 것 — 입력 기본값과 편집 동작 */}
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-2 border-t border-neutral-800 px-3 py-2">
-            <label className="ml-2 text-xs text-neutral-500" htmlFor="grid">격자</label>
-            <select
-              id="grid"
-              value={gridTicks}
-              onChange={(e) => setGridTicks(Number(e.target.value))}
-              className="rounded border border-neutral-700 bg-neutral-900 px-2 py-1 text-sm"
-            >
-              {GRID_OPTIONS.map((option) => (
-                <option key={option.label} value={option.ticks}>{option.label}</option>
-              ))}
-            </select>
-
-            {/* 음 길이 — **격자와 다른 축이다.** 16분 격자에 4분음표를 찍을 수 있어야 한다 */}
-            <label className="ml-2 text-xs text-neutral-500" htmlFor="notelen">음 길이</label>
-            <select
-              id="notelen"
-              value={noteLengthTicks}
-              onChange={(e) => setNoteLengthTicks(Number(e.target.value))}
-              className="rounded border border-neutral-700 bg-neutral-900 px-2 py-1 text-sm"
-              title="새로 찍는 음의 길이 (Alt 를 누르면 격자에 안 맞춥니다)"
-            >
-              {GRID_OPTIONS.map((option) => (
-                <option key={option.label} value={option.ticks}>{option.label}</option>
-              ))}
-            </select>
-            {/* 스윙 — **곡의 성격이라 프로젝트에 저장된다** */}
-            <label className="ml-2 text-xs text-neutral-500" htmlFor="swing">스윙</label>
-            <input
-              id="swing"
-              type="range"
-              min={0}
-              max={0.6}
-              step={0.05}
-              value={project.swing ?? 0}
-              onChange={(e) => editor.commit(setSwing(project, Number(e.target.value)))}
-              className="w-20"
-              title={`뒷박을 ${Math.round((project.swing ?? 0) * 100)}% 뒤로 (1/3 이 삼잇단)`}
-            />
-            {/* 세기 — 찍을 때 적용된다 */}
-            <label className="ml-2 text-xs text-neutral-500" htmlFor="vel">세기</label>
-            <input
-              id="vel"
-              type="range"
-              min={0.05}
-              max={1}
-              step={0.05}
-              value={inputVelocity}
-              onChange={(e) => setInputVelocity(Number(e.target.value))}
-              className="w-20"
-              title={`새로 찍는 음의 세기 ${Math.round(inputVelocity * 100)}%`}
-            />
-
-            <span className="mx-1 h-5 w-px bg-neutral-800" />
-
-            <button
-              type="button"
-              disabled={selection.length === 0}
-              onClick={doCopy}
-              title="복사 (⌘C)"
-              className="rounded border border-neutral-700 px-3 py-1.5 text-sm disabled:opacity-40"
-            >복사</button>
-            <button
-              type="button"
-              disabled={clipboardSize === 0}
-              onClick={doPaste}
-              title="커서 위치에 붙여넣기 (⌘V)"
-              className="rounded border border-neutral-700 px-3 py-1.5 text-sm disabled:opacity-40"
-            >붙여넣기{clipboardSize > 0 ? ` (${clipboardSize})` : ''}</button>
-
-            {/* 선택한 음을 다른 트랙으로 — 드럼에 잘못 찍었을 때 지우고 다시 찍지 않아도 된다 */}
-            {selection.length > 0 && project.tracks.length > 1 && (
-              <select
-                value=""
-                aria-label="선택한 음을 다른 트랙으로"
-                onChange={(e) => {
-                  if (!e.target.value) return;
-                  try {
-                    editor.commit(moveNotesToTrack(project, selection, e.target.value as TrackId));
-                    setNotice(`${selection.length}개를 옮겼습니다`);
-                  } catch (err) {
-                    setNotice(err instanceof Error ? err.message : String(err));
+              <label className="ml-2 text-xs text-neutral-500" htmlFor="bpm">BPM</label>
+              <input
+                id="bpm"
+                type="number"
+                min={20} max={300}
+                value={project.tempo.bpm}
+                onChange={(e) => editor.commit(setTempo(project, Number(e.target.value)))}
+                className="w-16 rounded border border-neutral-700 bg-neutral-900 px-2 py-1 font-mono text-sm"
+              />
+              <label className="ml-2 text-xs text-neutral-500" htmlFor="bars">마디</label>
+              <input
+                id="bars"
+                type="number"
+                min={1} max={512}
+                value={project.lengthBars}
+                onChange={(e) =>
+                  editor.commit({ ...project, lengthBars: Math.max(1, Math.round(Number(e.target.value))) })}
+                className="w-16 rounded border border-neutral-700 bg-neutral-900 px-2 py-1 font-mono text-sm"
+              />
+              {/* 템포 변화 — 커서 위치에 지점을 놓는다 */}
+              <button
+                type="button"
+                onClick={() => {
+                  const at = cursorTick + (clip?.startTick ?? 0);
+                  if (at <= 0) {
+                    setNotice('곡 시작 템포는 BPM 칸에서 바꿉니다');
+                    return;
                   }
+                  const existing = (project.tempo.changes ?? []).find((c) => c.tick === at);
+                  if (existing) {
+                    editor.commit(setTempoChange(project, at, null));
+                    setNotice('템포 변화를 지웠습니다');
+                    return;
+                  }
+                  editor.commit(setTempoChange(project, at, project.tempo.bpm));
+                  setNotice('커서 위치에 템포 변화를 놓았습니다 — BPM 칸에서 값을 바꾸세요');
+                }}
+                className="rounded border border-neutral-700 px-2 py-1 text-sm"
+                title="커서 위치에 템포 변화를 놓거나 지웁니다"
+              >템포 변화{(project.tempo.changes?.length ?? 0) > 0 ? ` (${project.tempo.changes!.length})` : ''}</button>
+              {/* 조성 — 피아노롤 스케일 표시용. 렌더에는 영향이 없다 */}
+              <label className="ml-2 text-xs text-neutral-500" htmlFor="key">조성</label>
+              <select
+                id="key"
+                value={project.key === null ? '' : `${project.key.tonic}|${project.key.mode}`}
+                onChange={(e) => {
+                  const raw = e.target.value;
+                  if (raw === '') { editor.commit(setKey(project, null)); return; }
+                  const [tonic, mode] = raw.split('|');
+                  editor.commit(setKey(project, { tonic: tonic!, mode: mode as MusicalKey['mode'] }));
                 }}
                 className="rounded border border-neutral-700 bg-neutral-900 px-2 py-1 text-sm"
               >
-                <option value="">트랙으로 이동…</option>
-                {project.tracks
-                  .filter((t) => t.id !== track?.id)
-                  .map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                <option value="">없음</option>
+                {NOTE_NAMES.map((tonic) => (
+                  <option key={`${tonic}-major`} value={`${tonic}|major`}>{tonic} 장조</option>
+                ))}
+                {NOTE_NAMES.map((tonic) => (
+                  <option key={`${tonic}-minor`} value={`${tonic}|minor`}>{tonic} 단조</option>
+                ))}
               </select>
-            )}
+            </div>
 
-            <button type="button" disabled={!editor.canUndo} onClick={editor.undo}
-              className="rounded border border-neutral-700 px-3 py-1.5 text-sm disabled:opacity-40">되돌리기</button>
-            <button type="button" disabled={!editor.canRedo} onClick={editor.redo}
-              className="rounded border border-neutral-700 px-3 py-1.5 text-sm disabled:opacity-40">다시 실행</button>
-            <button
-              type="button"
-              disabled={selection.length === 0}
-              onClick={() => editor.commit(quantizeNotes(project, selection, gridTicks))}
-              className="rounded border border-neutral-700 px-3 py-1.5 text-sm disabled:opacity-40"
-            >퀀타이즈</button>
-            <span className="flex-1" />
-            {/* 줌 — 가로는 마디를, 세로는 줄을 늘린다 */}
-            <span className="ml-2 text-xs text-neutral-500">확대</span>
-            <button
-              type="button"
-              onClick={() => setZoomX((z) => Math.max(0.25, z / 1.5))}
-              className="rounded border border-neutral-700 px-2 py-1 text-sm"
-              title="가로 축소"
-            >가로 −</button>
-            <button
-              type="button"
-              onClick={() => setZoomX((z) => Math.min(8, z * 1.5))}
-              className="rounded border border-neutral-700 px-2 py-1 text-sm"
-              title="가로 확대"
-            >＋</button>
-            <button
-              type="button"
-              onClick={() => setZoomY((z) => Math.max(0.5, z / 1.3))}
-              className="rounded border border-neutral-700 px-2 py-1 text-sm"
-              title="세로 축소"
-            >세로 −</button>
-            <button
-              type="button"
-              onClick={() => setZoomY((z) => Math.min(4, z * 1.3))}
-              className="rounded border border-neutral-700 px-2 py-1 text-sm"
-              title="세로 확대"
-            >＋</button>
-          </div>
-        </section>
+            {/* 찍고 고치는 것 — 입력 기본값과 편집 동작 */}
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-2 border-t border-neutral-800 px-3 py-2">
+              <label className="ml-2 text-xs text-neutral-500" htmlFor="grid">격자</label>
+              <select
+                id="grid"
+                value={gridTicks}
+                onChange={(e) => setGridTicks(Number(e.target.value))}
+                className="rounded border border-neutral-700 bg-neutral-900 px-2 py-1 text-sm"
+              >
+                {GRID_OPTIONS.map((option) => (
+                  <option key={option.label} value={option.ticks}>{option.label}</option>
+                ))}
+              </select>
+
+              {/* 음 길이 — **격자와 다른 축이다.** 16분 격자에 4분음표를 찍을 수 있어야 한다 */}
+              <label className="ml-2 text-xs text-neutral-500" htmlFor="notelen">음 길이</label>
+              <select
+                id="notelen"
+                value={noteLengthTicks}
+                onChange={(e) => setNoteLengthTicks(Number(e.target.value))}
+                className="rounded border border-neutral-700 bg-neutral-900 px-2 py-1 text-sm"
+                title="새로 찍는 음의 길이 (Alt 를 누르면 격자에 안 맞춥니다)"
+              >
+                {GRID_OPTIONS.map((option) => (
+                  <option key={option.label} value={option.ticks}>{option.label}</option>
+                ))}
+              </select>
+              {/* 스윙 — **곡의 성격이라 프로젝트에 저장된다** */}
+              <label className="ml-2 text-xs text-neutral-500" htmlFor="swing">스윙</label>
+              <input
+                id="swing"
+                type="range"
+                min={0}
+                max={0.6}
+                step={0.05}
+                value={project.swing ?? 0}
+                onChange={(e) => editor.commit(setSwing(project, Number(e.target.value)))}
+                className="w-20"
+                title={`뒷박을 ${Math.round((project.swing ?? 0) * 100)}% 뒤로 (1/3 이 삼잇단)`}
+              />
+              {/* 세기 — 찍을 때 적용된다 */}
+              <label className="ml-2 text-xs text-neutral-500" htmlFor="vel">세기</label>
+              <input
+                id="vel"
+                type="range"
+                min={0.05}
+                max={1}
+                step={0.05}
+                value={inputVelocity}
+                onChange={(e) => setInputVelocity(Number(e.target.value))}
+                className="w-20"
+                title={`새로 찍는 음의 세기 ${Math.round(inputVelocity * 100)}%`}
+              />
+
+              <span className="mx-1 h-5 w-px bg-neutral-800" />
+
+              <button
+                type="button"
+                disabled={selection.length === 0}
+                onClick={doCopy}
+                title="복사 (⌘C)"
+                className="rounded border border-neutral-700 px-3 py-1.5 text-sm disabled:opacity-40"
+              >복사</button>
+              <button
+                type="button"
+                disabled={clipboardSize === 0}
+                onClick={doPaste}
+                title="커서 위치에 붙여넣기 (⌘V)"
+                className="rounded border border-neutral-700 px-3 py-1.5 text-sm disabled:opacity-40"
+              >붙여넣기{clipboardSize > 0 ? ` (${clipboardSize})` : ''}</button>
+
+              {/* 선택한 음을 다른 트랙으로 — 드럼에 잘못 찍었을 때 지우고 다시 찍지 않아도 된다 */}
+              {selection.length > 0 && project.tracks.length > 1 && (
+                <select
+                  value=""
+                  aria-label="선택한 음을 다른 트랙으로"
+                  onChange={(e) => {
+                    if (!e.target.value) return;
+                    try {
+                      editor.commit(moveNotesToTrack(project, selection, e.target.value as TrackId));
+                      setNotice(`${selection.length}개를 옮겼습니다`);
+                    } catch (err) {
+                      setNotice(err instanceof Error ? err.message : String(err));
+                    }
+                  }}
+                  className="rounded border border-neutral-700 bg-neutral-900 px-2 py-1 text-sm"
+                >
+                  <option value="">트랙으로 이동…</option>
+                  {project.tracks
+                    .filter((t) => t.id !== track?.id)
+                    .map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
+              )}
+
+              <button type="button" disabled={!editor.canUndo} onClick={editor.undo}
+                className="rounded border border-neutral-700 px-3 py-1.5 text-sm disabled:opacity-40">되돌리기</button>
+              <button type="button" disabled={!editor.canRedo} onClick={editor.redo}
+                className="rounded border border-neutral-700 px-3 py-1.5 text-sm disabled:opacity-40">다시 실행</button>
+              <button
+                type="button"
+                disabled={selection.length === 0}
+                onClick={() => editor.commit(quantizeNotes(project, selection, gridTicks))}
+                className="rounded border border-neutral-700 px-3 py-1.5 text-sm disabled:opacity-40"
+              >퀀타이즈</button>
+              <span className="flex-1" />
+              {/* 줌 — 가로는 마디를, 세로는 줄을 늘린다 */}
+              <span className="ml-2 text-xs text-neutral-500">확대</span>
+              <button
+                type="button"
+                onClick={() => setZoomX((z) => Math.max(0.25, z / 1.5))}
+                className="rounded border border-neutral-700 px-2 py-1 text-sm"
+                title="가로 축소"
+              >가로 −</button>
+              <button
+                type="button"
+                onClick={() => setZoomX((z) => Math.min(8, z * 1.5))}
+                className="rounded border border-neutral-700 px-2 py-1 text-sm"
+                title="가로 확대"
+              >＋</button>
+              <button
+                type="button"
+                onClick={() => setZoomY((z) => Math.max(0.5, z / 1.3))}
+                className="rounded border border-neutral-700 px-2 py-1 text-sm"
+                title="세로 축소"
+              >세로 −</button>
+              <button
+                type="button"
+                onClick={() => setZoomY((z) => Math.min(4, z * 1.3))}
+                className="rounded border border-neutral-700 px-2 py-1 text-sm"
+                title="세로 확대"
+              >＋</button>
+            </div>
+          </section>
+        )}
 
         {/* 피크 경고 — 조용히 잘린 파일이 나가는 것을 막는다 (`ROADMAP.md` P3).
             **고칠 방법까지 같이 준다.** 얼마나 내려야 하는지 사용자가 찾아 헤매지

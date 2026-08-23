@@ -179,18 +179,26 @@ function TuningLabBody({ instrumentId, setInstrumentId, registry }: {
 
   const swap = () => setActive((slot) => (slot === 'A' ? 'B' : 'A'));
 
-  // A/B 즉시 전환 — Tab (요구 2)
+  // **손을 키보드에 두고 돌 수 있어야 한다.**
+  //
+  // 튜닝 한 바퀴는 "뜯고 → 듣고 → 만지고 → 다시 뜯고 → A/B 비교"다. 뜯기가 마우스에
+  // 있으면 슬라이더를 잡은 손을 매번 떼야 하고, 그 왕복이 이 도구의 존재 이유(반복
+  // 속도)를 그대로 깎는다. Tab 은 A/B, Space 는 뜯기다.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key !== 'Tab') return;
+      if (event.key !== 'Tab' && event.key !== ' ') return;
       const target = event.target as HTMLElement | null;
-      if (target && /^(INPUT|SELECT|TEXTAREA)$/.test(target.tagName)) return;
+      // 슬라이더 위에서 Space 는 값 조작이 아니라 뜯기여야 한다 — 손을 안 떼는 게 요점이다.
+      // 다만 글자를 치는 칸에서는 건드리지 않는다
+      if (target && /^(SELECT|TEXTAREA)$/.test(target.tagName)) return;
+      if (target?.tagName === 'INPUT' && (target as HTMLInputElement).type !== 'range') return;
       event.preventDefault();
-      swap();
+      if (event.key === 'Tab') swap();
+      else void pluck();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  }, [pluck]);
 
   const saveSnapshot = () => {
     const name = `${instrument.name} ${new Date().toLocaleTimeString('ko-KR')}`;
@@ -300,7 +308,10 @@ function TuningLabBody({ instrumentId, setInstrumentId, registry }: {
               <h2 className="text-xs font-semibold uppercase tracking-wider text-neutral-500">
                 A/B 슬롯
               </h2>
-              <span className="text-xs text-neutral-500">Tab 으로 즉시 전환</span>
+              <span className="text-xs text-neutral-500">
+                Tab 으로 즉시 전환 · <b className="text-neutral-300">Space</b> 로 뜯기
+                <span className="ml-1 text-neutral-600">(슬라이더에 손을 둔 채로)</span>
+              </span>
               <span className="flex-1" />
               <button
                 type="button"
