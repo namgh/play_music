@@ -11,6 +11,7 @@ import {
 } from '../instruments/definitions.ts';
 import { useInstruments } from '../instruments/useInstruments.ts';
 import { resolveInstrument } from '../instruments/resolve.ts';
+import { LevelMeter } from './LevelMeter.tsx';
 
 /**
  * 타임라인 — 트랙별로 클립을 늘어놓는다. 시안은 `mockup/studio-v2.html` 의 테이프 레인.
@@ -60,10 +61,12 @@ export interface TimelineProps {
   onSelect: (trackId: TrackId, clipId: ClipId) => void;
   /** 클립이 없는 트랙을 고를 때 — `onSelect` 는 클립을 요구한다 */
   onSelectTrack: (trackId: TrackId) => void;
+  /** 트랙 레벨 미터. 없으면 미터를 그리지 않는다 */
+  readLevel?: (trackId: TrackId | null) => { peak: number; rms: number } | null;
 }
 
 export function Timeline({
-  editor, selectedTrackId, selectedClipId, playheadTick, onSelect, onSelectTrack,
+  editor, selectedTrackId, selectedClipId, playheadTick, onSelect, onSelectTrack, readLevel,
 }: TimelineProps) {
   const { project } = editor;
   // 이 곡이 쓰는 악기만 불러온다. 이름은 카탈로그에 있어 목록은 안 기다린다
@@ -273,6 +276,15 @@ export function Timeline({
                 onPointerUp={() => editor.commitCurrent()}
                 className="w-16 shrink-0 accent-teal-300"
               />
+              {/* **페이더 바로 옆에 둔다.** 어느 트랙이 큰지 보고 그 자리에서
+                  줄일 수 있어야 의미가 있다 — 멀리 있으면 안 본다 */}
+              {readLevel && (
+                <LevelMeter
+                  className="w-12 shrink-0"
+                  label={`${track.name} 레벨`}
+                  read={() => readLevel(track.id)}
+                />
+              )}
               <button
                 type="button"
                 onClick={() => editor.commit(deleteTrack(project, track.id))}

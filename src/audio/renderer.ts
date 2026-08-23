@@ -72,6 +72,14 @@ export interface AudioRenderer {
    */
   setMetronome(on: boolean): void;
 
+  /**
+   * 지금 이 트랙(또는 `null` = 마스터)이 내보내는 레벨. 미터가 프레임마다 부른다.
+   *
+   * **선택 사항이다** — 대체 렌더러(`BufferRenderer`)는 소리를 미리 만들어 두는
+   * 구조라 실시간 레벨이라는 것이 없다. 미터는 없으면 조용히 숨는다.
+   */
+  readLevel?(trackId: TrackId | null): { peak: number; rms: number } | null;
+
   capabilitiesOf(instrumentId: string): InstrumentCapabilities;
 
   /**

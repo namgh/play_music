@@ -48,6 +48,14 @@ const AUDITION_SEC = 0.6;
 
 interface TrackRuntime {
   node: AudioWorkletNode;
+  /**
+   * 레벨 미터용 탭. **이펙트 뒤, 마스터 합류 직전**이라 이 트랙이 실제로 마스터에
+   * 보내는 양을 잰다 — 페이더·팬·이펙트가 다 반영된 값이다.
+   *
+   * 분석 노드는 신호를 바꾸지 않는다(통과). 소리에 손대지 않고 보기만 하는 것이
+   * 중요하다 — 미터를 붙이느라 음질이 달라지면 본말전도다.
+   */
+  analyser: AnalyserNode;
   voiceKind: number;
   gainNode: GainNode;
   panNode: StereoPannerNode;
@@ -72,6 +80,9 @@ export class WorkletRenderer implements AudioRenderer {
   private readonly readyPromises: Promise<void>[] = [];
 
   private masterGain: GainNode;
+  private masterAnalyser: AnalyserNode;
+  /** 미터가 프레임마다 부르므로 버퍼를 재사용한다 — 매번 할당하면 GC 가 튄다 */
+  private levelBuffer = new Float32Array(1024);
   private masterEffects: EffectChain;
   private masterEffectsKey = '';
   /** 예약된 메트로놈 오실레이터. 정지할 때 끊어야 한다 */
@@ -87,7 +98,9 @@ export class WorkletRenderer implements AudioRenderer {
     this.wasmBytes = wasmBytes;
 
     this.masterGain = ctx.createGain();
-    this.masterGain.connect(ctx.destination);
+    this.masterAnalyser = ctx.createAnalyser();
+    this.masterAnalyser.fftSize = 1024;
+    this.masterGain.connect(this.masterAnalyser).connect(ctx.destination);
     this.masterEffects = buildEffectChain(ctx, []);
     this.masterEffects.output.connect(this.masterGain);
 
@@ -171,11 +184,18 @@ export class WorkletRenderer implements AudioRenderer {
       const gainNode = this.ctx.createGain();
       const panNode = this.ctx.createStereoPanner();
       const effects = buildEffectChain(this.ctx, []);
+      // **분석 노드를 고정점으로 둔다.** 이펙트는 바뀌면 다시 연결되는데(아래),
+      // 그때마다 탭을 옮기면 한 번 놓치는 순간이 생긴다. 탭은 마스터에 영구히
+      // 붙여 두고 이펙트가 여기로 들어오게 한다
+      const analyser = this.ctx.createAnalyser();
+      // 미터는 파형만 보면 되므로 크게 잡을 이유가 없다. 1024 = 48kHz 에서 21ms
+      analyser.fftSize = 1024;
+      analyser.connect(this.masterEffects.input);
       node.connect(gainNode).connect(panNode).connect(effects.input);
-      effects.output.connect(this.masterEffects.input);
+      effects.output.connect(analyser);
 
       runtime = {
-        node, gainNode, panNode, effects, effectsKey: '[]', instrument, params,
+        node, gainNode, panNode, effects, effectsKey: '[]', instrument, params, analyser,
         voiceKind: voiceKindIndex(instrument.voice),
       };
       this.tracks.set(track.id, runtime);
@@ -200,7 +220,7 @@ export class WorkletRenderer implements AudioRenderer {
       runtime.effects = buildEffectChain(this.ctx, track.effects);
       runtime.effectsKey = effectsKey;
       runtime.panNode.connect(runtime.effects.input);
-      runtime.effects.output.connect(this.masterEffects.input);
+      runtime.effects.output.connect(runtime.analyser);
     }
   }
 
@@ -214,6 +234,33 @@ export class WorkletRenderer implements AudioRenderer {
     this.stop();
     this.scheduler.start(this.project, fromTick);
     this.pumpTimer = setInterval(() => this.scheduler.pump(), PUMP_INTERVAL_MS);
+  }
+
+  /**
+   * 트랙(또는 마스터)의 지금 레벨. **프레임마다 불린다.**
+   *
+   * 시간 파형으로 잰다 — 진짜 진폭이다. 주파수 눈금은 dB 매핑과 평활 상수가 끼어
+   * 있어서 "얼마나 큰가"를 묻는 데는 맞지 않는다 (실제로 그걸로 잘못 읽은 적이 있다).
+   *
+   * `peak >= 1` 이면 그 지점에서 이미 넘친 것이다. 마스터에서 넘치면 파일이 잘린다.
+   */
+  readLevel(trackId: TrackId | null): { peak: number; rms: number } | null {
+    const analyser = trackId === null
+      ? this.masterAnalyser
+      : this.tracks.get(trackId)?.analyser;
+    if (!analyser) return null;
+    const buffer = this.levelBuffer.length === analyser.fftSize
+      ? this.levelBuffer
+      : (this.levelBuffer = new Float32Array(analyser.fftSize));
+    analyser.getFloatTimeDomainData(buffer);
+    let peak = 0;
+    let sum = 0;
+    for (const v of buffer) {
+      const m = v < 0 ? -v : v;
+      if (m > peak) peak = m;
+      sum += v * v;
+    }
+    return { peak, rms: Math.sqrt(sum / buffer.length) };
   }
 
   stop(): void {

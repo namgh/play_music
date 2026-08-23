@@ -821,7 +821,7 @@ export function App() {
         )}
 
         {view === 'tuning' && <div className="mt-6"><TuningLab /></div>}
-        {view === 'mixer' && <div className="mt-6"><Mixer editor={editor} /></div>}
+        {view === 'mixer' && <div className="mt-6"><Mixer editor={editor} readLevel={engine.readLevel} /></div>}
 
         {view === 'editor' && (
           <div className="mt-4 grid gap-5 lg:min-h-0 lg:flex-1 lg:grid-cols-[1fr_320px]">
@@ -839,6 +839,7 @@ export function App() {
                 selectedClipId={clip?.id ?? null}
                 playheadTick={engine.playheadTick}
                 onSelect={(trackId, clipId) => { setSelectedTrackId(trackId); setSelectedClipId(clipId); }}
+                readLevel={engine.readLevel}
                 onSelectTrack={(id) => {
                   setSelectedTrackId(id);
                   setSelectedClipId(project.tracks.find((t) => t.id === id)?.clips[0]?.id ?? null);

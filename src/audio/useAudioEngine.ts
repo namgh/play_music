@@ -175,6 +175,19 @@ export function useAudioEngine(
   }, [ensure]);
 
   /** WAV 로 내보내고 다운로드시킨다 (`plan.md` 5-1 Phase 1 완료 조건) */
+  /**
+   * 미터가 프레임마다 부른다. **렌더러가 아직 없거나 레벨을 못 주면 `null`** 이고,
+   * 그때 미터는 조용히 0 으로 남는다 — 대체 렌더러(`BufferRenderer`)는 소리를 미리
+   * 만들어 두는 구조라 실시간 레벨이라는 것이 없다.
+   *
+   * `useCallback` 으로 참조를 고정한다. 프레임마다 부르는 값이 매 렌더 새 함수면
+   * 미터가 그때마다 다시 등록된다
+   */
+  const readLevel = useCallback((trackId: TrackId | null) => {
+    const renderer = rendererRef.current;
+    return renderer?.readLevel ? renderer.readLevel(trackId) : null;
+  }, []);
+
   const exportWav = useCallback(async () => {
     setExporting(true);
     try {
@@ -208,7 +221,7 @@ export function useAudioEngine(
   }, [ensure]);
 
   return {
-    state, playheadTick, error, exporting, engineKind, clip,
+    state, playheadTick, error, exporting, engineKind, clip, readLevel,
     play, stop, audition, exportWav, setMetronome,
   };
 }

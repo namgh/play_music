@@ -1,4 +1,6 @@
 import type { EffectSpec, Track } from '../model/project.ts';
+import type { TrackId } from '../model/project.ts';
+import { LevelMeter } from './LevelMeter.tsx';
 import { updateTrack } from '../editor/edits.ts';
 import type { ProjectEditor } from '../editor/useProjectEditor.ts';
 import { createEffect, EFFECT_SPECS, isEffectType } from '../audio/effects.ts';
@@ -15,9 +17,11 @@ const EFFECT_TYPES = Object.keys(EFFECT_SPECS) as EffectType[];
 
 export interface MixerProps {
   editor: ProjectEditor;
+  /** 레벨 미터. 대체 렌더러에는 실시간 레벨이 없어서 선택 사항이다 */
+  readLevel?: (trackId: TrackId | null) => { peak: number; rms: number } | null;
 }
 
-export function Mixer({ editor }: MixerProps) {
+export function Mixer({ editor, readLevel }: MixerProps) {
   const { project } = editor;
 
   const setEffects = (track: Track, effects: EffectSpec[], commit = true) => {
@@ -50,6 +54,16 @@ export function Mixer({ editor }: MixerProps) {
       {project.tracks.map((track) => (
         <div key={track.id} className="rounded-lg border border-neutral-800 p-4">
           <div className="flex flex-wrap items-center gap-3">
+            {/* **믹서에서는 세로로 세운다.** 스트립이 나란히 서 있을 때
+                높이를 견주는 편이 길이를 견주는 것보다 빠르다 */}
+            {readLevel && (
+              <LevelMeter
+                vertical
+                className="h-10"
+                label={`${track.name} 레벨`}
+                read={() => readLevel(track.id)}
+              />
+            )}
             <span className="min-w-0 flex-1 truncate text-sm font-medium text-neutral-200">
               {track.name}
             </span>
@@ -108,6 +122,14 @@ export function Mixer({ editor }: MixerProps) {
 
       <div className="rounded-lg border border-teal-900/60 p-4">
         <div className="flex flex-wrap items-center gap-3">
+          {readLevel && (
+            <LevelMeter
+              vertical
+              className="h-10"
+              label="마스터 레벨"
+              read={() => readLevel(null)}
+            />
+          )}
           <span className="flex-1 text-sm font-medium text-teal-200">마스터</span>
           <Knob
             label="레벨"
