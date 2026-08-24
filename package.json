@@ -28,7 +28,8 @@
     "quality:compare": "node --experimental-strip-types tools/quality-compare.mjs",
     "test:quality": "node --experimental-strip-types --test 'src/audio/quality.test.ts'",
     "quality:sweep": "node --experimental-strip-types tools/quality-sweep.mjs",
-    "demo": "node --experimental-strip-types tools/demo-songs.mjs"
+    "demo": "node --experimental-strip-types tools/demo-songs.mjs",
+    "partials": "node --experimental-strip-types tools/partials.mjs"
   },
   "dependencies": {
     "react": "^19.2.8",
