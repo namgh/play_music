@@ -138,7 +138,14 @@ pub fn compute_loop(freq_hz: f64, params: &StringParams, sample_rate: f64) -> Lo
     // 고음은 주기가 짧아 보정할 여유가 없으므로 딜레이가 남는 선까지 되돌린다.
     // 비조화도를 직접 준 악기는 그것을 쓰고, 아니면 예전처럼 줄 길이에 묶인 강성을 쓴다.
     // **둘 중 큰 쪽**이라 값을 안 준 악기는 소리가 그대로다
-    let from_stiffness = params.stiffness * ratio.powi(4);
+    // **슬라이더 범위가 의미 있는 폭을 덮게 배율을 준다.**
+    //
+    // 그 전에는 `stiffness` 를 0.005 에서 0.05(슬라이더 최대)까지 올려도 배음의
+    // 인하모니시티 B 가 **자릿수까지 같았다** — 슬라이더가 통째로 죽어 있었다.
+    // 원인은 두 가지가 겹친 것이다: 계수 자체가 너무 작았고(아래 기록 참고),
+    // 단 수가 `inharmonicity` 로만 정해져 강성으로는 3단에 머물렀다.
+    const STIFFNESS_TO_DISPERSION: f64 = 10.0;
+    let from_stiffness = params.stiffness * ratio.powi(4) * STIFFNESS_TO_DISPERSION;
     // ## 여기가 피아노를 막고 있는 지점이다 (실측 기록)
     //
     // 1차 올패스의 위상 지연은 `|a|` 가 작으면 **나이퀴스트 근처에서만** 변한다.
@@ -153,9 +160,23 @@ pub fn compute_loop(freq_hz: f64, params: &StringParams, sample_rate: f64) -> Lo
     // 작업이고, 그때까지 이 값은 **안전한 범위에서만** 동작한다.
     let from_inharmonicity = params.inharmonicity.clamp(0.0, 1.0) * 0.5;
     let mut disp_mag = from_stiffness.max(from_inharmonicity).min(0.6);
-    // 단 수도 비조화도가 정한다. 3단으로는 전체 지연의 2% 라 배음이 안 밀린다
-    let stages = dispersion_stages(params.inharmonicity);
+    // **단 수는 실제로 걸린 분산량이 정한다.** 전에는 `inharmonicity` 만 봤는데,
+    // 그 값을 쓰는 악기가 하나도 없어서 항상 3단이었다 — 3단으로는 전체 지연의 2% 라
+    // 강성을 아무리 올려도 배음이 안 밀린다. 강성이 만든 분산도 같은 저울에 올린다
+    // (`from_inharmonicity` 가 `inharmonicity * 0.5` 이므로 2배가 등가값이다)
+    let effective_inharmonicity = params
+        .inharmonicity
+        .max((from_stiffness * 2.0).clamp(0.0, 1.0));
     let target_delay = sample_rate / freq_hz;
+    // **딸린 딜레이 라인이 되돌릴 수 있는 만큼만 요구한다.**
+    //
+    // 올패스 단은 하나마다 지연을 더하고, 루프 전체 지연은 한 주기를 넘을 수 없다.
+    // 고음은 주기가 짧아 여유가 거의 없다 — 우쿨렐레(짧은 줄) 고음에서 단 수를
+    // 안 묶었더니 **음정이 133센트 틀어졌다.** 짧은 줄은 `ratio⁴` 로 이미 크게
+    // 증폭되므로 여기서 막지 않으면 그 악기만 무너진다.
+    let stage_budget = (target_delay / 6.0).floor().max(1.0) as usize;
+    let stages =
+        dispersion_stages(effective_inharmonicity).min(stage_budget.max(DISPERSION_STAGES));
     let mut line_delay = 0.0;
     for _ in 0..64 {
         let in_loop = OneZero::phase_delay(lp_coef, w)

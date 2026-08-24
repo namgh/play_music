@@ -121,7 +121,20 @@ test('모든 내장 악기가 Rust 코어에서 음정이 맞는다', async () =
     // **앰프를 끄고 잰다.** ±1센트 주장은 합성 엔진(줄)에 대한 것이다.
     // 왜곡은 상호변조 성분을 기본음 근처에 만들어 측정값을 당긴다 — 실제 디스토션
     // 기타에서도 일어나는 일이고, 아래 별도 테스트가 그 크기를 따로 묶는다
-    const params = { ...instrumentParams(instrument, 'default', null), ampEnabled: 0 };
+    //
+    // **편광 디튠과 공명현도 끈다.** 부주키·12현은 두 줄을 몇 센트 벌려 놓은 악기라
+    // 기본음이 애초에 한 점이 아니고, 시타르는 옆에서 공명현이 같이 운다. 그 상태로
+    // 재면 "엔진의 오차"가 아니라 **의도한 어긋남**을 재게 된다.
+    //
+    // 끈 만큼은 다른 곳에서 지킨다: 편광 쌍의 중심 음정은 `voice.rs` 의
+    // `dual_polarization_does_not_shift_the_pitch`, 벌린 폭은 `detune_spread_is_preserved`
+    // 가 FFT 서브빈 정밀도로 본다. `pipeline.test.ts` 도 같은 기준으로 잰다
+    const params = {
+      ...instrumentParams(instrument, 'default', null),
+      ampEnabled: 0,
+      polarizationDetuneCents: 0,
+      sympatheticAmount: 0,
+    };
     for (const midi of [
       instrument.range.low,
       Math.round((instrument.range.low + instrument.range.high) / 2),
