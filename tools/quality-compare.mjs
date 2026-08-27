@@ -22,6 +22,7 @@
  */
 
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { readAudioBytes } from './audio-input.mjs';
 import { argv } from 'node:process';
 
 import { decodeWav } from '../src/audio/wav.ts';
@@ -60,7 +61,9 @@ const fundamentalHz = args.get('hz') ? Number(args.get('hz')) : null;
 const TARGET_LUFS = Number(args.get('lufs') ?? -18);
 
 async function load(path) {
-  const { channels, sampleRate } = decodeWav(await readFile(path));
+  // MP3·M4A 도 받는다 — 사람이 들고 오는 파일은 대개 그쪽이다 (`audio-input.mjs`).
+  // 표본율은 바꾸지 않는다. 맞추는 방향은 **우리 쪽을 상대 표본율로 렌더하는 것**이다
+  const { channels, sampleRate } = decodeWav(readAudioBytes(path));
   return { channels, sampleRate, path };
 }
 

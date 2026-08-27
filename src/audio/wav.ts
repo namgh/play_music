@@ -103,19 +103,47 @@ export function readWavHeader(bytes: Uint8Array): {
   channels: number;
   bitDepth: number;
   frames: number;
+  /** 데이터 청크가 시작하는 자리. **44 라고 가정하면 안 된다** (위 주석) */
+  dataOffset: number;
 } {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const tag = (offset: number) => String.fromCharCode(...bytes.subarray(offset, offset + 4));
   if (tag(0) !== 'RIFF' || tag(8) !== 'WAVE') throw new Error('WAV 가 아니다');
 
-  const channels = view.getUint16(22, true);
-  const bitDepth = view.getUint16(34, true);
-  const dataBytes = view.getUint32(40, true);
+  // **청크를 훑는다. 44바이트 헤더를 가정하지 않는다.**
+  //
+  // 우리가 쓴 파일은 늘 표준 배치라 고정 오프셋으로도 돌았다. 그런데 **밖에서 온
+  // 파일은 대부분 그렇지 않다** — macOS `afconvert` 는 `fmt ` 를 40바이트 확장
+  // 형식으로 쓰고 그 뒤에 `FLLR` 채움 청크를 넣는다. 그러면 데이터가 4096바이트
+  // 지점에서 시작하는데, 44 로 읽으면 **조용히 0초짜리로 읽힌다.** 값이 틀리는 것도
+  // 아니고 길이가 0 이 되니, 비교 결과 전체가 말없이 무의미해진다.
+  let cursor = 12;
+  let fmtAt = -1;
+  let dataAt = -1;
+  let dataBytes = 0;
+  while (cursor + 8 <= bytes.length) {
+    const id = tag(cursor);
+    const size = view.getUint32(cursor + 4, true);
+    if (id === 'fmt ') fmtAt = cursor + 8;
+    if (id === 'data') {
+      dataAt = cursor + 8;
+      // 크기를 0 이나 과대값으로 쓰는 인코더가 있다 — 파일 길이로 자른다
+      dataBytes = size > 0 && size <= bytes.length - dataAt ? size : bytes.length - dataAt;
+      break;
+    }
+    if (size <= 0) break;
+    cursor += 8 + size + (size % 2); // 청크는 짝수 경계에 붙는다
+  }
+  if (fmtAt < 0 || dataAt < 0) throw new Error('WAV 에 fmt 나 data 청크가 없다');
+
+  const channels = view.getUint16(fmtAt + 2, true);
+  const bitDepth = view.getUint16(fmtAt + 14, true);
   return {
-    sampleRate: view.getUint32(24, true),
+    sampleRate: view.getUint32(fmtAt + 4, true),
     channels,
     bitDepth,
-    frames: dataBytes / (channels * (bitDepth / 8)),
+    frames: Math.floor(dataBytes / (channels * (bitDepth / 8))),
+    dataOffset: dataAt,
   };
 }
 
@@ -127,7 +155,7 @@ export function decodeWav(bytes: Uint8Array): { channels: Float32Array[]; sample
   const maxAmplitude = Math.pow(2, header.bitDepth - 1) - 1;
 
   const channels = Array.from({ length: header.channels }, () => new Float32Array(header.frames));
-  let offset = 44;
+  let offset = header.dataOffset;
   for (let frame = 0; frame < header.frames; frame++) {
     for (let ch = 0; ch < header.channels; ch++) {
       let sample: number;

@@ -31,6 +31,8 @@
  */
 
 import { readFileSync } from 'node:fs';
+
+import { readAudioBytes } from './audio-input.mjs';
 import { fileURLToPath } from 'node:url';
 
 const R = (rel) => fileURLToPath(new URL(rel, import.meta.url));
@@ -242,7 +244,7 @@ let b = null;
 let refLabel = null;
 if (refAt >= 0) {
   const path = args[refAt + 1];
-  const wav = readWav(readFileSync(path));
+  const wav = readWav(readAudioBytes(path));
   if (wav.rate !== FS) console.log(`  ※ 참조가 ${wav.rate}Hz 다 — 같은 표본율로 뽑는 편이 정확하다`);
   b = analyze(wav.x, ours.f0, wav.rate);
   refLabel = path;

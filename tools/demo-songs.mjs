@@ -36,7 +36,15 @@ const { encodeWav, peakAmplitude } = await import(R('../src/audio/wav.ts'));
 const { reportClipping } = await import(R('../src/audio/headroom.ts'));
 const { createEffect } = await import(R('../src/audio/effects.ts'));
 
-const SAMPLE_RATE = 48000;
+/**
+ * 표본율. **상용 음원과 견줄 때는 그쪽에 맞춰 뽑는다** — 상용 음원은 대개 44.1kHz 이고,
+ * 비교 도구는 표본율이 다르면 멈춘다 (리샘플러 품질이 결과에 섞이지 않게 하려는 것이다).
+ * 맞추는 방향은 **우리 쪽을 상대에 맞추는 것**이지 상대를 건드리는 것이 아니다.
+ *
+ *   npm run demo -- --rate 44100
+ */
+const rateArg = process.argv.indexOf('--rate');
+const SAMPLE_RATE = rateArg >= 0 ? Number(process.argv[rateArg + 1]) : 48000;
 const BEAT = PPQ;
 const BAR = 4 * PPQ;
 /**
@@ -427,7 +435,8 @@ for (const build of SONGS) {
 
   const peak = peakAmplitude([pcm]);
   const seconds = pcm.length / SAMPLE_RATE;
-  const safe = project.name.replace(/[^\w가-힣]+/g, '-');
+  const safe = project.name.replace(/[^\w가-힣]+/g, '-')
+    + (SAMPLE_RATE === 48000 ? '' : `-${Math.round(SAMPLE_RATE / 1000)}k`);
   writeFileSync(`${outDir}/${safe}.wav`, encodeWav([pcm], { sampleRate: SAMPLE_RATE, bitDepth: 24 }));
   writeFileSync(`${outDir}/${safe}.json`, serializeProject(project));
 

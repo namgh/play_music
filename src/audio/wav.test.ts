@@ -7,7 +7,9 @@ test('헤더가 규격대로 쓰인다', () => {
   const pcm = new Float32Array(100);
   const bytes = encodeWav([pcm], { sampleRate: 48000, bitDepth: 24 });
   const header = readWavHeader(bytes);
-  assert.deepEqual(header, { sampleRate: 48000, channels: 1, bitDepth: 24, frames: 100 });
+  // `dataOffset` 44 는 **우리가 쓸 때의** 표준 배치다. 읽을 때는 가정하지 않는다
+  assert.deepEqual(header,
+    { sampleRate: 48000, channels: 1, bitDepth: 24, frames: 100, dataOffset: 44 });
   assert.equal(bytes.length, 44 + 100 * 3);
 });
 
@@ -80,4 +82,53 @@ test('피크를 재서 잘릴 것을 미리 안다', () => {
   assert.ok(peakAmplitude(tooLoud) > 1, '넘친 것을 못 잡았다');
 
   assert.equal(peakAmplitude([]), 0);
+});
+
+test('밖에서 온 배치도 읽는다 — 확장 fmt · 채움 청크', () => {
+  // **macOS `afconvert` 가 쓰는 형태다.** `fmt ` 를 40바이트 확장 형식으로 쓰고
+  // 그 뒤에 `FLLR` 채움 청크를 넣어, 데이터가 44 가 아니라 한참 뒤에서 시작한다.
+  //
+  // 44 로 가정해 읽었더니 **조용히 0초짜리로 읽혔다.** 값이 틀리는 것도 아니고
+  // 길이가 0 이 되니, 그 파일로 낸 비교 결과 전체가 말없이 무의미해진다.
+  // 사용자가 들고 오는 파일은 대부분 우리가 쓴 것이 아니라 이 경로를 탄다.
+  const frames = 8;
+  const fmt = new Uint8Array(40);
+  const fv = new DataView(fmt.buffer);
+  fv.setUint16(0, 1, true); // PCM
+  fv.setUint16(2, 1, true); // 채널
+  fv.setUint32(4, 44100, true); // 표본율
+  fv.setUint32(8, 44100 * 2, true);
+  fv.setUint16(12, 2, true);
+  fv.setUint16(14, 16, true); // 비트
+  const filler = new Uint8Array(100);
+  const data = new Uint8Array(frames * 2);
+  new DataView(data.buffer).setInt16(0, 16384, true); // 첫 표본에 값을 넣어 둔다
+
+  const total = 12 + 8 + fmt.length + 8 + filler.length + 8 + data.length;
+  const bytes = new Uint8Array(total);
+  const view = new DataView(bytes.buffer);
+  const put = (at: number, text: string) => {
+    for (let i = 0; i < 4; i += 1) bytes[at + i] = text.charCodeAt(i);
+  };
+  put(0, 'RIFF');
+  view.setUint32(4, total - 8, true);
+  put(8, 'WAVE');
+  let at = 12;
+  put(at, 'fmt '); view.setUint32(at + 4, fmt.length, true); bytes.set(fmt, at + 8);
+  at += 8 + fmt.length;
+  put(at, 'FLLR'); view.setUint32(at + 4, filler.length, true);
+  at += 8 + filler.length;
+  put(at, 'data'); view.setUint32(at + 4, data.length, true); bytes.set(data, at + 8);
+
+  const header = readWavHeader(bytes);
+  assert.equal(header.sampleRate, 44100);
+  assert.equal(header.channels, 1);
+  assert.equal(header.bitDepth, 16);
+  assert.equal(header.frames, frames, '길이가 0 이면 비교 결과가 조용히 무의미해진다');
+  assert.equal(header.dataOffset, at + 8);
+
+  const decoded = decodeWav(bytes);
+  assert.equal(decoded.sampleRate, 44100);
+  assert.equal(decoded.channels[0]!.length, frames);
+  assert.ok(decoded.channels[0]![0]! > 0.4, '데이터 시작점을 잘못 잡으면 0 이 나온다');
 });
