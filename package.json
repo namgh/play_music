@@ -29,6 +29,9 @@
     "test:quality": "node --experimental-strip-types --test 'src/audio/quality.test.ts'",
     "quality:sweep": "node --experimental-strip-types tools/quality-sweep.mjs",
     "demo": "node --experimental-strip-types tools/demo-songs.mjs",
+    "demo:80s": "node --experimental-strip-types tools/song-billiejean.mjs",
+    "levels": "node --experimental-strip-types tools/levels.mjs",
+    "lowend": "node --experimental-strip-types tools/lowend.mjs",
     "partials": "node --experimental-strip-types tools/partials.mjs"
   },
   "dependencies": {
