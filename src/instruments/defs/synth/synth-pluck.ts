@@ -4,6 +4,7 @@ export const definition: InstrumentDefinition = {
   id: 'synth-pluck',
   schemaVersion: 1,
   name: '신스 플럭',
+  baseLevel: 0.57,
   category: '건반·신스',
   extends: 'synth-base',
   params: {

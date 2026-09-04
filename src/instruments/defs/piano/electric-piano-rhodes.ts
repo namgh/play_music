@@ -5,6 +5,7 @@ export const definition: InstrumentDefinition = {
   id: 'electric-piano-rhodes',
   schemaVersion: 1,
   name: '일렉 피아노 (로즈)',
+  baseLevel: 1.41,
   category: '피아노',
   extends: 'modal-base',
   // 픽업 → 앰프를 거치는 건반이라 앰프 선언이 필요하다 (모달 기준에는 없다)

@@ -4,6 +4,7 @@ export const definition: InstrumentDefinition = {
   id: 'electric-guitar',
   schemaVersion: 1,
   name: '일렉 기타 (스트랫)',
+  baseLevel: 0.62,
   category: '기타',
   extends: 'amped-string',
   params: {

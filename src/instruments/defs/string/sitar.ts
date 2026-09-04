@@ -4,6 +4,7 @@ export const definition: InstrumentDefinition = {
   id: 'sitar',
   schemaVersion: 1,
   name: '시타르',
+  baseLevel: 1.27,
   category: '줄',
   extends: 'acoustic-guitar',
   params: {

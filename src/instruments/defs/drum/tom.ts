@@ -4,6 +4,7 @@ export const definition: InstrumentDefinition = {
   id: 'tom',
   schemaVersion: 1,
   name: '탐',
+  baseLevel: 1.41,
   extends: 'drum-base',
   params: {
     drumKind: 4, drumDecaySec: 0.5, drumPitchDrop: 0.4, drumNoiseAmount: 0.15,

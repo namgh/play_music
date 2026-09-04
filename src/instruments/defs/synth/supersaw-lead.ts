@@ -4,6 +4,7 @@ export const definition: InstrumentDefinition = {
   id: 'supersaw-lead',
   schemaVersion: 1,
   name: '슈퍼소우 리드',
+  baseLevel: 1.27,
   category: '건반·신스',
   extends: 'synth-base',
   params: {

@@ -89,7 +89,7 @@ export function renderProjectOffline(
     trackSetup.set(track.id, {
       params: instrumentParams(instrument, track.toneId, track.toneParams),
       voiceType: instrument.voice,
-      gain: track.gain,
+      gain: track.gain * instrument.baseLevel,
       bodyModes: instrument.bodyModes,
       sympatheticSemitones: instrument.sympatheticSemitones,
     });

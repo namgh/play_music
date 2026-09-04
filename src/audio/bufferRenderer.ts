@@ -182,7 +182,7 @@ export class BufferRenderer implements AudioRenderer {
     runtime.params = params;
     runtime.paramsKey = `${instrument.id}|${JSON.stringify(params)}`;
     // 음소거·솔로는 스케줄러가 걸러내므로 여기서는 레벨과 팬만 본다
-    runtime.gainNode.gain.value = track.gain;
+    runtime.gainNode.gain.value = track.gain * instrument.baseLevel;
     runtime.panNode.pan.value = track.pan;
 
     // 이펙트는 구성이 바뀔 때만 다시 만든다. 매번 만들면 리버브 IR 을 계속 재합성한다

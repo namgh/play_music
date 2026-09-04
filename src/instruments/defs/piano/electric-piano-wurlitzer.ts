@@ -4,6 +4,7 @@ export const definition: InstrumentDefinition = {
   id: 'electric-piano-wurlitzer',
   schemaVersion: 1,
   name: '일렉 피아노 (윌리처)',
+  baseLevel: 1.07,
   category: '피아노',
   extends: 'electric-piano-rhodes',
   params: {

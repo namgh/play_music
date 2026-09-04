@@ -4,6 +4,7 @@ export const definition: InstrumentDefinition = {
   id: 'synth-lead',
   schemaVersion: 1,
   name: '신스 리드',
+  baseLevel: 0.90,
   extends: 'synth-base',
   params: {
     synthCutoffHz: 5000, synthResonance: 0.35,

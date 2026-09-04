@@ -4,6 +4,7 @@ export const definition: InstrumentDefinition = {
   id: 'bass-5-string',
   schemaVersion: 1,
   name: '5현 베이스',
+  baseLevel: 1.00,
   category: '베이스',
   extends: 'electric-bass',
   params: {

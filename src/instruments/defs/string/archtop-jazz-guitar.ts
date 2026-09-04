@@ -4,6 +4,7 @@ export const definition: InstrumentDefinition = {
   id: 'archtop-jazz-guitar',
   schemaVersion: 1,
   name: '재즈 기타 (아치탑)',
+  baseLevel: 0.73,
   category: '기타',
   extends: 'electric-guitar',
   params: {

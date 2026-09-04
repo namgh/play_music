@@ -4,6 +4,7 @@ export const definition: InstrumentDefinition = {
   id: 'mandolin',
   schemaVersion: 1,
   name: '만돌린',
+  baseLevel: 1.41,
   category: '줄',
   extends: 'acoustic-guitar',
   params: {

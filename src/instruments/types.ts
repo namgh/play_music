@@ -133,6 +133,25 @@ export interface InstrumentDefinition {
   range?: { low: number; high: number };
   /** 기본 제공 음색 프리셋 */
   tones?: Record<string, Record<string, ParamValue>>;
+  /**
+   * 기준 출력 레벨 (선형 배율, 기본 1). **다른 파라미터와 달리 음색이 아니라
+   * 음량만 조정한다** — 순정 노트온 게인에 곱해질 뿐 다른 어떤 신호 경로에도
+   * 안 걸린다.
+   *
+   * 같은 세기·같은 조건에서 악기별 출력이 최대 10.2dB(LUFS 로는 13.3dB) 벌어져
+   * 있었다(`npm run levels`) — 베이스가 하이햇보다 35dB 크게 나올 정도라
+   * 고역이 전부 묻혔다(`SONGCRAFT.md` 6번째 곡 A항). 트랙 게인(`gain`, 기본
+   * 0.34)은 사용자가 만지는 페이더라 악기를 바꿀 때마다 다시 잡아야 했는데,
+   * 이 값은 악기 정의에 박혀 있어 **악기를 바꿔도 자동으로 따라온다.**
+   *
+   * −24 LUFS(단음·세기 0.8) 기준으로 역산했고, 밀집 편곡에서 새로 클리핑을
+   * 만들지 않도록 **부스트는 +3dB(1.41배)로 상한을 뒀다.** 베이스 계열은 그보다
+   * 더 보수적으로 **부스트를 아예 안 준다(상한 1.0)** — 겹쳐 재생될 때 릴리즈가
+   * 쌓여 실제 곡에서 트랙 하나가 단독으로 클리핑한 사고가 이미 한 번 났다
+   * (`SONGCRAFT.md`: `synth-bass` 단음 −5.9dBFS인데 8분음표 밀도로는 +5.4dBFS).
+   * 컷(1 미만)에는 상한이 없다 — 줄이는 쪽은 새 클리핑을 만들지 않는다.
+   */
+  baseLevel?: number;
 }
 
 /** 상속을 다 펼친 결과. 렌더러는 이것만 본다 */
@@ -149,6 +168,8 @@ export interface ResolvedInstrument {
   bodyModes: readonly BodyMode[];
   /** 공명현 조율. 비어 있으면 엔진 기본 조율 */
   sympatheticSemitones: readonly number[];
+  /** 기준 출력 레벨 (선형 배율). 정의에 없으면 1(보정 없음) */
+  baseLevel: number;
   /** 상속 체인 (자신 → 부모 순) — 디버깅·표시용 */
   lineage: string[];
 }

@@ -204,7 +204,7 @@ export class WorkletRenderer implements AudioRenderer {
     runtime.instrument = instrument;
     runtime.params = params;
     runtime.voiceKind = voiceKindIndex(instrument.voice);
-    runtime.gainNode.gain.value = track.gain;
+    runtime.gainNode.gain.value = track.gain * instrument.baseLevel;
     runtime.panNode.pan.value = track.pan;
 
     // **발음 중인 소리에도 파라미터를 반영한다.** 스무딩이 클릭을 막아 준다

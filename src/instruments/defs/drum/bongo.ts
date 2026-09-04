@@ -4,6 +4,7 @@ export const definition: InstrumentDefinition = {
   id: 'bongo',
   schemaVersion: 1,
   name: '봉고',
+  baseLevel: 1.09,
   category: '드럼',
   extends: 'drum-base',
   params: {

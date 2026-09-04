@@ -4,6 +4,7 @@ export const definition: InstrumentDefinition = {
   id: 'cowbell',
   schemaVersion: 1,
   name: '카우벨',
+  baseLevel: 1.08,
   category: '드럼',
   extends: 'drum-base',
   params: {
@@ -11,5 +12,5 @@ export const definition: InstrumentDefinition = {
     drumKind: 4, drumDecaySec: 0.25, drumPitchDrop: 0, drumNoiseAmount: 0.05,
     strikePosition: 0.15,
   },
-  range: { low: 60, high: 79 },
+  range: { low: 53, high: 79 },
 };

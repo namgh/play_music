@@ -4,6 +4,7 @@ export const definition: InstrumentDefinition = {
   id: 'snare',
   schemaVersion: 1,
   name: '스네어',
+  baseLevel: 1.41,
   extends: 'drum-base',
   params: {
     drumKind: 1, drumDecaySec: 0.22, drumPitchDrop: 0.3, drumNoiseAmount: 0.7,

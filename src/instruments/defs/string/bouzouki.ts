@@ -4,6 +4,7 @@ export const definition: InstrumentDefinition = {
   id: 'bouzouki',
   schemaVersion: 1,
   name: '부주키',
+  baseLevel: 1.25,
   category: '줄',
   extends: 'acoustic-guitar',
   params: {

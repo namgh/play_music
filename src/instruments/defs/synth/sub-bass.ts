@@ -4,6 +4,7 @@ export const definition: InstrumentDefinition = {
   id: 'sub-bass',
   schemaVersion: 1,
   name: '서브 베이스',
+  baseLevel: 0.79,
   category: '베이스',
   extends: 'synth-base',
   params: {

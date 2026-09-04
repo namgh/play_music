@@ -4,6 +4,7 @@ export const definition: InstrumentDefinition = {
   id: 'double-bass-pizz',
   schemaVersion: 1,
   name: '콘트라베이스 (피치카토)',
+  baseLevel: 1.00,
   category: '베이스',
   extends: 'electric-bass',
   params: {

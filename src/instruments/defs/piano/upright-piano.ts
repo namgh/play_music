@@ -4,6 +4,7 @@ export const definition: InstrumentDefinition = {
   id: 'upright-piano',
   schemaVersion: 1,
   name: '업라이트 피아노',
+  baseLevel: 1.22,
   category: '피아노',
   extends: 'acoustic-piano',
   params: {

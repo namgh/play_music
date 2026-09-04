@@ -4,6 +4,7 @@ export const definition: InstrumentDefinition = {
   id: 'classical-guitar',
   schemaVersion: 1,
   name: '클래식 기타 (나일론)',
+  baseLevel: 1.41,
   category: '기타',
   extends: 'acoustic-guitar',
   params: {

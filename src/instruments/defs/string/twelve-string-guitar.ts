@@ -4,6 +4,7 @@ export const definition: InstrumentDefinition = {
   id: 'twelve-string-guitar',
   schemaVersion: 1,
   name: '12현 기타',
+  baseLevel: 1.36,
   category: '기타',
   extends: 'acoustic-guitar',
   params: {

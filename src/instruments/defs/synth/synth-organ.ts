@@ -4,6 +4,7 @@ export const definition: InstrumentDefinition = {
   id: 'synth-organ',
   schemaVersion: 1,
   name: '신스 오르간',
+  baseLevel: 0.49,
   category: '건반·신스',
   extends: 'synth-base',
   params: {

@@ -4,6 +4,7 @@ export const definition: InstrumentDefinition = {
   id: 'synth-pad',
   schemaVersion: 1,
   name: '신스 패드',
+  baseLevel: 0.87,
   extends: 'synth-base',
   params: {
     synthWaveform: 2, scaleLengthMm: 300, sustainSec: 1200,

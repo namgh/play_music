@@ -4,6 +4,7 @@ export const definition: InstrumentDefinition = {
   id: 'harpsichord',
   schemaVersion: 1,
   name: '하프시코드',
+  baseLevel: 1.41,
   category: '피아노',
   extends: 'acoustic-guitar',
   params: {

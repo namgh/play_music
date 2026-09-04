@@ -4,6 +4,7 @@ export const definition: InstrumentDefinition = {
   id: 'celesta',
   schemaVersion: 1,
   name: '첼레스타',
+  baseLevel: 1.00,
   category: '말렛·벨',
   extends: 'modal-base',
   params: {

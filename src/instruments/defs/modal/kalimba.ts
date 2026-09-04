@@ -4,6 +4,7 @@ export const definition: InstrumentDefinition = {
   id: 'kalimba',
   schemaVersion: 1,
   name: '칼림바',
+  baseLevel: 0.95,
   category: '말렛·벨',
   extends: 'modal-base',
   params: {

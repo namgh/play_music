@@ -4,6 +4,7 @@ export const definition: InstrumentDefinition = {
   id: 'clavinet',
   schemaVersion: 1,
   name: '클라비넷',
+  baseLevel: 0.90,
   category: '피아노',
   extends: 'amped-string',
   params: {

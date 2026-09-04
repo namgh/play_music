@@ -4,6 +4,7 @@ export const definition: InstrumentDefinition = {
   id: 'ukulele-soprano',
   schemaVersion: 1,
   name: '우쿨렐레 (소프라노)',
+  baseLevel: 1.41,
   category: '줄',
   extends: 'acoustic-guitar',
   params: {

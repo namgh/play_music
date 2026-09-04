@@ -4,6 +4,7 @@ export const definition: InstrumentDefinition = {
   id: 'electric-guitar-lp',
   schemaVersion: 1,
   name: '일렉 기타 (레스폴)',
+  baseLevel: 0.66,
   category: '기타',
   extends: 'electric-guitar',
   params: {

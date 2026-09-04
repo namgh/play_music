@@ -49,6 +49,7 @@ export function resolveInstrument(
   let range: { low: number; high: number } | undefined;
   let bodyModes: readonly BodyMode[] | undefined;
   let sympatheticSemitones: readonly number[] | undefined;
+  let baseLevel: number | undefined;
   const params: Record<string, ParamValue> = {};
   const paramSpecs: Record<string, ParamSpec> = {};
   const tones: Record<string, Record<string, ParamValue>> = {};
@@ -61,6 +62,7 @@ export function resolveInstrument(
     // 섞으면 어느 쪽도 아닌 통이 된다
     if (def.bodyModes !== undefined) bodyModes = def.bodyModes;
     if (def.sympatheticSemitones !== undefined) sympatheticSemitones = def.sympatheticSemitones;
+    if (def.baseLevel !== undefined) baseLevel = def.baseLevel;
     Object.assign(params, def.params);
     Object.assign(paramSpecs, def.paramSpecs);
     for (const [toneId, toneParams] of Object.entries(def.tones ?? {})) {
@@ -96,6 +98,7 @@ export function resolveInstrument(
     tones,
     bodyModes: bodyModes ?? [],
     sympatheticSemitones: sympatheticSemitones ?? [],
+    baseLevel: baseLevel ?? 1,
     lineage: chain.map((d) => d.id),
   };
 }

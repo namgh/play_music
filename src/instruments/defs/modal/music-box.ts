@@ -4,6 +4,7 @@ export const definition: InstrumentDefinition = {
   id: 'music-box',
   schemaVersion: 1,
   name: '뮤직박스',
+  baseLevel: 1.41,
   category: '말렛·벨',
   extends: 'modal-base',
   params: {

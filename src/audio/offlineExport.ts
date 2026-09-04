@@ -72,7 +72,7 @@ export async function renderOfflineWithWorklet(
 
     const node = new AudioWorkletNode(offline, 'ks-string', { outputChannelCount: [2] });
     const gain = offline.createGain();
-    gain.gain.value = track.gain;
+    gain.gain.value = track.gain * instrument.baseLevel;
     const pan = offline.createStereoPanner();
     pan.pan.value = track.pan;
     const effects = buildEffectChain(offline, track.effects);

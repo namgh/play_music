@@ -4,6 +4,7 @@ export const definition: InstrumentDefinition = {
   id: 'crotales',
   schemaVersion: 1,
   name: '크로탈',
+  baseLevel: 1.02,
   category: '말렛·벨',
   extends: 'modal-base',
   params: {

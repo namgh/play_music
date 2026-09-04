@@ -4,7 +4,8 @@ export const definition: InstrumentDefinition = {
   id: 'clap',
   schemaVersion: 1,
   name: '클랩',
+  baseLevel: 1.41,
   extends: 'drum-base',
   params: { drumKind: 5, drumDecaySec: 0.35, drumPitchDrop: 0, drumNoiseAmount: 1 },
-  range: { low: 48, high: 72 },
+  range: { low: 39, high: 72 },
 };
