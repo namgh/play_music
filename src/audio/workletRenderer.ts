@@ -59,6 +59,13 @@ interface TrackRuntime {
   analyser: AnalyserNode;
   voiceKind: number;
   gainNode: GainNode;
+  /**
+   * 오토메이션 전용 게인 — **이펙트 뒤에 둔다.** 리버브·딜레이가 걸린 트랙에서
+   * `gainNode`(이펙트 앞)로 덕킹·게이트를 걸면 리버브에 들어가는 입력만 줄고
+   * 이미 만들어진 웨트 꼬리는 그대로 울린다 — 게이트 리버브가 성립하지 않는다.
+   * 값은 항상 오토메이션 배율만 담는다(정적 트랙 게인은 `gainNode` 몫)
+   */
+  automationGain: GainNode;
   panNode: StereoPannerNode;
   effects: EffectChain;
   effectsKey: string;
@@ -183,6 +190,7 @@ export class WorkletRenderer implements AudioRenderer {
       });
 
       const gainNode = this.ctx.createGain();
+      const automationGain = this.ctx.createGain();
       const panNode = this.ctx.createStereoPanner();
       const effects = buildEffectChain(this.ctx, []);
       // **분석 노드를 고정점으로 둔다.** 이펙트는 바뀌면 다시 연결되는데(아래),
@@ -193,10 +201,10 @@ export class WorkletRenderer implements AudioRenderer {
       analyser.fftSize = 1024;
       analyser.connect(this.masterEffects.input);
       node.connect(gainNode).connect(panNode).connect(effects.input);
-      effects.output.connect(analyser);
+      effects.output.connect(automationGain).connect(analyser);
 
       runtime = {
-        node, gainNode, panNode, effects, effectsKey: '[]', instrument, params, analyser,
+        node, gainNode, automationGain, panNode, effects, effectsKey: '[]', instrument, params, analyser,
         voiceKind: voiceKindIndex(instrument.voice),
       };
       this.tracks.set(track.id, runtime);
@@ -221,7 +229,7 @@ export class WorkletRenderer implements AudioRenderer {
       runtime.effects = buildEffectChain(this.ctx, track.effects);
       runtime.effectsKey = effectsKey;
       runtime.panNode.connect(runtime.effects.input);
-      runtime.effects.output.connect(runtime.analyser);
+      runtime.effects.output.connect(runtime.automationGain);
     }
   }
 
@@ -250,9 +258,9 @@ export class WorkletRenderer implements AudioRenderer {
       const runtime = this.tracks.get(track.id);
       const lane = volumeLane(track);
       if (!runtime || !lane) continue;
+      // 이펙트 뒤 게인이라 배율은 1 — 정적 트랙 게인은 이미 `gainNode` 가 담당한다
       scheduleGainAutomation(
-        runtime.gainNode.gain, lane.points, this.project.tempo,
-        track.gain * runtime.instrument.baseLevel, anchorTick, anchorTimeSec,
+        runtime.automationGain.gain, lane.points, this.project.tempo, 1, anchorTick, anchorTimeSec,
       );
     }
   }
@@ -451,6 +459,7 @@ export class WorkletRenderer implements AudioRenderer {
     runtime.node.port.postMessage({ type: 'allOff' });
     runtime.node.disconnect();
     runtime.gainNode.disconnect();
+    runtime.automationGain.disconnect();
     runtime.panNode.disconnect();
     runtime.effects.dispose();
   }

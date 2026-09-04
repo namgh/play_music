@@ -16,7 +16,7 @@ import { isPitchEdited } from '../model/project.ts';
 import type { Project } from '../model/project.ts';
 import { History } from './history.ts';
 import {
-  addClip, addNote, addTrack, applySidechainDuck, clearVolumeAutomation, copyNotes, deleteClip, deleteNotes, deleteTrack, duplicateClip, duplicateNotes, EditError, findNote, moveClip, moveNotes, moveNotesToTrack, nudgeCents, pasteNotes, quantizeNotes, resizeClip, resizeNotes, setCents, setKey, setLengthBars, setLoop, setLoopEnabled, setPitchCurve, setTempo, setVelocity, setVolumeAutomation, updateTrack,
+  addClip, addNote, addTrack, applyGateEnvelope, applySidechainDuck, clearVolumeAutomation, copyNotes, deleteClip, deleteNotes, deleteTrack, duplicateClip, duplicateNotes, EditError, findNote, moveClip, moveNotes, moveNotesToTrack, nudgeCents, pasteNotes, quantizeNotes, resizeClip, resizeNotes, setCents, setKey, setLengthBars, setLoop, setLoopEnabled, setPitchCurve, setTempo, setVelocity, setVolumeAutomation, updateTrack,
 } from './edits.ts';
 
 function base(): Project {
@@ -654,4 +654,34 @@ test('사이드체인 덕킹 — 없는 트랙이면 에러', () => {
     () => applySidechainDuck(project, trackId, 'trk_없음' as never, { depth: 0.5 }),
     EditError,
   );
+});
+
+test('게이트 — 노트온마다 열렸다가 hold+release 뒤 닫히고, 다음 노트온까지 닫힌 채 있다', () => {
+  const project = base(); // 음 두 개: tick 0, tick PPQ
+  const trackId = project.tracks[0]!.id;
+
+  const gated = applyGateEnvelope(project, trackId, { holdMs: 50, releaseMs: 20, floor: 0.05 });
+  const points = gated.tracks[0]!.automation[0]!.points;
+  // 노트 두 개 × 점 두 개(열림·닫힘) — 덕킹과 달리 스스로 복귀하는 세 번째 점이 없다
+  assert.equal(points.length, 4);
+  assert.equal(points[0]!.tick, 0);
+  assert.equal(points[0]!.value, 1);
+
+  // 120bpm 기본 템포에서 50+20ms 뒤 닫힘 — 두 번째 음(tick=PPQ) 훨씬 전이다
+  const closeTick = points[1]!.tick;
+  assert.ok(closeTick > 0 && closeTick < PPQ);
+  assert.ok(Math.abs(points[1]!.value - 0.05) < 1e-9);
+
+  // 닫힌 뒤 다음 노트온(tick=PPQ)까지 점이 하나도 없다 — 세 번째 점처럼 스스로
+  // 다시 열리는 점을 안 만든다는 뜻이다. 그 사이 값은 마지막 점(닫힘)이 유지한다
+  const sorted = [...points].sort((a, b) => a.tick - b.tick);
+  assert.equal(sorted[0]!.tick, 0);
+  assert.equal(sorted[1]!.tick, closeTick);
+  assert.equal(sorted[2]!.tick, PPQ);
+  assert.ok(sorted[3]!.tick > PPQ);
+});
+
+test('게이트 — 없는 트랙이면 에러', () => {
+  const project = base();
+  assert.throws(() => applyGateEnvelope(project, 'trk_없음' as never, { holdMs: 50 }), EditError);
 });

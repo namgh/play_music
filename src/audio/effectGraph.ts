@@ -96,6 +96,52 @@ function buildReverb(ctx: BaseAudioContext, params: Record<string, number>): Eff
 }
 
 /**
+ * 딜레이 — "이 시대 사운드의 기본"인데 없던 이펙트(`SONGCRAFT.md`).
+ *
+ * 피드백 루프 안에 저역통과를 건다. 안 걸면 반복될수록 원본과 똑같은 밝기로
+ * 계속 쌓여 하이스러운 잡음처럼 들린다 — 실제 테이프 딜레이는 반복마다 고역이
+ * 죽는데, 그 특성이 "따뜻하게 흐려진다"는 느낌을 만든다.
+ */
+function buildDelay(ctx: BaseAudioContext, params: Record<string, number>): EffectChain {
+  const input = ctx.createGain();
+  const output = ctx.createGain();
+
+  // 최대 지연은 파라미터 상한(1.5초)보다 넉넉히 잡는다 — 나중에 파라미터
+  // 상한을 늘려도 여기부터 다시 볼 필요가 없게
+  const delayNode = ctx.createDelay(2);
+  delayNode.delayTime.value = params.timeMs! / 1000;
+
+  const feedbackFilter = ctx.createBiquadFilter();
+  feedbackFilter.type = 'lowpass';
+  feedbackFilter.frequency.value = params.dampingHz!;
+
+  const feedbackGain = ctx.createGain();
+  feedbackGain.gain.value = params.feedback!;
+
+  delayNode.connect(feedbackFilter).connect(feedbackGain).connect(delayNode);
+
+  // 등가 파워 크로스페이드 — 리버브와 같은 함수를 그대로 쓴다(이름은 리버브지만
+  // 계산 자체는 dry/wet 믹스 전체에 통하는 일반식이다)
+  const { dry, wet } = reverbMixGains(params.mix!);
+  const dryGain = ctx.createGain();
+  dryGain.gain.value = dry;
+  const wetGain = ctx.createGain();
+  wetGain.gain.value = wet;
+
+  input.connect(dryGain).connect(output);
+  input.connect(delayNode).connect(wetGain).connect(output);
+
+  return {
+    input,
+    output,
+    dispose: () => {
+      input.disconnect(); output.disconnect(); delayNode.disconnect();
+      feedbackFilter.disconnect(); feedbackGain.disconnect(); dryGain.disconnect(); wetGain.disconnect();
+    },
+  };
+}
+
+/**
  * 이펙트 목록을 직렬로 이어 붙인다. 목록이 비었거나 전부 바이패스면
  * 통과용 게인 하나만 만든다 — 호출자가 분기하지 않아도 되게.
  */
@@ -114,7 +160,8 @@ export function buildEffectChain(ctx: BaseAudioContext, specs: readonly EffectSp
     const chain =
       spec.type === 'eq' ? buildEq(ctx, params)
         : spec.type === 'compressor' ? buildCompressor(ctx, params)
-          : buildReverb(ctx, params);
+          : spec.type === 'reverb' ? buildReverb(ctx, params)
+            : buildDelay(ctx, params);
     tail.connect(chain.input);
     tail = chain.output;
     built.push(chain);

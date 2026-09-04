@@ -592,6 +592,57 @@ export interface SidechainDuckOptions {
  * 합성하는 것은 별도 스코프다 — 지금은 "이 트랙은 이 트리거로 덕킹된다" 하나만
  * 표현한다.
  */
+/** 트랙 안 모든 음의 곡 절대 틱(클립 시작 + 음 시작), 오름차순 */
+function noteOnTicks(track: Track): Ticks[] {
+  const ticks: Ticks[] = [];
+  for (const clip of track.clips) {
+    for (const note of clip.notes) ticks.push(clip.startTick + note.startTick);
+  }
+  return ticks.sort((a, b) => a - b);
+}
+
+/**
+ * 트리거 시각마다 "그대로 → 최저점 → 복귀" 세 점을 만든다 — **다음 트리거 전에
+ * 원래 크기로 돌아온다.** 덕킹이 쓴다: 킥과 킥 사이에는 패드가 다시 커져야 한다.
+ */
+function dipAndReturnPoints(
+  triggerTicks: readonly Ticks[],
+  tempo: Project['tempo'],
+  floor: number,
+  attackMs: number,
+  holdMs: number,
+): AutomationPoint[] {
+  const points: AutomationPoint[] = [];
+  for (const tick of triggerTicks) {
+    const tSec = ticksToSeconds(tick, tempo);
+    const dipTick = secondsToTicks(tSec + attackMs / 1000, tempo);
+    const releaseTick = secondsToTicks(tSec + (attackMs + holdMs) / 1000, tempo);
+    points.push({ tick, value: 1 }, { tick: dipTick, value: floor }, { tick: releaseTick, value: 1 });
+  }
+  return points;
+}
+
+/**
+ * 트리거 시각마다 "열림(1) → 닫힘(floor)" 두 점을 만들고, **다음 트리거가 열 때까지
+ * 닫힌 채로 둔다.** 게이트가 쓴다: 게이트는 다시 열어 줄 다음 노트가 없으면
+ * 닫힌 채로 남아 있는 것이 맞다 — 덕킹처럼 스스로 원상복귀하지 않는다.
+ */
+function gateClosePoints(
+  triggerTicks: readonly Ticks[],
+  tempo: Project['tempo'],
+  floor: number,
+  holdMs: number,
+  releaseMs: number,
+): AutomationPoint[] {
+  const points: AutomationPoint[] = [];
+  for (const tick of triggerTicks) {
+    const tSec = ticksToSeconds(tick, tempo);
+    const closeTick = secondsToTicks(tSec + (holdMs + releaseMs) / 1000, tempo);
+    points.push({ tick, value: 1 }, { tick: closeTick, value: floor });
+  }
+  return points;
+}
+
 export function applySidechainDuck(
   project: Project,
   triggerTrackId: TrackId,
@@ -608,19 +659,44 @@ export function applySidechainDuck(
   const attackMs = Math.max(0, options.attackMs ?? 30);
   const releaseMs = Math.max(0, options.releaseMs ?? 120);
 
-  const triggerTicks: Ticks[] = [];
-  for (const clip of trigger.clips) {
-    for (const note of clip.notes) triggerTicks.push(clip.startTick + note.startTick);
-  }
-  triggerTicks.sort((a, b) => a - b);
-
-  const points: AutomationPoint[] = [];
-  for (const tick of triggerTicks) {
-    const tSec = ticksToSeconds(tick, project.tempo);
-    const dipTick = secondsToTicks(tSec + attackMs / 1000, project.tempo);
-    const releaseTick = secondsToTicks(tSec + (attackMs + releaseMs) / 1000, project.tempo);
-    points.push({ tick, value: 1 }, { tick: dipTick, value: 1 - depth }, { tick: releaseTick, value: 1 });
-  }
-
+  const points = dipAndReturnPoints(noteOnTicks(trigger), project.tempo, 1 - depth, attackMs, releaseMs);
   return setVolumeAutomation(project, targetTrackId, points);
+}
+
+export interface GateEnvelopeOptions {
+  /** 노트온부터 이 시간까지는 그대로 열려 있다 — 트랜지언트와 리버브 초반을 살린다 */
+  holdMs?: number;
+  /** hold 뒤 여기까지 걸쳐 최저치로 떨어진다. 짧을수록 "퍽!" 하고 끊기는 느낌이 난다 */
+  releaseMs?: number;
+  /** 완전 무음(0)이 아니라 살짝 남겨 부자연스러운 디지털 무음을 피한다 */
+  floor?: number;
+}
+
+/**
+ * 게이트 스네어 — "80년대 사운드의 정체"(`SONGCRAFT.md`).
+ *
+ * 실시간 오디오를 문턱값으로 여닫는 진짜 노이즈 게이트를 새로 만들지 않는다.
+ * 이 엔진은 음이 언제 시작하는지 이미 알고 있으므로(사후 분석이 아니라 스케줄된
+ * 이벤트다) 노트온마다 "열림 → 유지 → 급격히 닫힘" 곡선을 미리 계산해 **같은
+ * 트랙**의 오토메이션으로 굳힌다 — 트리거와 대상이 같다는 점만 `applySidechainDuck`
+ * 과 다르다.
+ *
+ * **리버브 뒤에 걸려야 뜻이 있다.** 리버브 앞에 걸면 리버브로 들어가는 입력만
+ * 줄어들 뿐 이미 만들어진 웨트 꼬리는 그대로 울린다 — 렌더러가 오토메이션을
+ * 이펙트 뒤(`workletRenderer.ts`)에 배선해 둔 이유가 이것이다.
+ */
+export function applyGateEnvelope(
+  project: Project,
+  trackId: TrackId,
+  options: GateEnvelopeOptions,
+): Project {
+  const track = project.tracks.find((t) => t.id === trackId);
+  if (!track) throw new EditError(`트랙을 찾을 수 없다: ${trackId}`);
+
+  const holdMs = Math.max(0, options.holdMs ?? 60);
+  const releaseMs = Math.max(1, options.releaseMs ?? 40);
+  const floor = Math.max(0, Math.min(1, options.floor ?? 0.05));
+
+  const points = gateClosePoints(noteOnTicks(track), project.tempo, floor, holdMs, releaseMs);
+  return setVolumeAutomation(project, trackId, points);
 }

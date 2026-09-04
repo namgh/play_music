@@ -74,15 +74,18 @@ export async function renderOfflineWithWorklet(
     const node = new AudioWorkletNode(offline, 'ks-string', { outputChannelCount: [2] });
     const gain = offline.createGain();
     gain.gain.value = track.gain * instrument.baseLevel;
-    // 내보내기는 항상 곡 처음(틱 0 = 오프라인 클럭 0초)부터 렌더한다 — 재생의
-    // "재생 헤드 위치에서 예약" 과 같은 함수를 앵커만 0으로 줘서 그대로 쓴다
-    const lane = volumeLane(track);
-    if (lane) scheduleGainAutomation(gain.gain, lane.points, project.tempo, track.gain * instrument.baseLevel, 0, 0);
     const pan = offline.createStereoPanner();
     pan.pan.value = track.pan;
     const effects = buildEffectChain(offline, track.effects);
+    // 오토메이션은 **이펙트 뒤**에 건다 — 앞에 걸면 리버브에 들어가는 입력만
+    // 줄고 이미 만들어진 웨트 꼬리는 그대로 울려 게이트 리버브가 성립하지 않는다
+    // (`workletRenderer.ts` 와 같은 이유). 내보내기는 항상 곡 처음(틱 0 = 오프라인
+    // 클럭 0초)부터 렌더하므로 앵커를 0으로 준다
+    const automationGain = offline.createGain();
+    const lane = volumeLane(track);
+    if (lane) scheduleGainAutomation(automationGain.gain, lane.points, project.tempo, 1, 0, 0);
     node.connect(gain).connect(pan).connect(effects.input);
-    effects.output.connect(master.input);
+    effects.output.connect(automationGain).connect(master.input);
 
     // 워크렛이 wasm 을 준비했다고 알려 줄 때까지 기다린다. 준비 전에 예약하면
     // 그 메시지들이 무시돼 **음이 빠진 파일**이 나온다

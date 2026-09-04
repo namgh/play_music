@@ -63,6 +63,8 @@ interface TrackRuntime {
   wasm: WasmVoiceEngine | null;
   /** 보이스가 붙는 입구 */
   gainNode: GainNode;
+  /** 오토메이션 전용 게인 — 이펙트 뒤에 둔다 (`workletRenderer.ts` 와 같은 이유) */
+  automationGain: GainNode;
   panNode: StereoPannerNode;
   effects: EffectChain;
   /** 이펙트 구성이 바뀔 때만 다시 만들기 위한 서명 */
@@ -146,6 +148,7 @@ export class BufferRenderer implements AudioRenderer {
     for (const [id, runtime] of this.tracks) {
       if (!project.tracks.some((t) => t.id === id)) {
         runtime.gainNode.disconnect();
+        runtime.automationGain.disconnect();
         runtime.panNode.disconnect();
         runtime.effects.dispose();
         this.tracks.delete(id);
@@ -161,12 +164,13 @@ export class BufferRenderer implements AudioRenderer {
     let runtime = this.tracks.get(track.id);
     if (!runtime) {
       const gainNode = this.ctx.createGain();
+      const automationGain = this.ctx.createGain();
       const panNode = this.ctx.createStereoPanner();
       const effects = buildEffectChain(this.ctx, []);
       gainNode.connect(panNode).connect(effects.input);
-      effects.output.connect(this.masterEffects!.input);
+      effects.output.connect(automationGain).connect(this.masterEffects!.input);
       runtime = {
-        wasm: null, gainNode, panNode, effects, effectsKey: '[]',
+        wasm: null, gainNode, automationGain, panNode, effects, effectsKey: '[]',
         instrument, params, paramsKey: '',
       };
       // 트랙 전용 엔진을 만든다. 팩토리가 없으면 공유 엔진으로 떨어지는데,
@@ -194,7 +198,7 @@ export class BufferRenderer implements AudioRenderer {
       runtime.effects = buildEffectChain(this.ctx, track.effects);
       runtime.effectsKey = effectsKey;
       runtime.panNode.connect(runtime.effects.input);
-      runtime.effects.output.connect(this.masterEffects!.input);
+      runtime.effects.output.connect(runtime.automationGain);
     }
   }
 
@@ -207,8 +211,8 @@ export class BufferRenderer implements AudioRenderer {
 
     // 트랙들을 새 마스터 체인으로 옮긴다
     for (const runtime of this.tracks.values()) {
-      runtime.effects.output.disconnect();
-      runtime.effects.output.connect(next.input);
+      runtime.automationGain.disconnect();
+      runtime.automationGain.connect(next.input);
     }
     previous?.dispose();
   }
@@ -232,9 +236,9 @@ export class BufferRenderer implements AudioRenderer {
       const runtime = this.tracks.get(track.id);
       const lane = volumeLane(track);
       if (!runtime || !lane) continue;
+      // 이펙트 뒤 게인이라 배율은 1 — 정적 트랙 게인은 이미 `gainNode` 가 담당한다
       scheduleGainAutomation(
-        runtime.gainNode.gain, lane.points, this.project.tempo,
-        track.gain * runtime.instrument.baseLevel, fromTick, anchorTime,
+        runtime.automationGain.gain, lane.points, this.project.tempo, 1, fromTick, anchorTime,
       );
     }
   }
@@ -368,6 +372,7 @@ export class BufferRenderer implements AudioRenderer {
     this.stop();
     for (const runtime of this.tracks.values()) {
       runtime.gainNode.disconnect();
+      runtime.automationGain.disconnect();
       runtime.panNode.disconnect();
       runtime.effects.dispose();
     }

@@ -51,7 +51,7 @@ const { reportClipping } = await import(R('../src/audio/headroom.ts'));
 const { createEffect } = await import(R('../src/audio/effects.ts'));
 const { integratedLufs, truePeakDbfs } = await import(R('../src/audio/quality.ts'));
 const { resolveInstrument } = await import(R('../src/instruments/resolve.ts'));
-const { applySidechainDuck, setVolumeAutomation } = await import(R('../src/editor/edits.ts'));
+const { applyGateEnvelope, applySidechainDuck, setVolumeAutomation } = await import(R('../src/editor/edits.ts'));
 
 const rateArg = process.argv.indexOf('--rate');
 const SAMPLE_RATE = rateArg >= 0 ? Number(process.argv[rateArg + 1]) : 48000;
@@ -175,6 +175,14 @@ const eq = (lowGainDb, midGainDb, highGainDb, midHz = 1000) => {
   e.params.midHz = midHz;
   return e;
 };
+const delayFx = (timeMs, feedback, mix, dampingHz) => {
+  const e = createEffect('delay');
+  e.params.timeMs = timeMs;
+  if (feedback !== undefined) e.params.feedback = feedback;
+  if (mix !== undefined) e.params.mix = mix;
+  if (dampingHz !== undefined) e.params.dampingHz = dampingHz;
+  return e;
+};
 
 // ---------------------------------------------------------------------------
 
@@ -188,12 +196,12 @@ function build() {
   const kick = makeTrack(p, { name: '킥', instrumentId: 'kick', gain: 0.85, effects: [comp(-14, 4, 2, 120)] });
 
   // 게이트 리버브: 잔향을 크게 걸고 **짧게 끊는** 것이 이 시대 스네어의 정체다.
-  // 끊는 것(게이트)이 없어 decay 를 짧게 잡는 것으로만 흉내 낸다 — 꼬리가 부드럽게
-  // 사라져서 그 "퍽!" 하고 잘리는 느낌이 안 난다
-  gap('게이트 스네어', '노이즈 게이트 (잔향을 크게 걸고 짧게 끊기)', '리버브 decaySec 0.35 로 근사');
+  // 리버브는 자연스러운 길이(1.4초)로 걸고, **게이트가 그걸 끊는다** — 잔향
+  // 자체를 짧게 잡던 예전 근사와 달리 이제 진짜 "퍽!" 하고 잘리는 느낌이 난다.
+  // 게이트는 노트온이 다 정해진 뒤(오토메이션 절 참고)에 건다
   const snare = makeTrack(p, {
-    name: '스네어 (게이트 흉내)', instrumentId: 'snare', gain: 0.62,
-    effects: [reverb(0.42, 0.35, 6000), comp(-12, 6, 1, 90)],
+    name: '스네어 (게이트)', instrumentId: 'snare', gain: 0.62,
+    effects: [reverb(0.55, 1.4, 6000), comp(-12, 6, 1, 90)],
   });
 
   const hat = makeTrack(p, { name: '하이햇', instrumentId: 'hihat', toneId: '짧게', gain: 0.24, pan: 0.22 });
@@ -213,9 +221,10 @@ function build() {
 
   // --- 화성 -------------------------------------------------------------
   gap('뮤트 기타 (팜뮤트)', '16분 뒷박을 짧게 긁는 주법', '음 길이를 0.1박으로 줄여 흉내 — 톤은 그대로라 계속 같은 소리');
+  // 8분음표 딜레이 — 117bpm 에서 256ms. 뒷박만 치는 리듬 기타라 살짝만 섞는다
   const gtr = makeTrack(p, {
     name: '뮤트 기타', instrumentId: 'electric-guitar', toneId: '클린', gain: 0.3, pan: -0.42,
-    effects: [eq(-4, 2, 1, 1600)],
+    effects: [eq(-4, 2, 1, 1600), delayFx(256, 0.28, 0.15, 3200)],
   });
   const rhodes = makeTrack(p, {
     name: '로즈', instrumentId: 'electric-piano-rhodes', gain: 0.26, pan: 0.35,
@@ -226,10 +235,8 @@ function build() {
   gap('보컬', '리드 보컬 — 이 곡의 주인공', 'synth-lead 로 대용. 보컬 없이 "그 곡 같다" 는 성립하지 않는다');
   const lead = makeTrack(p, {
     name: '리드 (보컬 대용)', instrumentId: 'synth-lead', gain: 0.28, pan: 0.1,
-    effects: [reverb(0.24, 1.8, 5000)],
+    effects: [reverb(0.24, 1.8, 5000), delayFx(256, 0.34, 0.24, 3200)],
   });
-
-  gap('딜레이', '리드·기타에 거는 8분 딜레이 — 이 시대 사운드의 기본', '없음. 리버브로만 공간을 만듦');
 
   // -----------------------------------------------------------------------
   // 구간. **편성이 거의 안 변하는 곡**이라 오토메이션 부재가 특히 크게 걸린다
@@ -310,6 +317,14 @@ function build() {
     }
   }
 
+  // --- 게이트 스네어 — 80년대 사운드의 정체 ----------------------------------
+  //
+  // 리버브는 자연스러운 길이(1.4초)로 걸어 두고, 스네어 자신의 노트온마다
+  // "열림(140ms 유지) → 40ms 만에 급격히 닫힘" 곡선을 얹는다. 리버브 웨트
+  // 신호가 이펙트 뒤에서 잘리므로 꼬리가 자연스럽게 울리다가 뚝 끊긴다 —
+  // decaySec 를 짧게 잡아 흉내 내던 것과 달리 진짜 게이트 리버브 구조다
+  p = applyGateEnvelope(p, trackOf(p, snare).id, { holdMs: 140, releaseMs: 40, floor: 0.04 });
+
   // --- 오토메이션 — 킥에 맞춘 덕킹 + 아웃트로 페이드 -------------------------
   //
   // `ROADMAP.md` 항목 2. 킥 노트온마다 미리 계산한 볼륨 곡선을 베이스·서브·패드에
@@ -319,12 +334,12 @@ function build() {
   p = applySidechainDuck(p, kickId, trackOf(p, sub).id, { depth: 0.45, attackMs: 15, releaseMs: 160 });
   p = applySidechainDuck(p, kickId, trackOf(p, pad).id, { depth: 0.5, attackMs: 20, releaseMs: 220 });
 
-  // 아웃트로(22~24마디)에 걸쳐 서서히 뺀다. 덕킹이 이미 걸린 세 트랙은 여기서
-  // 안 건드린다 — 오토메이션 레인 하나가 target 하나만 표현하므로, 지금은
-  // 트랙 하나에 페이드와 덕킹을 같이 얹는 것을 다음 스코프로 미룬다
+  // 아웃트로(22~24마디)에 걸쳐 서서히 뺀다. 덕킹·게이트가 이미 걸린 네 트랙은
+  // 여기서 안 건드린다 — 오토메이션 레인 하나가 target 하나만 표현하므로, 지금은
+  // 트랙 하나에 페이드와 덕킹/게이트를 같이 얹는 것을 다음 스코프로 미룬다
   const outroStartTick = 22 * 4 * PPQ;
   const songEndTick = BARS * 4 * PPQ;
-  for (const c of [kick, snare, hat, open, shaker, tom, crash, gtr, rhodes, lead]) {
+  for (const c of [kick, hat, open, shaker, tom, crash, gtr, rhodes, lead]) {
     p = setVolumeAutomation(p, trackOf(p, c).id, [
       { tick: outroStartTick, value: 1 },
       { tick: songEndTick, value: 0.12 },

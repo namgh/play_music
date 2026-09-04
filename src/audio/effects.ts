@@ -12,7 +12,7 @@
 
 import type { EffectSpec } from '../model/project.ts';
 
-export type EffectType = 'eq' | 'compressor' | 'reverb';
+export type EffectType = 'eq' | 'compressor' | 'reverb' | 'delay';
 
 export interface EffectParamSpec {
   label: string;
@@ -51,6 +51,15 @@ export const EFFECT_SPECS: Record<EffectType, { label: string; params: Record<st
       mix: { label: '섞기', min: 0, max: 1, default: 0.2 },
       decaySec: { label: '길이', min: 0.1, max: 8, default: 1.6, unit: 's' },
       dampingHz: { label: '고역 감쇠', min: 500, max: 16000, default: 4000, unit: 'Hz', curve: 'log' },
+    },
+  },
+  delay: {
+    label: '딜레이',
+    params: {
+      timeMs: { label: '시간', min: 20, max: 1500, default: 250, unit: 'ms', curve: 'log' },
+      feedback: { label: '피드백', min: 0, max: 0.9, default: 0.35 },
+      mix: { label: '섞기', min: 0, max: 1, default: 0.25 },
+      dampingHz: { label: '반복 고역 감쇠', min: 500, max: 16000, default: 3500, unit: 'Hz', curve: 'log' },
     },
   },
 };
