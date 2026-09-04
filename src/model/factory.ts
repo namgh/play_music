@@ -86,6 +86,7 @@ export function createTrack(opts: {
     solo: false,
     color: opts.color ?? 'j1',
     effects: [],
+    automation: [],
     clips: [],
   };
 }

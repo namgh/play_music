@@ -13,8 +13,8 @@
 
 import { SCHEMA_VERSION } from './project.ts';
 import type {
-  Clip, ClipId, EffectSpec, LoopRegion, MusicalKey, Note, NoteId, Origin, PitchCurve, Project,
-  ProjectId, Track, TrackId,
+  AutomationLane, AutomationPoint, Clip, ClipId, EffectSpec, LoopRegion, MusicalKey, Note, NoteId,
+  Origin, PitchCurve, Project, ProjectId, Track, TrackId,
 } from './project.ts';
 import { DEFAULT_TEMPO, DEFAULT_TIME_SIGNATURE, PPQ } from './time.ts';
 import { DEFAULT_TUNING, normalizePitch } from './pitch.ts';
@@ -173,6 +173,30 @@ function parseClip(value: unknown, seen: Set<string>): Clip {
   };
 }
 
+function parseAutomationPoint(value: unknown): AutomationPoint {
+  const raw = asRecord(value, '오토메이션 점');
+  return {
+    tick: num(raw.tick, 0, 0),
+    value: num(raw.value, 1, 0, 1),
+  };
+}
+
+function parseAutomation(value: unknown): AutomationLane[] {
+  if (value == null) return [];
+  return asArray(value, '오토메이션').map((entry) => {
+    const raw = asRecord(entry, '오토메이션 레인');
+    // 지금은 'volume' 하나뿐이다 — 모르는 target 은 흘려보내지 않고 소리 없이
+    // 무시되면 안 되므로 volume 으로 떨어뜨린다 (렌더가 여전히 값을 읽으므로
+    // 아예 버리는 것보다 안전하다)
+    return {
+      target: 'volume' as const,
+      points: asArray(raw.points ?? [], '오토메이션 점 목록')
+        .map((point) => parseAutomationPoint(point))
+        .sort((a, b) => a.tick - b.tick),
+    };
+  });
+}
+
 function parseTrack(value: unknown, seen: Set<string>): Track {
   const raw = asRecord(value, '트랙');
   const toneParamsRaw = raw.toneParams;
@@ -196,6 +220,7 @@ function parseTrack(value: unknown, seen: Set<string>): Track {
     solo: bool(raw.solo, false),
     color: str(raw.color, 'j1'),
     effects: parseEffects(raw.effects),
+    automation: parseAutomation(raw.automation),
     clips: asArray(raw.clips ?? [], '클립 목록').map((clip) => parseClip(clip, seen)),
   };
 }

@@ -15,8 +15,9 @@
  * 반올림되지 않는다. 128샘플 블록으로 뭉개면 최대 2.7ms 씩 밀린다.
  */
 
-import type { Project } from '../model/project.ts';
-import { ticksToSeconds } from '../model/time.ts';
+import type { AutomationPoint, Project } from '../model/project.ts';
+import { secondsToTicks, ticksToSeconds } from '../model/time.ts';
+import { automationValueAtTick, volumeLane } from './automation.ts';
 import { pitchToHz } from '../model/pitch.ts';
 import { applyLegato, applySwing, collectNoteEvents } from './scheduler.ts';
 import type { InstrumentDefinition } from '../instruments/types.ts';
@@ -83,6 +84,7 @@ export function renderProjectOffline(
     params: Record<string, number | string>; voiceType: string; gain: number;
     bodyModes: readonly { ratio: number; gain: number; q: number }[];
     sympatheticSemitones: readonly number[];
+    automation: readonly AutomationPoint[];
   }>();
   for (const track of project.tracks) {
     const instrument = resolveInstrument(track.instrumentId, instrumentDefs);
@@ -92,6 +94,7 @@ export function renderProjectOffline(
       gain: track.gain * instrument.baseLevel,
       bodyModes: instrument.bodyModes,
       sympatheticSemitones: instrument.sympatheticSemitones,
+      automation: volumeLane(track)?.points ?? [],
     });
   }
 
@@ -141,7 +144,13 @@ export function renderProjectOffline(
           const frames = Math.min(BLOCK, toSample - cursor);
           scratch.fill(0);
           wasm.process(scratch, frames);
-          for (let i = 0; i < frames; i++) pcm[cursor + i] = pcm[cursor + i]! + scratch[i]!;
+          // 블록 단위로 한 번만 값을 읽는다 — 128샘플(48kHz 에서 2.7ms) 안에서
+          // 오토메이션이 들릴 만큼 움직이지 않는다. Web Audio 경로는 AudioParam 이
+          // 샘플 단위로 정확하지만, 여기는 원시 PCM 합산이라 근사가 맞는 트레이드오프다
+          const g = setup.automation.length === 0
+            ? 1
+            : automationValueAtTick(setup.automation, secondsToTicks(cursor / sampleRate, project.tempo));
+          for (let i = 0; i < frames; i++) pcm[cursor + i] = pcm[cursor + i]! + scratch[i]! * g;
           cursor += frames;
         }
       };
@@ -174,8 +183,10 @@ export function renderProjectOffline(
     return { pcm, sampleRate };
   }
 
-  // 보이스 풀. 트랙마다 파라미터가 달라 발음 시점에 setParams 하므로 공용으로 쓴다
-  const pool: { voice: Voice; gain: number }[] = [];
+  // 보이스 풀. 트랙마다 파라미터가 달라 발음 시점에 setParams 하므로 공용으로 쓴다.
+  // 슬롯이 트랙 사이를 옮겨 다니므로(보이스 스틸링) 트랙 id 도 같이 들고 있어야
+  // 그 순간 어느 트랙의 오토메이션을 읽을지 알 수 있다
+  const pool: { voice: Voice; gain: number; trackId: string }[] = [];
   let rr = 0;
 
   const renderTo = (fromSample: number, toSample: number): void => {
@@ -186,7 +197,11 @@ export function renderProjectOffline(
         if (!slot.voice.active) continue;
         scratch.fill(0);
         slot.voice.process(scratch, frames);
-        for (let i = 0; i < frames; i++) pcm[at + i] = pcm[at + i]! + scratch[i]! * slot.gain;
+        const automation = trackSetup.get(slot.trackId)?.automation ?? [];
+        const g = automation.length === 0
+          ? 1
+          : automationValueAtTick(automation, secondsToTicks(at / sampleRate, project.tempo));
+        for (let i = 0; i < frames; i++) pcm[at + i] = pcm[at + i]! + scratch[i]! * slot.gain * g;
       }
     }
   };
@@ -206,7 +221,7 @@ export function renderProjectOffline(
     let slot = pool.find((s) => !s.voice.active);
     if (!slot) {
       if (pool.length < MAX_VOICES) {
-        slot = { voice: createVoice(setup.voiceType, sampleRate, rng), gain: setup.gain };
+        slot = { voice: createVoice(setup.voiceType, sampleRate, rng), gain: setup.gain, trackId: event.trackId };
         pool.push(slot);
       } else {
         slot = pool[rr % pool.length]!; // 보이스 스틸링
@@ -214,6 +229,7 @@ export function renderProjectOffline(
       }
     }
     slot.gain = setup.gain;
+    slot.trackId = event.trackId;
     slot.voice.noteOn(pitchToHz(event.note.pitch, project.tuning), event.note.velocity, setup.params);
   }
 

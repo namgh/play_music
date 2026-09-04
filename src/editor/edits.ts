@@ -9,13 +9,13 @@
  */
 
 import type {
-  Clip, ClipId, LoopRegion, MusicalKey, Note, NoteId, Project, Track, TrackId,
+  AutomationPoint, Clip, ClipId, LoopRegion, MusicalKey, Note, NoteId, Project, Track, TrackId,
 } from '../model/project.ts';
 import { createClip, createNote, createTrack, newNoteId } from '../model/factory.ts';
 import type { Pitch } from '../model/pitch.ts';
 import { detune, normalizePitch, transpose } from '../model/pitch.ts';
 import type { Ticks } from '../model/time.ts';
-import { quantize } from '../model/time.ts';
+import { quantize, secondsToTicks, ticksToSeconds } from '../model/time.ts';
 
 export class EditError extends Error {}
 
@@ -552,4 +552,75 @@ export function setLoopEnabled(project: Project, enabled: boolean): Project {
 /** 조성. 렌더에는 영향이 없고 피아노롤 스케일 표시와 AI 힌트에 쓰인다 */
 export function setKey(project: Project, key: MusicalKey | null): Project {
   return { ...project, key };
+}
+
+// --- 오토메이션 ---------------------------------------------------------------
+
+/** 트랙의 볼륨 레인을 통째로 바꾼다 — 페이드인·아웃, 손으로 그린 곡선이 이걸 쓴다 */
+export function setVolumeAutomation(
+  project: Project,
+  trackId: TrackId,
+  points: readonly AutomationPoint[],
+): Project {
+  const sorted = [...points].sort((a, b) => a.tick - b.tick);
+  return updateTrack(project, trackId, { automation: [{ target: 'volume', points: sorted }] });
+}
+
+/** 트랙에서 볼륨 오토메이션을 지운다 — 다시 예전과 같은 소리로 돌아간다 */
+export function clearVolumeAutomation(project: Project, trackId: TrackId): Project {
+  return updateTrack(project, trackId, { automation: [] });
+}
+
+export interface SidechainDuckOptions {
+  /** 눌리는 깊이. 0(안 눌림)~1(무음까지) */
+  depth: number;
+  /** 트리거부터 최저점까지 걸리는 시간 */
+  attackMs?: number;
+  /** 최저점부터 원래 크기로 돌아오는 시간 */
+  releaseMs?: number;
+}
+
+/**
+ * 사이드체인 덕킹 — "킥에 맞춰 패드·베이스가 눌리는 것" (`SONGCRAFT.md`).
+ *
+ * 실제 오디오를 분석해 반응하는 사이드체인 컴프레서를 새로 만들지 않는다.
+ * 트리거 트랙(보통 킥)의 노트온 시각마다 눌렸다 돌아오는 볼륨 곡선을
+ * **미리 계산해** 대상 트랙의 볼륨 오토메이션으로 굳힌다 — 곡이 정해지면
+ * 결과도 정해지므로 미리듣기와 내보내기가 항상 같다 (`plan.md` 5-2).
+ *
+ * **대상 트랙의 기존 볼륨 오토메이션을 통째로 덮어쓴다.** 손으로 그린 페이드와
+ * 합성하는 것은 별도 스코프다 — 지금은 "이 트랙은 이 트리거로 덕킹된다" 하나만
+ * 표현한다.
+ */
+export function applySidechainDuck(
+  project: Project,
+  triggerTrackId: TrackId,
+  targetTrackId: TrackId,
+  options: SidechainDuckOptions,
+): Project {
+  const trigger = project.tracks.find((t) => t.id === triggerTrackId);
+  if (!trigger) throw new EditError(`트랙을 찾을 수 없다: ${triggerTrackId}`);
+  if (!project.tracks.some((t) => t.id === targetTrackId)) {
+    throw new EditError(`트랙을 찾을 수 없다: ${targetTrackId}`);
+  }
+
+  const depth = Math.max(0, Math.min(1, options.depth));
+  const attackMs = Math.max(0, options.attackMs ?? 30);
+  const releaseMs = Math.max(0, options.releaseMs ?? 120);
+
+  const triggerTicks: Ticks[] = [];
+  for (const clip of trigger.clips) {
+    for (const note of clip.notes) triggerTicks.push(clip.startTick + note.startTick);
+  }
+  triggerTicks.sort((a, b) => a - b);
+
+  const points: AutomationPoint[] = [];
+  for (const tick of triggerTicks) {
+    const tSec = ticksToSeconds(tick, project.tempo);
+    const dipTick = secondsToTicks(tSec + attackMs / 1000, project.tempo);
+    const releaseTick = secondsToTicks(tSec + (attackMs + releaseMs) / 1000, project.tempo);
+    points.push({ tick, value: 1 }, { tick: dipTick, value: 1 - depth }, { tick: releaseTick, value: 1 });
+  }
+
+  return setVolumeAutomation(project, targetTrackId, points);
 }

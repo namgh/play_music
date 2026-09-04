@@ -30,6 +30,7 @@ import type { ScheduledClick, ScheduledNote } from './scheduler.ts';
 import type { InstrumentDefinition, ParamValue } from '../instruments/types.ts';
 import { instrumentParams, resolveInstrument } from '../instruments/resolve.ts';
 import type { ResolvedInstrument } from '../instruments/types.ts';
+import { scheduleGainAutomation, volumeLane } from './automation.ts';
 import {
   curveToParams, noteOffFields, toFreeCurve, variationSeed, WASM_PARAM_ORDER,
 } from './voice/wasmEngine.ts';
@@ -232,8 +233,28 @@ export class WorkletRenderer implements AudioRenderer {
   play(fromTick: Ticks = 0): void {
     if (!this.project) throw new WorkletRendererError('setProject 가 먼저 호출돼야 한다');
     this.stop();
+    const anchorTime = this.ctx.currentTime;
     this.scheduler.start(this.project, fromTick);
     this.pumpTimer = setInterval(() => this.scheduler.pump(), PUMP_INTERVAL_MS);
+    this.scheduleTrackAutomation(fromTick, anchorTime);
+  }
+
+  /**
+   * 볼륨 오토메이션을 재생 헤드 위치부터 오디오 클럭에 예약한다.
+   * **곡 전체를 이 시점에 한 번에 예약한다** — 음과 달리 룩어헤드가 필요 없다.
+   * 값-시간 곡선은 재생을 시작하는 순간 이미 전부 정해져 있기 때문이다.
+   */
+  private scheduleTrackAutomation(anchorTick: Ticks, anchorTimeSec: number): void {
+    if (!this.project) return;
+    for (const track of this.project.tracks) {
+      const runtime = this.tracks.get(track.id);
+      const lane = volumeLane(track);
+      if (!runtime || !lane) continue;
+      scheduleGainAutomation(
+        runtime.gainNode.gain, lane.points, this.project.tempo,
+        track.gain * runtime.instrument.baseLevel, anchorTick, anchorTimeSec,
+      );
+    }
   }
 
   /**

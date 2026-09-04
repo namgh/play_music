@@ -39,6 +39,7 @@ import type { VoiceType } from '../instruments/types.ts';
 import { buildEffectChain } from './effectGraph.ts';
 import { scheduleClick } from './metronome.ts';
 import type { EffectChain } from './effectGraph.ts';
+import { scheduleGainAutomation, volumeLane } from './automation.ts';
 
 /** 타이머 주기. 룩어헤드보다 충분히 짧아야 한다 */
 const PUMP_INTERVAL_MS = 25;
@@ -223,9 +224,19 @@ export class BufferRenderer implements AudioRenderer {
   play(fromTick: Ticks = 0): void {
     if (!this.project) throw new Error('setProject 가 먼저 호출돼야 한다');
     this.stop();
+    const anchorTime = this.ctx.currentTime;
     this.scheduler.setProject(this.project);
     this.scheduler.start(this.project, fromTick);
     this.pumpTimer = setInterval(() => this.scheduler.pump(), PUMP_INTERVAL_MS);
+    for (const track of this.project.tracks) {
+      const runtime = this.tracks.get(track.id);
+      const lane = volumeLane(track);
+      if (!runtime || !lane) continue;
+      scheduleGainAutomation(
+        runtime.gainNode.gain, lane.points, this.project.tempo,
+        track.gain * runtime.instrument.baseLevel, fromTick, anchorTime,
+      );
+    }
   }
 
   stop(): void {

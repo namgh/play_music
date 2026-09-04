@@ -20,6 +20,7 @@ import { pitchToHz } from '../model/pitch.ts';
 import { applyLegato, applySwing, collectNoteEvents, legatoLookup } from './scheduler.ts';
 import type { InstrumentDefinition } from '../instruments/types.ts';
 import { instrumentParams, resolveInstrument } from '../instruments/resolve.ts';
+import { scheduleGainAutomation, volumeLane } from './automation.ts';
 import {
   curveToParams, noteOffFields, toFreeCurve, variationSeed, WASM_PARAM_ORDER,
 } from './voice/wasmEngine.ts';
@@ -73,6 +74,10 @@ export async function renderOfflineWithWorklet(
     const node = new AudioWorkletNode(offline, 'ks-string', { outputChannelCount: [2] });
     const gain = offline.createGain();
     gain.gain.value = track.gain * instrument.baseLevel;
+    // 내보내기는 항상 곡 처음(틱 0 = 오프라인 클럭 0초)부터 렌더한다 — 재생의
+    // "재생 헤드 위치에서 예약" 과 같은 함수를 앵커만 0으로 줘서 그대로 쓴다
+    const lane = volumeLane(track);
+    if (lane) scheduleGainAutomation(gain.gain, lane.points, project.tempo, track.gain * instrument.baseLevel, 0, 0);
     const pan = offline.createStereoPanner();
     pan.pan.value = track.pan;
     const effects = buildEffectChain(offline, track.effects);

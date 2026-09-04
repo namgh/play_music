@@ -127,6 +127,28 @@ export interface EffectSpec {
   params: Record<string, number | string | boolean>;
 }
 
+/**
+ * 오토메이션 점 하나. **곡 시작 기준 틱** — 클립이 아니라 트랙에 붙는다
+ * (`ROADMAP.md` P4: "다음에 손대면 좋을 순서" 2번, `SONGCRAFT.md` 1번).
+ *
+ * 페이드인·아웃, 프리코러스 상승감, 사이드체인 덕킹이 전부 이 하나의 표현으로
+ * 풀린다 — 덕킹도 결국 "킥이 칠 때마다 짧게 눌렸다 돌아오는" 값-시간 곡선이다.
+ * 실시간 사이드체인 컴프레서(오디오를 분석해 반응)를 새로 만들지 않고, **미리
+ * 계산해 둔 곡선**으로 대신한다 — 그래야 미리듣기와 내보내기가 항상 일치한다
+ * (`plan.md` 5-2).
+ */
+export interface AutomationPoint {
+  tick: Ticks;
+  /** 0~1. `target` 에 따라 다르게 읽힌다 — `volume` 은 트랙 게인에 곱해지는 배율 */
+  value: number;
+}
+
+export interface AutomationLane {
+  target: 'volume';
+  /** 틱 오름차순. 점 사이는 직선 보간, 양 끝 밖은 마지막 값을 유지한다 */
+  points: AutomationPoint[];
+}
+
 export interface Track {
   id: TrackId;
   name: string;
@@ -148,6 +170,8 @@ export interface Track {
   /** 표시용 토큰. 색값을 직접 넣지 않는다 — 테마가 바뀌면 저장된 프로젝트가 깨진다 */
   color: string;
   effects: EffectSpec[];
+  /** 비어 있으면 예전과 같은 소리 — 자동으로 켜지는 트랙이 없다 */
+  automation: AutomationLane[];
   clips: Clip[];
 }
 

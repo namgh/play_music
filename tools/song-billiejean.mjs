@@ -51,6 +51,7 @@ const { reportClipping } = await import(R('../src/audio/headroom.ts'));
 const { createEffect } = await import(R('../src/audio/effects.ts'));
 const { integratedLufs, truePeakDbfs } = await import(R('../src/audio/quality.ts'));
 const { resolveInstrument } = await import(R('../src/instruments/resolve.ts'));
+const { applySidechainDuck, setVolumeAutomation } = await import(R('../src/editor/edits.ts'));
 
 const rateArg = process.argv.indexOf('--rate');
 const SAMPLE_RATE = rateArg >= 0 ? Number(process.argv[rateArg + 1]) : 48000;
@@ -148,6 +149,9 @@ function put(clip, beat, lengthBeats, midi, velocity = 0.8) {
 const putChord = (clip, beat, len, midis, vel = 0.7) =>
   midis.forEach((m) => put(clip, beat, len, m, vel));
 
+/** `makeTrack` 이 클립을 돌려주므로, 트랙 id 가 필요할 땐 이걸로 거슬러 올라간다 */
+const trackOf = (project, clip) => project.tracks.find((t) => t.clips.includes(clip));
+
 const reverb = (mix, decaySec, dampingHz) => {
   const e = createEffect('reverb');
   e.params.mix = mix;
@@ -175,7 +179,7 @@ const eq = (lowGainDb, midGainDb, highGainDb, midHz = 1000) => {
 // ---------------------------------------------------------------------------
 
 function build() {
-  const p = createEmptyProject('데모 6 — 80년대 펑크 팝');
+  let p = createEmptyProject('데모 6 — 80년대 펑크 팝');
   p.tempo.bpm = 117;
   p.lengthBars = BARS;
   p.key = { tonic: 'F#', mode: 'minor' };
@@ -226,8 +230,6 @@ function build() {
   });
 
   gap('딜레이', '리드·기타에 거는 8분 딜레이 — 이 시대 사운드의 기본', '없음. 리버브로만 공간을 만듦');
-  gap('사이드체인 덕킹', '킥에 맞춰 패드·베이스가 눌리는 것', '없음. 세기를 미리 낮춰 두는 것으로 흉내');
-  gap('볼륨 오토메이션', '아웃트로 페이드아웃, 구간별 편성 변화', '없음. 음을 넣고 빼는 것으로만 전개');
 
   // -----------------------------------------------------------------------
   // 구간. **편성이 거의 안 변하는 곡**이라 오토메이션 부재가 특히 크게 걸린다
@@ -307,6 +309,28 @@ function build() {
       }
     }
   }
+
+  // --- 오토메이션 — 킥에 맞춘 덕킹 + 아웃트로 페이드 -------------------------
+  //
+  // `ROADMAP.md` 항목 2. 킥 노트온마다 미리 계산한 볼륨 곡선을 베이스·서브·패드에
+  // 굳힌다 — 재생 중 오디오를 분석하는 컴프레서가 아니라서 결과가 항상 같다.
+  const kickId = trackOf(p, kick).id;
+  p = applySidechainDuck(p, kickId, trackOf(p, bass).id, { depth: 0.35, attackMs: 15, releaseMs: 130 });
+  p = applySidechainDuck(p, kickId, trackOf(p, sub).id, { depth: 0.45, attackMs: 15, releaseMs: 160 });
+  p = applySidechainDuck(p, kickId, trackOf(p, pad).id, { depth: 0.5, attackMs: 20, releaseMs: 220 });
+
+  // 아웃트로(22~24마디)에 걸쳐 서서히 뺀다. 덕킹이 이미 걸린 세 트랙은 여기서
+  // 안 건드린다 — 오토메이션 레인 하나가 target 하나만 표현하므로, 지금은
+  // 트랙 하나에 페이드와 덕킹을 같이 얹는 것을 다음 스코프로 미룬다
+  const outroStartTick = 22 * 4 * PPQ;
+  const songEndTick = BARS * 4 * PPQ;
+  for (const c of [kick, snare, hat, open, shaker, tom, crash, gtr, rhodes, lead]) {
+    p = setVolumeAutomation(p, trackOf(p, c).id, [
+      { tick: outroStartTick, value: 1 },
+      { tick: songEndTick, value: 0.12 },
+    ]);
+  }
+
   return p;
 }
 

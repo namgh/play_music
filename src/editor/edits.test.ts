@@ -16,7 +16,7 @@ import { isPitchEdited } from '../model/project.ts';
 import type { Project } from '../model/project.ts';
 import { History } from './history.ts';
 import {
-  addClip, addNote, addTrack, copyNotes, deleteClip, deleteNotes, deleteTrack, duplicateClip, duplicateNotes, EditError, findNote, moveClip, moveNotes, moveNotesToTrack, nudgeCents, pasteNotes, quantizeNotes, resizeClip, resizeNotes, setCents, setKey, setLengthBars, setLoop, setLoopEnabled, setPitchCurve, setTempo, setVelocity, updateTrack,
+  addClip, addNote, addTrack, applySidechainDuck, clearVolumeAutomation, copyNotes, deleteClip, deleteNotes, deleteTrack, duplicateClip, duplicateNotes, EditError, findNote, moveClip, moveNotes, moveNotesToTrack, nudgeCents, pasteNotes, quantizeNotes, resizeClip, resizeNotes, setCents, setKey, setLengthBars, setLoop, setLoopEnabled, setPitchCurve, setTempo, setVelocity, setVolumeAutomation, updateTrack,
 } from './edits.ts';
 
 function base(): Project {
@@ -575,4 +575,83 @@ test('같은 트랙으로 옮기면 아무 일도 없다', () => {
   project = added.project;
 
   assert.equal(moveNotesToTrack(project, [added.noteId], a.trackId), project);
+});
+
+// --- 오토메이션 --------------------------------------------------------------
+
+test('볼륨 오토메이션을 설정·해제한다', () => {
+  const project = base();
+  const trackId = project.tracks[0]!.id;
+
+  const withFade = setVolumeAutomation(project, trackId, [
+    { tick: 0, value: 0 },
+    { tick: 2 * PPQ, value: 1 },
+  ]);
+  assert.equal(withFade.tracks[0]!.automation.length, 1);
+  assert.equal(withFade.tracks[0]!.automation[0]!.target, 'volume');
+  assert.equal(withFade.tracks[0]!.automation[0]!.points.length, 2);
+  // 원본은 그대로다
+  assert.equal(project.tracks[0]!.automation.length, 0);
+
+  const cleared = clearVolumeAutomation(withFade, trackId);
+  assert.equal(cleared.tracks[0]!.automation.length, 0);
+});
+
+test('오토메이션 점은 틱 순서로 정렬된다', () => {
+  const project = base();
+  const trackId = project.tracks[0]!.id;
+  const withFade = setVolumeAutomation(project, trackId, [
+    { tick: PPQ, value: 1 },
+    { tick: 0, value: 0 },
+  ]);
+  assert.deepEqual(
+    withFade.tracks[0]!.automation[0]!.points.map((p) => p.tick),
+    [0, PPQ],
+  );
+});
+
+test('사이드체인 덕킹 — 트리거 트랙의 노트온마다 대상 트랙에 덕 곡선이 생긴다', () => {
+  let project = createEmptyProject('덕킹');
+  const kickAdd = addTrack(project, { name: '킥', instrumentId: 'kick' });
+  project = kickAdd.project;
+  const padAdd = addTrack(project, { name: '패드', instrumentId: 'synth-pad' });
+  project = padAdd.project;
+
+  const kickClip = addClip(project, { trackId: kickAdd.trackId, startTick: 0, lengthTick: 4 * PPQ });
+  project = kickClip.project;
+  // 4분음표 킥 두 번
+  project = addNote(project, {
+    clipId: kickClip.clipId, startTick: 0, lengthTick: PPQ / 4, midi: 36,
+  }).project;
+  project = addNote(project, {
+    clipId: kickClip.clipId, startTick: PPQ, lengthTick: PPQ / 4, midi: 36,
+  }).project;
+
+  const ducked = applySidechainDuck(project, kickAdd.trackId, padAdd.trackId, {
+    depth: 0.7, attackMs: 10, releaseMs: 100,
+  });
+
+  const points = ducked.tracks.find((t) => t.id === padAdd.trackId)!.automation[0]!.points;
+  // 트리거 두 개 × 점 세 개(정점·최저점·복귀)
+  assert.equal(points.length, 6);
+  // 틱 오름차순으로 저장돼 있다
+  for (let i = 1; i < points.length; i++) assert.ok(points[i]!.tick >= points[i - 1]!.tick);
+  // 첫 트리거 지점은 아직 안 눌린 상태(1)에서 시작해 최저점(1-depth)까지 내려간다
+  assert.equal(points[0]!.value, 1);
+  assert.ok(Math.abs(points[1]!.value - 0.3) < 1e-9);
+  // 킥 트랙은 건드리지 않는다
+  assert.equal(ducked.tracks.find((t) => t.id === kickAdd.trackId)!.automation.length, 0);
+});
+
+test('사이드체인 덕킹 — 없는 트랙이면 에러', () => {
+  const project = base();
+  const trackId = project.tracks[0]!.id;
+  assert.throws(
+    () => applySidechainDuck(project, 'trk_없음' as never, trackId, { depth: 0.5 }),
+    EditError,
+  );
+  assert.throws(
+    () => applySidechainDuck(project, trackId, 'trk_없음' as never, { depth: 0.5 }),
+    EditError,
+  );
 });
