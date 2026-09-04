@@ -4,10 +4,11 @@ export const definition: InstrumentDefinition = {
   id: 'tom-high',
   schemaVersion: 1,
   name: '하이 탐',
+  baseLevel: 0.96,
   category: '드럼',
   extends: 'drum-base',
   params: {
     drumKind: 4, drumDecaySec: 0.42, drumPitchDrop: 0.75, drumNoiseAmount: 0.12,
   },
-  range: { low: 50, high: 64 },
+  range: { low: 48, high: 66 },
 };
