@@ -210,8 +210,8 @@ function build() {
   const shaker = makeTrack(p, { name: '셰이커', instrumentId: 'shaker', gain: 0.16, pan: -0.3 });
   const tom = makeTrack(p, { name: '탐 (필인)', instrumentId: 'tom', gain: 0.42 });
 
-  gap('크래시 심벌', '구간이 바뀌는 자리의 크래시', 'hihat-open 으로 대용 (SONGCRAFT 2번과 같은 문제)');
-  const crash = makeTrack(p, { name: '크래시 (오픈햇 대용)', instrumentId: 'hihat-open', gain: 0.26 });
+  // 실제 크래시 심벌 악기(합성) — 하이햇(열림) 대용을 더 이상 안 쓴다
+  const crash = makeTrack(p, { name: '크래시', instrumentId: 'crash-cymbal', gain: 0.3, effects: [reverb(0.15, 1.6, 6000)] });
 
   // --- 저음 -------------------------------------------------------------
   const bass = makeTrack(p, {

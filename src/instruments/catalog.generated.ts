@@ -1,5 +1,5 @@
 /**
- * **자동 생성 — 손으로 고치지 말 것.** (악기 58개)
+ * **자동 생성 — 손으로 고치지 말 것.** (악기 60개)
  *
  * `npm run instruments:index` 가 `defs/` 폴더를 읽어 만든다.
  * 악기를 추가하려면 `defs/<계열>/<id>.ts` 를 만들고 이 명령을 돌린다.
@@ -61,10 +61,12 @@ export const INSTRUMENT_CATALOG: readonly CatalogEntry[] = [
   { id: 'harp', name: '하프', category: '줄', family: 'string', abstract: false, chunks: ['string'] },
   { id: 'rimshot', name: '림샷', category: '드럼', family: 'drum', abstract: false, chunks: ['drum'] },
   { id: 'bongo', name: '봉고', category: '드럼', family: 'drum', abstract: false, chunks: ['drum'] },
+  { id: 'brush-snare', name: '브러시 스네어', category: '드럼', family: 'drum', abstract: false, chunks: ['drum'] },
   { id: 'shaker', name: '셰이커', category: '드럼', family: 'drum', abstract: false, chunks: ['drum'] },
   { id: 'snare', name: '스네어', category: '드럼', family: 'drum', abstract: false, chunks: ['drum'] },
   { id: 'cowbell', name: '카우벨', category: '드럼', family: 'drum', abstract: false, chunks: ['drum'] },
   { id: 'conga', name: '콩가', category: '드럼', family: 'drum', abstract: false, chunks: ['drum'] },
+  { id: 'crash-cymbal', name: '크래시 심벌', category: '드럼', family: 'drum', abstract: false, chunks: ['drum'] },
   { id: 'clap', name: '클랩', category: '드럼', family: 'drum', abstract: false, chunks: ['drum'] },
   { id: 'kick', name: '킥', category: '드럼', family: 'drum', abstract: false, chunks: ['drum'] },
   { id: 'tom', name: '탐', category: '드럼', family: 'drum', abstract: false, chunks: ['drum'] },

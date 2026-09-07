@@ -82,9 +82,11 @@ export const GM_PROGRAM_INSTRUMENTS: readonly string[] = [
 export const GM_DRUM_INSTRUMENTS: Readonly<Record<number, string>> = {
   35: 'kick', 36: 'kick', 37: 'rimshot', 38: 'snare', 39: 'clap', 40: 'snare',
   41: 'tom-floor', 42: 'hihat', 43: 'tom-floor', 44: 'hihat', 45: 'tom',
-  46: 'hihat-open', 47: 'tom', 48: 'tom-high', 49: 'hihat-open', 50: 'tom-high',
-  51: 'hihat', 52: 'hihat-open', 53: 'cowbell', 54: 'tambourine', 55: 'hihat-open',
-  56: 'cowbell', 57: 'hihat-open', 58: 'shaker', 59: 'hihat',
+  46: 'hihat-open', 47: 'tom', 48: 'tom-high', 49: 'crash-cymbal', 50: 'tom-high',
+  // 51 라이드, 59 라이드2 — 라이드는 크래시와 다른 악기(짧게 끊기는 리듬 패턴)라
+  // 크래시가 생긴 지금도 hihat 으로 남겨 둔다 (다른 대용이 없다)
+  51: 'hihat', 52: 'crash-cymbal', 53: 'cowbell', 54: 'tambourine', 55: 'crash-cymbal',
+  56: 'cowbell', 57: 'crash-cymbal', 58: 'shaker', 59: 'hihat',
   60: 'bongo', 61: 'bongo', 62: 'conga', 63: 'conga', 64: 'conga',
   65: 'tom-high', 66: 'tom-high', 67: 'cowbell', 68: 'cowbell',
   69: 'shaker', 70: 'shaker', 71: 'shaker', 72: 'shaker', 73: 'shaker', 74: 'shaker',

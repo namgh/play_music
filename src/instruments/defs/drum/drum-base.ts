@@ -15,7 +15,10 @@ export const definition: InstrumentDefinition = {
       options: ['킥', '스네어', '하이햇(닫힘)', '하이햇(열림)', '탐', '클랩'],
     },
     drumDecaySec: {
-      type: 'float', min: 0.02, max: 2, default: 0.35,
+      // 엔진(`percussion.rs`)은 4초까지 받는다. 화면 상한을 2로 좁혀 뒀던 것은
+      // "북 종류"만 염두에 둔 값이라, 크래시 심벌처럼 2초 넘게 우는 금속판에는
+      // 안 맞았다 — 실효 범위(4)까지 열었다
+      type: 'float', min: 0.02, max: 4, default: 0.35,
       unit: 's', label: '길이', curve: 'log', group: '드럼',
     },
     drumPitchDrop: {
