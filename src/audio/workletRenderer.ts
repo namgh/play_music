@@ -31,6 +31,7 @@ import type { InstrumentDefinition, ParamValue } from '../instruments/types.ts';
 import { instrumentParams, resolveInstrument } from '../instruments/resolve.ts';
 import type { ResolvedInstrument } from '../instruments/types.ts';
 import { scheduleGainAutomation, volumeLane } from './automation.ts';
+import { expressionParams } from './articulation.ts';
 import {
   curveToParams, noteOffFields, toFreeCurve, variationSeed, WASM_PARAM_ORDER,
 } from './voice/wasmEngine.ts';
@@ -325,7 +326,9 @@ export class WorkletRenderer implements AudioRenderer {
       frame: Math.round(this.ctx.currentTime * this.ctx.sampleRate),
       freq: pitchToHz(note.pitch, this.project.tuning),
       velocity: note.velocity,
-      params: this.encodeParams(runtime.params, note.pitchCurve, runtime.voiceKind),
+      params: this.encodeParams(
+        runtime.params, note.pitchCurve, runtime.voiceKind, note.expression, runtime.instrument.voice,
+      ),
       gain: 1,
       curve: toFreeCurve(note.pitchCurve, AUDITION_SEC),
       seed: variationSeed(note.id),
@@ -395,9 +398,11 @@ export class WorkletRenderer implements AudioRenderer {
     params: Readonly<Record<string, ParamValue>>,
     curve: Note['pitchCurve'],
     voiceKind = 0,
+    expression?: Note['expression'],
+    voice = '',
   ): number[] {
     const merged: Record<string, number | string> = {
-      ...params, ...curveToParams(curve), voiceKind,
+      ...params, ...curveToParams(curve), ...expressionParams(voice, expression, params), voiceKind,
     };
     return WASM_PARAM_ORDER.map((key) => {
       const value = merged[key];
@@ -414,7 +419,9 @@ export class WorkletRenderer implements AudioRenderer {
       frame: Math.round(atTime * this.ctx.sampleRate),
       freq: pitchToHz(event.note.pitch, this.project.tuning),
       velocity: event.note.velocity,
-      params: this.encodeParams(runtime.params, event.pitchCurve, runtime.voiceKind),
+      params: this.encodeParams(
+        runtime.params, event.pitchCurve, runtime.voiceKind, event.note.expression, runtime.instrument.voice,
+      ),
       gain: 1,
       // 사용자가 그린 자유곡선. 있으면 글라이드·비브라토를 **대신한다**
       curve: toFreeCurve(event.pitchCurve, durationSec),

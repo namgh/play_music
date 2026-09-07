@@ -40,6 +40,7 @@ import { buildEffectChain } from './effectGraph.ts';
 import { scheduleClick } from './metronome.ts';
 import type { EffectChain } from './effectGraph.ts';
 import { scheduleGainAutomation, volumeLane } from './automation.ts';
+import { expressionParams } from './articulation.ts';
 
 /** 타이머 주기. 룩어헤드보다 충분히 짧아야 한다 */
 const PUMP_INTERVAL_MS = 25;
@@ -276,7 +277,7 @@ export class BufferRenderer implements AudioRenderer {
     const runtime = this.tracks.get(trackId);
     if (!runtime || !this.project) return;
     const freqHz = pitchToHz(note.pitch, this.project.tuning);
-    this.startBuffer(runtime, freqHz, note.velocity, this.ctx.currentTime, MAX_NOTE_SEC, note.pitchCurve);
+    this.startBuffer(runtime, freqHz, note.velocity, this.ctx.currentTime, MAX_NOTE_SEC, note.pitchCurve, note.expression);
   }
 
   capabilitiesOf(instrumentId: string): InstrumentCapabilities {
@@ -336,7 +337,7 @@ export class BufferRenderer implements AudioRenderer {
           const freqHz = pitchToHz(event.note.pitch, project.tuning);
           const pcm = this.renderNoteWith(
             wasm, instrument.voice, params, freqHz, event.note.velocity,
-            event.pitchCurve, options.sampleRate,
+            event.pitchCurve, options.sampleRate, event.note.expression,
           );
           const buffer = offline.createBuffer(1, Math.max(1, pcm.length), options.sampleRate);
           buffer.getChannelData(0).set(pcm);
@@ -406,7 +407,7 @@ export class BufferRenderer implements AudioRenderer {
     const freqHz = pitchToHz(event.note.pitch, this.project.tuning);
     // 늦게 도착한 예약은 드롭하지 않고 즉시 발음한다 — 드롭하면 음이 사라진다
     const when = Math.max(atTime, this.ctx.currentTime);
-    this.startBuffer(runtime, freqHz, event.note.velocity, when, durationSec, event.pitchCurve);
+    this.startBuffer(runtime, freqHz, event.note.velocity, when, durationSec, event.pitchCurve, event.note.expression);
   }
 
   private startBuffer(
@@ -416,8 +417,9 @@ export class BufferRenderer implements AudioRenderer {
     when: number,
     _durationSec: number,
     curve: PitchCurve | null = null,
+    expression: Note['expression'] = null,
   ): void {
-    const buffer = this.buffered(runtime, freqHz, velocity, curve);
+    const buffer = this.buffered(runtime, freqHz, velocity, curve, expression);
     const source = this.ctx.createBufferSource() as AudioBufferSourceNode;
     source.buffer = buffer;
     source.connect(runtime.gainNode);
@@ -437,11 +439,12 @@ export class BufferRenderer implements AudioRenderer {
     freqHz: number,
     velocity: number,
     curve: PitchCurve | null,
+    expression: Note['expression'] = null,
   ): Float32Array {
     return this.renderNoteWith(
       runtime.wasm ?? this.wasm,
       runtime.instrument.voice, runtime.params as Record<string, number | string>,
-      freqHz, velocity, curve, this.ctx.sampleRate,
+      freqHz, velocity, curve, this.ctx.sampleRate, expression,
     );
   }
 
@@ -454,12 +457,14 @@ export class BufferRenderer implements AudioRenderer {
     velocity: number,
     curve: PitchCurve | null,
     sampleRate: number,
+    expression: Note['expression'] = null,
   ): Float32Array {
     if (wasm) {
       wasm.allOff();
       wasm.noteOn(freqHz, velocity, {
         ...params,
         ...curveToParams(curve),
+        ...expressionParams(voiceType, expression, params),
         voiceKind: voiceKindIndex(voiceType as VoiceType),
       });
       const total = Math.ceil(MAX_NOTE_SEC * sampleRate);
@@ -492,16 +497,19 @@ export class BufferRenderer implements AudioRenderer {
     freqHz: number,
     velocity: number,
     curve: PitchCurve | null,
+    expression: Note['expression'] = null,
   ): AudioBuffer {
     // 세기는 8단계로 뭉쳐 캐시 적중률을 올린다. 귀로 구분되지 않는 차이다
     const vq = Math.round(velocity * 8) / 8;
     // **곡선이 키에 들어가야 한다.** 없으면 글라이드가 다른 음이 같은 버퍼를 공유한다
     const curveKey = curve ? JSON.stringify(curveToParams(curve)) : '';
-    const key = `${runtime.paramsKey}|${freqHz.toFixed(4)}|${vq}|${curveKey}`;
+    // 뮤트도 마찬가지다 — 안 넣으면 같은 음정·세기의 뮤트 음과 안 뮤트 음이 버퍼를 공유한다
+    const muteKey = expression?.mute ? expression.mute.toFixed(3) : '';
+    const key = `${runtime.paramsKey}|${freqHz.toFixed(4)}|${vq}|${curveKey}|${muteKey}`;
     const hit = this.cache.get(key);
     if (hit) return hit;
 
-    const pcm = this.renderNote(runtime, freqHz, vq, curve);
+    const pcm = this.renderNote(runtime, freqHz, vq, curve, expression);
 
     const buffer = this.ctx.createBuffer(1, Math.max(1, pcm.length), this.ctx.sampleRate);
     // copyToChannel 대신 set — 버퍼 타입 제약을 피하고 복사도 한 번 줄인다

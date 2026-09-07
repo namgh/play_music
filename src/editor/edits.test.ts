@@ -16,7 +16,7 @@ import { isPitchEdited } from '../model/project.ts';
 import type { Project } from '../model/project.ts';
 import { History } from './history.ts';
 import {
-  addClip, addNote, addTrack, applyGateEnvelope, applySidechainDuck, clearVolumeAutomation, copyNotes, deleteClip, deleteNotes, deleteTrack, duplicateClip, duplicateNotes, EditError, findNote, moveClip, moveNotes, moveNotesToTrack, nudgeCents, pasteNotes, quantizeNotes, resizeClip, resizeNotes, setCents, setKey, setLengthBars, setLoop, setLoopEnabled, setPitchCurve, setTempo, setVelocity, setVolumeAutomation, updateTrack,
+  addClip, addNote, addTrack, applyGateEnvelope, applySidechainDuck, clearVolumeAutomation, copyNotes, deleteClip, deleteNotes, deleteTrack, duplicateClip, duplicateNotes, EditError, findNote, moveClip, moveNotes, moveNotesToTrack, nudgeCents, pasteNotes, quantizeNotes, resizeClip, resizeNotes, setCents, setKey, setLengthBars, setLoop, setLoopEnabled, setMute, setPitchCurve, setTempo, setVelocity, setVolumeAutomation, updateTrack,
 } from './edits.ts';
 
 function base(): Project {
@@ -684,4 +684,35 @@ test('게이트 — 노트온마다 열렸다가 hold+release 뒤 닫히고, 다
 test('게이트 — 없는 트랙이면 에러', () => {
   const project = base();
   assert.throws(() => applyGateEnvelope(project, 'trk_없음' as never, { holdMs: 50 }), EditError);
+});
+
+// --- 팜뮤트 --------------------------------------------------------------
+
+test('뮤트를 걸고 지운다', () => {
+  const project = base();
+  const noteId = project.tracks[0]!.clips[0]!.notes[0]!.id;
+
+  const muted = setMute(project, [noteId], 0.8);
+  assert.equal(findNote(muted, noteId)!.note.expression?.mute, 0.8);
+  // 원본은 그대로다
+  assert.equal(findNote(project, noteId)!.note.expression, null);
+
+  const cleared = setMute(muted, [noteId], 0);
+  assert.equal(findNote(cleared, noteId)!.note.expression, null);
+});
+
+test('뮤트 0 은 expression 자체를 null 로 되돌린다 — "0" 과 "안 켬" 을 저장에서 구분 안 함', () => {
+  const project = base();
+  const noteId = project.tracks[0]!.clips[0]!.notes[0]!.id;
+  const before = findNote(project, noteId)!.note;
+  const after = findNote(setMute(project, [noteId], 0), noteId)!.note;
+  // 이미 null 이면 그 음 자체는 손대지 않는다(참조 동일) — 굳이 새 객체를 안 만든다
+  assert.equal(after, before);
+});
+
+test('뮤트 값은 0~1 로 잘린다', () => {
+  const project = base();
+  const noteId = project.tracks[0]!.clips[0]!.notes[0]!.id;
+  assert.equal(findNote(setMute(project, [noteId], 5), noteId)!.note.expression?.mute, 1);
+  assert.equal(findNote(setMute(project, [noteId], -3), noteId)!.note.expression, null);
 });

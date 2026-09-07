@@ -145,6 +145,24 @@ export function setVelocity(project: Project, ids: readonly NoteId[], velocity: 
   return mapNotes(project, ids, (note) => ({ ...note, velocity: v }));
 }
 
+/**
+ * 팜뮤트 등 뮤트 주법의 세기 (`SONGCRAFT.md` 6번). 0 이면 `expression.mute` 자체를
+ * 지운다 — `null` 로 남기지 않으면 "뮤트 0"과 "뮤트를 안 켰다"가 저장 파일에서
+ * 구분이 안 돼 나중에 원인을 못 찾는다.
+ */
+export function setMute(project: Project, ids: readonly NoteId[], mute: number): Project {
+  const m = Math.min(1, Math.max(0, mute));
+  return mapNotes(project, ids, (note) => {
+    if (m === 0) {
+      if (!note.expression?.mute) return note;
+      const { mute: _drop, ...rest } = note.expression;
+      const expression = Object.keys(rest).length === 0 ? null : rest;
+      return { ...note, expression };
+    }
+    return { ...note, expression: { ...note.expression, mute: m } };
+  });
+}
+
 // --- 정밀 음정 편집 (차별점 ①) ------------------------------------------------
 
 /** 센트 미세조정을 절대값으로 지정한다 (다이얼) */

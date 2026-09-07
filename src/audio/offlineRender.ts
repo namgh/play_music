@@ -29,6 +29,7 @@ import type { Rng, Voice } from './voice/types.ts';
 import type { WasmVoiceEngine } from './voice/wasmEngine.ts';
 import { curveToParams, toFreeCurve, variationSeed } from './voice/wasmEngine.ts';
 import { projectLengthTicks } from '../model/factory.ts';
+import { expressionParams } from './articulation.ts';
 
 const BLOCK = 128; // AudioWorklet 블록 크기와 같게 — 블록 경계 효과까지 같이 본다
 const MAX_VOICES = 32;
@@ -165,6 +166,7 @@ export function renderProjectOffline(
           {
             ...setup.params,
             ...curveToParams(event.pitchCurve),
+            ...expressionParams(setup.voiceType, event.note.expression, setup.params),
             voiceKind: voiceKindIndex(setup.voiceType as VoiceType),
           },
           setup.gain,
@@ -230,7 +232,10 @@ export function renderProjectOffline(
     }
     slot.gain = setup.gain;
     slot.trackId = event.trackId;
-    slot.voice.noteOn(pitchToHz(event.note.pitch, project.tuning), event.note.velocity, setup.params);
+    const noteParams = event.note.expression?.mute
+      ? { ...setup.params, ...expressionParams(setup.voiceType, event.note.expression, setup.params) }
+      : setup.params;
+    slot.voice.noteOn(pitchToHz(event.note.pitch, project.tuning), event.note.velocity, noteParams);
   }
 
   renderTo(cursor, totalSamples);

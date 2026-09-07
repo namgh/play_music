@@ -135,7 +135,7 @@ function makeTrack(project, { name, instrumentId, toneId, gain = 0.34, pan = 0, 
   return clip;
 }
 
-function put(clip, beat, lengthBeats, midi, velocity = 0.8) {
+function put(clip, beat, lengthBeats, midi, velocity = 0.8, mute) {
   const note = createNote({
     startTick: Math.round(beat * BEAT),
     lengthTick: Math.max(1, Math.round(lengthBeats * BEAT)),
@@ -143,11 +143,12 @@ function put(clip, beat, lengthBeats, midi, velocity = 0.8) {
   });
   note.id = `not_${clip.id.slice(4, 10)}-${clip.notes.length}`;
   note.velocity = velocity;
+  if (mute !== undefined) note.expression = { mute };
   clip.notes.push(note);
 }
 
-const putChord = (clip, beat, len, midis, vel = 0.7) =>
-  midis.forEach((m) => put(clip, beat, len, m, vel));
+const putChord = (clip, beat, len, midis, vel = 0.7, mute) =>
+  midis.forEach((m) => put(clip, beat, len, m, vel, mute));
 
 /** `makeTrack` 이 클립을 돌려주므로, 트랙 id 가 필요할 땐 이걸로 거슬러 올라간다 */
 const trackOf = (project, clip) => project.tracks.find((t) => t.clips.includes(clip));
@@ -220,7 +221,6 @@ function build() {
   const sub = makeTrack(p, { name: '서브', instrumentId: 'sub-bass', gain: 0.3 });
 
   // --- 화성 -------------------------------------------------------------
-  gap('뮤트 기타 (팜뮤트)', '16분 뒷박을 짧게 긁는 주법', '음 길이를 0.1박으로 줄여 흉내 — 톤은 그대로라 계속 같은 소리');
   // 8분음표 딜레이 — 117bpm 에서 256ms. 뒷박만 치는 리듬 기타라 살짝만 섞는다
   const gtr = makeTrack(p, {
     name: '뮤트 기타', instrumentId: 'electric-guitar', toneId: '클린', gain: 0.3, pan: -0.42,
@@ -295,11 +295,14 @@ function build() {
         put(sub, at, 3.6, step.root, 0.7);
       }
 
-      // 뮤트 기타 — 16분 뒷박만
+      // 뮤트 기타 — 16분 뒷박만. **팜뮤트는 음 길이가 아니라 진짜 뮤트 주법이다**
+      // (`applyGateEnvelope` 처럼 새 DSP 를 안 만들고 damping·sustainSec 를 밀어
+      // 쓴다 — `src/audio/articulation.ts`). 길이 자체는 이제 정상적인 16분음표라,
+      // 짧게 들리는 건 잘라서가 아니라 손이 줄을 눌러 죽인 소리이기 때문이다
       if (s.gtr) {
         for (let i = 0; i < 8; i += 1) {
           const beat = at + i * 0.5 + 0.25;
-          putChord(gtr, beat, 0.1, [c[0], c[1] ?? c[0]], i % 2 ? 0.34 : 0.44);
+          putChord(gtr, beat, 0.45, [c[0], c[1] ?? c[0]], i % 2 ? 0.34 : 0.44, 0.85);
         }
       }
 

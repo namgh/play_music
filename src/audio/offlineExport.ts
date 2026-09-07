@@ -21,6 +21,7 @@ import { applyLegato, applySwing, collectNoteEvents, legatoLookup } from './sche
 import type { InstrumentDefinition } from '../instruments/types.ts';
 import { instrumentParams, resolveInstrument } from '../instruments/resolve.ts';
 import { scheduleGainAutomation, volumeLane } from './automation.ts';
+import { expressionParams } from './articulation.ts';
 import {
   curveToParams, noteOffFields, toFreeCurve, variationSeed, WASM_PARAM_ORDER,
 } from './voice/wasmEngine.ts';
@@ -110,6 +111,7 @@ export async function renderOfflineWithWorklet(
       const merged: Record<string, number | string> = {
         ...params,
         ...curveToParams(event.pitchCurve),
+        ...expressionParams(instrument.voice, event.note.expression, params),
         voiceKind: voiceKindIndex(instrument.voice),
       };
       node.port.postMessage({

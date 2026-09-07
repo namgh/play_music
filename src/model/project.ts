@@ -82,6 +82,12 @@ export interface PitchCurve {
 export interface Expression {
   bowPressure?: CurvePoint[];
   breath?: CurvePoint[];
+  /**
+   * 팜뮤트 등 뮤트 주법의 세기. 0(안 뮤트)~1(완전 뮤트). 이 자리를 쓰는 첫
+   * 필드다 — 위 둘과 달리 곡선이 아니라 음 하나에 붙는 스칼라다.
+   * `waveguide-string` 계열에서만 뜻이 있다 (`src/audio/articulation.ts`)
+   */
+  mute?: number;
 }
 
 // ---------------------------------------------------------------------------
