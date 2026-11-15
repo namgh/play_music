@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>v5 09 악기</title>
+<link rel="stylesheet" href="base.css"><script src="../redesign-v4/lib.js"></script><script src="shell.js"></script>
+<style>
+  .nav{left:56px;top:52px;width:220px;height:848px;border-right:1px solid var(--line);padding:16px 10px}
+  .nav .seg span{padding:0 7px;white-space:nowrap}
+  .nav .g{font-size:11px;font-weight:600;color:var(--tx3);margin:16px 10px 4px;display:flex;justify-content:space-between}
+  .ws{left:276px;top:52px;width:800px;height:848px}
+  .cap{position:absolute;font-size:11px;color:var(--dt2)}
+  .cap b{color:var(--dt);font-weight:600}
+  .pk{position:absolute;height:26px;border-radius:13px;background:var(--y);color:#0E0E10;font-size:12px;font-weight:600;display:flex;align-items:center;padding:0 11px;white-space:nowrap}
+  .rack{position:absolute;left:0;top:452px;width:800px;height:396px;background:var(--d1);border-top:1px solid var(--dl2)}
+  .rk{position:absolute;left:16px;right:16px;display:flex;justify-content:space-between}
+  .rkh{position:absolute;left:16px;right:16px;display:flex;justify-content:space-between;font-size:12px;font-weight:600;color:var(--dt)}
+  .rkh span{font-weight:400;font-size:11px;color:var(--dt3)}
+  .side{left:1076px;top:52px;width:364px;height:848px;border-left:1px solid var(--line);padding:20px}
+  .tun{margin-top:14px;border-radius:12px;background:var(--d0);color:var(--dt);padding:16px}
+  .tun .k{font-size:11px;color:var(--dt3)}
+  .tun .big{font-size:48px;font-weight:700;letter-spacing:-1.4px;line-height:1;margin-top:8px}
+  .tun .hz{font-size:18px;font-weight:600;color:var(--y);margin-top:6px}
+  .tun .r{display:flex;justify-content:space-between;font-size:12px;color:var(--dt3);margin-top:10px}
+  .tun .r b{color:var(--dt);font-weight:600}
+  .why{margin-top:12px;border-radius:12px;background:var(--sub);padding:14px}
+  .why .t{font-size:13px;font-weight:600}
+  .why .r{display:flex;justify-content:space-between;align-items:baseline;margin-top:9px;font-size:12px;color:var(--tx2)}
+  .why .r b{font-size:14px;font-weight:600;color:var(--tx)}
+  .why .r b.bad{color:var(--rec)}
+  .why p{margin-top:10px;font-size:11.5px;line-height:1.6;color:var(--tx2)}
+</style></head>
+<body>
+<div class="pg" data-root id="root">
+  <div class="a nav" id="nav"></div>
+  <div class="a ws" id="ws"></div>
+  <div class="a side">
+    <div class="ttl"><i style="background:var(--c2)"></i>일렉 베이스</div><div class="st">물리 모델 줄 · 디지털 웨이브가이드 · 베이스 트랙</div>
+    <div class="tun"><div class="k">개방현 · 4번 줄</div><div class="big">E1</div><div class="hz">41.203 Hz</div>
+      <div class="r"><span>합성된 음정 측정</span><b>+0.1 ¢</b></div><div class="r"><span>줄 한 바퀴 지연 (48 kHz)</span><b>1164.95 샘플</b></div></div>
+    <div class="why"><div class="t">왜 지연을 소수점까지 쓰나</div>
+      <div class="r">A4 · 정확한 지연<b>109.09 샘플</b></div><div class="r">정수로 반올림하면<b class="bad">+1.44 ¢</b></div><div class="r">분수 지연을 쓰면<b>0.00 ¢</b></div>
+      <p>줄 길이를 정수 샘플로 자르면 높은 음일수록 음정이 틀어집니다. 이 악기는 모든 음에서 지연을 소수점까지 맞춥니다.</p></div>
+    <div class="sec">연주 기본값<span>음마다 바꿀 수 있음</span></div>
+    <div class="g2"><div class="fd"><small>이어 치기</small><b>80<em>ms</em></b></div><div class="fd"><small>시작 글라이드</small><b>0<em>¢</em></b></div>
+      <div class="fd"><small>팜뮤트</small><b>끔</b></div><div class="fd"><small>보이스</small><b>모노 · 레가토</b></div></div>
+    <div class="sec">프리셋</div>
+    <div style="display:flex;gap:6px"><span class="btn">핑거 · 기본</span><span class="btn">피크</span><span class="btn">슬랩</span><span class="btn">＋ 저장</span></div>
+  </div>
+</div>
+<script>
+  const root = $('#root');
+  shell(root, { rail: 'instrument', phase: ['part', '일부 구현'] });
+  const N = $('#nav');
+  el('div', 'seg', '<span class="on">줄</span><span>모달</span><span>신스</span><span>샘플러</span><span>드럼</span>', N);
+  [['베이스', 5, [['일렉 베이스', 1], ['5현 베이스'], ['콘트라베이스 피치카토'], ['서브 베이스']]], ['기타', 7, [['어쿠스틱 기타'], ['일렉 기타 (스트랫)'], ['일렉 기타 (레스폴)'], ['클래식 기타'], ['12현 기타']]],
+   ['뜯는 줄', 8, [['하프'], ['고토'], ['만돌린'], ['시타르'], ['우쿨렐레']]]].forEach(([g, n, it]) => { el('div', 'g', `<span>${g}</span><span>${n}</span>`, N);
+     it.forEach(([nm, on]) => el('div', 'li' + (on ? ' on' : ''), nm, N)); });
+  const W = $('#ws'), X1 = 70, X2 = 730, CY = 170, p = .18;
+  let paths = '';
+  for (let n = 1; n <= 10; n++) { const a = Math.abs(Math.sin(n * Math.PI * p)) / (n * n) * 640;
+    for (const sg of [1, -1]) { let d = ''; for (let k = 0; k <= 160; k++) { const x = X1 + (X2 - X1) * k / 160, y = CY + sg * a * Math.sin(n * Math.PI * k / 160) * .3; d += (k ? ' L' : 'M') + x.toFixed(1) + ' ' + y.toFixed(1); }
+      paths += `<path d="${d}" stroke="${n === 1 ? '#FFD60A' : '#EDEDF0'}" stroke-opacity="${n === 1 ? .9 : Math.max(.1, .5 - n * .04)}" stroke-width="${n === 1 ? 2 : 1.1}"/>`; } }
+  const px = X1 + (X2 - X1) * p; let bars = '';
+  for (let n = 1; n <= 24; n++) { const h = Math.abs(Math.sin(n * Math.PI * p)) / n * 92; bars += `<rect x="${70 + (n - 1) * 27.5}" y="${408 - h}" width="22" height="${h}" rx="2" fill="${n === 1 ? '#FFD60A' : 'rgba(237,237,240,' + (.5 - n * .015) + ')'}"/>`; }
+  at(el('div', '', `<svg width="800" height="452" fill="none"><line x1="${X1}" y1="${CY}" x2="${X2}" y2="${CY}" stroke="#2C2C33"/>${paths}
+    <rect x="${X1 - 8}" y="${CY - 58}" width="8" height="116" rx="2" fill="#2C2C33"/><rect x="${X2}" y="${CY - 58}" width="8" height="116" rx="2" fill="#2C2C33"/>
+    <line x1="${px}" y1="${CY - 90}" x2="${px}" y2="${CY + 70}" stroke="#FFD60A" stroke-width="1.5" stroke-dasharray="3 4"/><circle cx="${px}" cy="${CY}" r="7" fill="#FFD60A"/>
+    <line x1="40" y1="300" x2="760" y2="300" stroke="#202025"/>${bars}</svg>`, W), 0, 0).style.position = 'absolute';
+  at(el('div', 'cap', '<b>줄</b> · 뜯은 뒤 0.5초 동안의 모양을 겹쳐 그림', W), 18, 14);
+  at(el('div', 'cap', '끌어서 뜯는 위치를 바꿉니다', W), 600, 14);
+  at(el('div', 'cap', '너트', W), X1 - 20, CY + 66); at(el('div', 'cap', '브리지', W), X2 - 8, CY + 66);
+  at(el('div', 'cap', '<b>부분음</b> · 뜯는 위치에 따라 사는 배음', W), 40, 310);
+  at(el('div', 'pk', '여기를 뜯음 · 18 %', W), px - 60, CY - 122);
+  const R = at(el('div', 'rack', null, W), 0, 452);
+  at(el('div', 'rkh', '줄<span>물리 값 그대로 — 단위가 붙은 숫자</span>', R), 16, 16);
+  const r1 = at(el('div', 'rk', null, R), 16, 44);
+  [[.62, '줄 길이', '864 mm'], [.18, '뜯는 위치', '18 %'], [.2, '강성', '0.020'], [.3, '감쇠', '0.060'], [.5, '울림', '4.0 s'], [.36, '편광 차', '1.8 ¢']].forEach(([v, l, val]) => r1.insertAdjacentHTML('beforeend', knob5(v, 52, l, val, true)));
+  at(el('div', 'rkh', '몸통 · 앰프<span>캐비닛은 지금 필터 근사 — 실측 IR 은 에셋 확보 후</span>', R), 16, 206);
+  const r2 = at(el('div', 'rk', null, R), 16, 234);
+  [[.55, '뜯는 세기', '0.55'], [.4, '픽업 위치', '40 %'], [.62, '톤', '3.2 kHz'], [.3, '드라이브', '30 %'], [.5, '캐비닛', '필터'], [.7, '출력', '−3 dB']].forEach(([v, l, val]) => r2.insertAdjacentHTML('beforeend', knob5(v, 52, l, val, true)));
+</script>
+<script src="../redesign-v4/extract4.js"></script>
+</body></html>

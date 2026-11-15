@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>v5 08 브라우저</title>
+<link rel="stylesheet" href="base.css"><script src="../redesign-v4/lib.js"></script><script src="shell.js"></script>
+<style>
+  .nav{left:56px;top:52px;width:220px;height:848px;border-right:1px solid var(--line);padding:16px 10px}
+  .nav .g{font-size:11px;font-weight:600;color:var(--tx3);margin:18px 10px 6px}
+  .main{left:276px;top:52px;width:780px;height:848px;padding:20px 24px}
+  .search{height:44px;border-radius:12px;background:var(--sub);display:flex;align-items:center;gap:10px;padding:0 14px;font-size:14px;color:var(--tx)}
+  .search em{font-style:normal;color:var(--tx3);margin-left:auto;font-size:12px}
+  .flt{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
+  .flt span{height:28px;border-radius:14px;padding:0 11px;font-size:12px;font-weight:500;display:flex;align-items:center;gap:6px;background:var(--sub);color:var(--tx2)}
+  .flt span.on{background:var(--tx);color:#fff}
+  .hd{display:flex;font-size:11px;color:var(--tx3);font-weight:500;margin-top:18px;padding:0 10px 8px;border-bottom:1px solid var(--line)}
+  .rw{display:flex;align-items:center;height:48px;padding:0 10px;border-bottom:1px solid var(--line);font-size:13px}
+  .rw.on{background:var(--sub);border-radius:10px;border-color:transparent}
+  .rw .pl{width:28px;height:28px;border-radius:50%;background:var(--sub2);flex:none}
+  .rw.on .pl{background:var(--tx);color:#fff}
+  .rw .nm{width:220px;margin-left:12px;font-weight:600}
+  .rw .nm small{display:block;font-weight:400;font-size:11px;color:var(--tx3);margin-top:1px}
+  .rw .wv{width:180px;height:24px;position:relative;margin-right:20px;overflow:hidden}
+  .rw .wv i{position:absolute;bottom:2px;width:2px;border-radius:1px;background:var(--tx3)}
+  .rw.on .wv i{background:var(--tx)}
+  .rw .c{width:70px;color:var(--tx2);font-size:12px}
+  .rw .st{margin-left:auto;color:var(--tx3)}
+  .side{left:1056px;top:52px;width:384px;height:848px;border-left:1px solid var(--line);padding:20px}
+  .pv{margin-top:14px;height:150px;border-radius:12px;background:var(--d0);position:relative;overflow:hidden}
+  .pv i{position:absolute;width:2px;border-radius:1px;background:var(--c2)}
+  .pv .ph{left:120px;top:0;bottom:0}
+  .act{display:flex;gap:6px;margin-top:16px}
+</style></head>
+<body>
+<div class="pg" data-root id="root">
+  <div class="a nav" id="nav"></div>
+  <div class="a main" id="main">
+    <div class="search">${ICON.search}<span id="q"></span><em>자연어 · 태그 · 이름</em></div>
+    <div class="flt"><span class="on">베이스 ×</span><span class="on">A minor 에 맞춤 ×</span><span class="on">92 BPM ±6 ×</span><span>어두운</span><span>펑크</span><span>로파이</span><span>시네마틱</span><span>짧은 음</span><span>+ 필터</span></div>
+    <div class="hd"><span style="width:40px"></span><span style="width:220px">이름</span><span style="width:200px">미리 보기</span><span style="width:70px">조성</span><span style="width:70px">템포</span><span style="margin-left:auto">종류</span></div>
+    <div id="res"></div>
+  </div>
+  <div class="a side">
+    <div class="ttl"><i style="background:var(--c2)"></i>Dusk Funk Bass</div><div class="st">패치 · 일렉 베이스(물리 모델 줄) + 컴프 · 앰프</div>
+    <div class="pv" id="pv"></div>
+    <div class="row" style="margin-top:10px"><span class="lb" style="width:auto">곡 템포·조성에 맞춰 듣기</span><span style="margin-left:auto" class="seg"><span class="on">켬</span><span>끔</span></span></div>
+    <div class="sec">이 패치가 바꾸는 것</div>
+    <div class="g2"><div class="fd"><small>악기</small><b>일렉 베이스</b></div><div class="fd"><small>뜯는 위치</small><b>12<em>%</em></b></div>
+      <div class="fd"><small>이펙트</small><b>컴프 · 앰프</b></div><div class="fd"><small>스마트 컨트롤</small><b>베이스 8개</b></div></div>
+    <div class="sec">태그</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap"><span class="chip">베이스</span><span class="chip">펑크</span><span class="chip">어두운</span><span class="chip">핑거</span><span class="chip">짧은 음</span></div>
+    <div class="act"><span class="btn pri">베이스 트랙에 불러오기</span><span class="btn">새 트랙으로</span><span class="btn">★</span></div>
+    <div class="note" style="margin-top:14px">패치는 이 기기에서 합성되는 설정 묶음이라 받을 게 없습니다. 루프·원샷(녹음 샘플)은 사운드 팩을 받아야 합니다.</div>
+  </div>
+</div>
+<script>
+  const root = $('#root');
+  shell(root, { rail: 'library', phase: ['plan', '설계만'] });
+  document.querySelector('.search').innerHTML = ICON.search(16) + '<span>어두운 펑크 베이스, 짧게 끊기는</span><em>자연어 · 태그 · 이름</em>';
+  const N = $('#nav');
+  [['전체', 1], ['악기 · 패치'], ['루프'], ['원샷'], ['플러그인 프리셋'], ['드럼 키트']].forEach(([n, on]) => el('div', 'li' + (on ? ' on' : ''), n, N));
+  el('div', 'g', '내 것', N); [['즐겨찾기', '24'], ['내 패치', '7'], ['내 샘플 폴더', '312']].forEach(([n, c]) => el('div', 'li', `${n}<span>${c}</span>`, N));
+  el('div', 'g', '스마트 검색', N); [['92 BPM 펑크 루프'], ['영화 같은 패드']].forEach(([n]) => el('div', 'li', n, N));
+  el('div', 'g', '사운드 팩', N); [['기본 팩', '설치됨'], ['드럼 실측 샘플', '받기'], ['보컬 원샷', '받기']].forEach(([n, c]) => el('div', 'li', `${n}<span>${c}</span>`, N));
+  const R = $('#res');
+  [['Dusk Funk Bass', '패치 · 일렉 베이스', 'Am', '—', '패치', 1], ['Rubber Slap', '패치 · 5현 베이스', '—', '—', '패치'], ['Night Walk 92', '루프 · 베이스 · 4마디', 'Am', '92', '루프'],
+   ['Muted Pluck Line', '루프 · 베이스 · 2마디', 'Dm', '90', '루프'], ['Upright Pizz', '패치 · 콘트라베이스', '—', '—', '패치'], ['Sub Pressure', '패치 · 서브 베이스(신스)', '—', '—', '패치'],
+   ['Ghost Notes 96', '루프 · 베이스 · 1마디', 'Am', '96', '루프'], ['Low Hit', '원샷 · 베이스 슬라이드', 'A', '—', '원샷'], ['Fingerstyle Groove', '루프 · 베이스 · 4마디', 'Em', '88', '루프'],
+   ['Pick Drive', '패치 · 일렉 베이스 + 드라이브', '—', '—', '패치'], ['Chorus Fretless', '패치 · 프렛리스', '—', '—', '패치'], ['Bounce 94', '루프 · 베이스 · 2마디', 'Am', '94', '루프']]
+    .forEach(([n, s, k, b, t, on], i) => { const r = el('div', 'rw' + (on ? ' on' : ''), `<span class="pl ic">${ICON.play(10)}</span><span class="nm">${n}<small>${s}</small></span><span class="wv"></span><span class="c">${k}</span><span class="c">${b}</span><span class="st">${t}</span>`, R);
+      const g = rng(i + 3), w = r.querySelector('.wv'); for (let k2 = 0; k2 < 50; k2++) { const h = 3 + Math.abs(Math.sin(k2 * .5 + i)) * 18 * (.4 + g() * .6); at(el('i', '', null, w), k2 * 4, 22 - h, null, h); } });
+  const P = $('#pv'); for (let k = 0; k < 160; k++) { const h = 6 + Math.abs(Math.sin(k * .21) * Math.sin(k * .05 + 1)) * 110; at(el('i', '', null, P), 6 + k * 2.2, 75 - h / 2, null, h); }
+  at(el('div', 'ph', null, P), 120, 0, null, 150);
+</script>
+<script src="../redesign-v4/extract4.js"></script>
+</body></html>

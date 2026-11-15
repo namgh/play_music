@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>v5 10 스마트 컨트롤 · 아르페지에이터</title>
+<link rel="stylesheet" href="base.css"><script src="../redesign-v4/lib.js"></script><script src="shell.js"></script>
+<style>
+  .pan{left:56px;top:52px;width:1000px;height:420px;padding:20px 24px;border-bottom:1px solid var(--line)}
+  .mk{position:absolute;width:200px;display:flex;flex-direction:column;align-items:center;padding:12px 0;border-radius:14px}
+  .mk.on{background:var(--sub)}
+  .mk .kn b{font-size:18px}
+  .mk .kn span{font-size:13px;color:var(--tx);font-weight:600}
+  .mk em{font-style:normal;font-size:11px;color:var(--tx3);margin-top:3px}
+  .map{left:56px;top:472px;width:1000px;height:428px}
+  .mh{position:absolute;left:24px;top:18px;font-size:13px;font-weight:600;color:var(--dt)}
+  .mh span{font-weight:400;color:var(--dt3);font-size:12px;margin-left:6px}
+  .mr{position:absolute;left:24px;right:24px;height:64px;border-top:1px solid var(--dl)}
+  .mr .n{position:absolute;left:0;top:12px;font-size:13px;font-weight:600;color:var(--dt)}
+  .mr .u{position:absolute;left:0;top:32px;font-size:11px;color:var(--dt3)}
+  .mr .rg{position:absolute;left:280px;top:24px;width:380px;height:4px;border-radius:2px;background:var(--dl2)}
+  .mr .rg i{position:absolute;top:0;bottom:0;left:0;border-radius:2px;background:rgba(255,214,10,.55)}
+  .mr .rg b{position:absolute;top:-6px;width:16px;height:16px;border-radius:50%;background:var(--y);border:2px solid var(--d0)}
+  .mr .ft{position:absolute;left:280px;top:36px;width:380px;display:flex;justify-content:space-between;font-size:11px;color:var(--dt3)}
+  .mr .cur{position:absolute;left:690px;top:14px;font-size:20px;font-weight:600;color:var(--y)}
+  .mr .gr{position:absolute;right:60px;top:12px}
+  .mr .cv{position:absolute;right:0;top:20px}
+  .side{left:1056px;top:52px;width:384px;height:848px;border-left:1px solid var(--line);padding:20px}
+  .arp{margin-top:12px;height:92px;border-radius:10px;background:var(--d0);position:relative;overflow:hidden}
+  .arp i{position:absolute;height:8px;border-radius:2px;background:var(--c4)}
+  .lr{display:flex;align-items:center;gap:10px;margin-top:10px;height:40px;border-radius:9px;border:1.5px dashed var(--tx3);padding:0 12px;font-size:12px;color:var(--tx2)}
+  .lr i{width:8px;height:8px;border-radius:50%;background:var(--rec)}
+</style></head>
+<body>
+<div class="pg" data-root id="root">
+  <div class="a pan" id="pan"><div class="ttl"><i style="background:var(--c2)"></i>베이스 — 손잡이 8개<span style="margin-left:10px;font-size:12px;font-weight:400;color:var(--tx3)">일렉 베이스 기본 배치 · 사용자 배치 1</span></div></div>
+  <div class="a ws map" id="map"><div class="mh">밝기<span>이 손잡이 하나가 움직이는 실제 값 4개 — 숨기지 않고 보여 줍니다</span></div></div>
+  <div class="a side">
+    <div class="ttl">아르페지에이터<span style="margin-left:auto" class="seg"><span class="on">켬</span><span>끔</span></span></div><div class="st">MIDI 이펙트 · 베이스 트랙 앞단</div>
+    <div class="arp" id="arp"></div>
+    <div class="g3" style="margin-top:8px"><div class="fd"><small>방향</small><b>위로</b></div><div class="fd"><small>박</small><b>1/16</b></div><div class="fd"><small>옥타브</small><b>2</b></div>
+      <div class="fd"><small>게이트</small><b>60<em>%</em></b></div><div class="fd"><small>스윙</small><b>54<em>%</em></b></div><div class="fd"><small>래치</small><b>끔</b></div></div>
+    <div class="sec">하드웨어 노브 연결</div>
+    <div class="note">MIDI 컨트롤러의 노브를 돌리면 고른 손잡이에 붙습니다. MIDI 입력은 Phase 2.</div>
+    <div class="lr"><i></i>밝기 — 노브를 돌려 보세요 · 학습 중</div>
+    <div class="sec">배치</div>
+    <div class="li on">일렉 베이스 기본</div><div class="li">사용자 배치 1<span>지금</span></div><div class="li">＋ 새 배치</div>
+    <div class="sec">저장값과 비교</div>
+    <div class="seg"><span class="on">지금</span><span>저장된 값</span></div>
+  </div>
+</div>
+<script>
+  const root = $('#root');
+  shell(root, { rail: 'instrument', phase: ['plan', '설계만'] });
+  const P = $('#pan');
+  [[.62, '밝기', '62 %', '뜯는 위치 · 톤 · 감쇠 · 고역', 1], [.5, '울림', '4.0 s', '울림 · 감쇠'], [.55, '세게 뜯기', '55 %', '뜯는 세기 · 드라이브'], [.4, '몸통', '40 %', '픽업 위치 · 저역'],
+   [.2, '공간', '20 %', '리버브 보내기 · 길이'], [.3, '거칠기', '30 %', '드라이브 · 캐비닛'], [.45, '압축', '3 : 1', '스레숄드 · 레이시오'], [.7, '출력', '−3 dB', '채널 볼륨']]
+    .forEach(([v, l, val, m, on], i) => at(el('div', 'mk' + (on ? ' on' : ''), knob5(v, 72, l, val) + `<em>${m}</em>`, P), 24 + (i % 4) * 238, 64 + Math.floor(i / 4) * 170));
+  const M = $('#map');
+  [['뜯는 위치', '줄 물리 값 · 브리지 쪽으로 갈수록 밝음', '24 %', '9 %', '14.7 %', '직선 · 반대'], ['톤', '앰프 고역 필터', '2.0 kHz', '5.5 kHz', '3.7 kHz', '로그'],
+   ['감쇠', '줄 고역 감쇠 — 작을수록 오래 반짝임', '0.080', '0.040', '0.055', '직선 · 반대'], ['EQ 고역', '채널 EQ', '0 dB', '+3 dB', '+1.9 dB', '곡선 그래프']].forEach(([n, u, a, b, cur, cv], i) => {
+    const r = at(el('div', 'mr', `<span class="n">${n}</span><span class="u">${u}</span><div class="rg"><i style="width:62%"></i><b style="left:calc(62% - 8px)"></b></div>
+      <div class="ft"><span>${a}</span><span>${b}</span></div><span class="cur">${cur}</span><span class="cv dchip">${cv}</span>`, M), 24, 52 + i * 70); });
+  at(el('div', 'mr', '<span class="n" style="color:var(--dt3)">+ 값 연결</span><span class="u">악기·이펙트·채널의 어떤 값이든 끌어다 놓기</span>', M), 24, 52 + 4 * 70);
+  const A = $('#arp'), notes = [0, 3, 7, 12, 15, 19, 24, 27];
+  for (let k = 0; k < 32; k++) { const n = notes[k % 8]; at(el('i', '', null, A), 8 + k * 10.5, 80 - n * 2.6, 8); }
+</script>
+<script src="../redesign-v4/extract4.js"></script>
+</body></html>
