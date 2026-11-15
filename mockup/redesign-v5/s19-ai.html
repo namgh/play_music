@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>v5 19 AI</title>
+<link rel="stylesheet" href="base.css"><script src="../redesign-v4/lib.js"></script><script src="shell.js"></script>
+<style>
+  .ws{left:56px;top:52px;width:984px;height:848px}
+  .th{position:absolute;left:0;width:180px;height:56px}
+  .th .cb{position:absolute;left:0;top:0;bottom:0;width:3px}
+  .th .nm{position:absolute;left:14px;top:10px;font-size:13px;font-weight:500;color:var(--dt)}
+  .th .in{position:absolute;left:14px;top:29px;font-size:11px;color:var(--dt3)}
+  .rg{position:absolute;border-radius:4px;overflow:hidden}
+  .rg .tl{position:absolute;left:0;right:0;top:0;height:14px;font-size:10px;font-weight:600;color:#0E0E10;padding-left:6px;line-height:14px}
+  .rg i{position:absolute;border-radius:1px}
+  .rg.ai{outline:1.5px dashed var(--y);outline-offset:-1px}
+  .sp{position:absolute;left:0;top:448px;width:984px;height:400px;background:var(--d1);border-top:1px solid var(--dl2)}
+  .xy{position:absolute;left:24px;top:56px;width:260px;height:220px;border-radius:12px;background:var(--d0);border:1px solid var(--dl2)}
+  .xy .dot{position:absolute;width:18px;height:18px;border-radius:50%;background:var(--y);box-shadow:0 0 0 6px rgba(255,214,10,.15)}
+  .xy .ax{position:absolute;font-size:10px;color:var(--dt3)}
+  .chat{left:1040px;top:52px;width:400px;height:848px;border-left:1px solid var(--line);padding:18px 18px 0}
+  .msg{margin-top:12px;font-size:13px;line-height:1.6}
+  .msg.me{margin-left:48px;background:var(--sub);border-radius:12px 12px 4px 12px;padding:10px 12px}
+  .msg.ai{color:var(--tx)}
+  .msg.ai .who{font-size:11px;font-weight:600;color:var(--tx3);margin-bottom:4px}
+  .chg{margin-top:8px;border-radius:10px;border:1px solid var(--line);padding:10px 12px;font-size:12px}
+  .chg .r{display:flex;justify-content:space-between;height:24px;align-items:center;color:var(--tx2)}
+  .chg .r b{color:var(--tx);font-weight:600}
+  .acts{display:flex;gap:6px;margin-top:10px}
+  .inp{position:absolute;left:18px;right:18px;bottom:18px;height:48px;border-radius:12px;background:var(--sub);display:flex;align-items:center;padding:0 14px;font-size:13px;color:var(--tx3)}
+</style></head>
+<body>
+<div class="pg" data-root id="root">
+  <div class="a ws" id="ws"></div>
+  <div class="a chat" id="chat">
+    <div class="ttl">도우미<span style="margin-left:auto" class="chip">Phase 3 · 유료 기능</span></div>
+    <div class="st">곡의 지금 상태를 보고, 편집 함수로만 고칩니다 — 바꾼 것은 전부 되돌릴 수 있음</div>
+    <div class="msg me">코러스 베이스를 조금 더 움직이게 해 줘. 음정 곡선은 지금 느낌 유지하고.</div>
+    <div class="msg ai"><div class="who">도우미</div>코러스(9–16마디) 베이스에 경과음 6개를 넣고, 기존 음의 시작 글라이드·흔들림 값은 그대로 두었습니다. 새 음은 점선으로 표시했어요.
+      <div class="chg"><div class="r">더한 음<b>6개 · 8분 경과음</b></div><div class="r">바꾼 음<b>0개</b></div><div class="r">음정 곡선<b>기존 값 복사 (+24¢ · 15¢)</b></div><div class="r">쓴 소재<b>이 곡 벌스의 베이스 리듬</b></div></div>
+      <div class="acts"><span class="btn pri">적용</span><span class="btn">다시 만들기</span><span class="btn">되돌리기</span></div></div>
+    <div class="msg me">드럼도 코러스만 하이햇 16분으로.</div>
+    <div class="msg ai"><div class="who">도우미</div>세션 연주자(드러머)로 코러스 리전을 다시 만들까요, 아니면 지금 패턴의 햇 줄만 바꿀까요?
+      <div class="acts"><span class="btn">햇 줄만</span><span class="btn">드러머로 다시</span></div></div>
+    <div class="inp">무엇을 바꿀까요 — 예: "브리지에 패드 넣어 줘"</div>
+  </div>
+</div>
+<script>
+  const root = $('#root');
+  shell(root, { rail: 'ai', phase: ['plan', '설계만 · Phase 3'] });
+  const W = $('#ws'), HX = 180, BW = 804 / 16;
+  at(el('div', 'hc', null, W), 0, 0, 180, 448);
+  for (let b = 0; b <= 16; b++) { at(el('div', 'vl' + (b % 4 === 0 ? ' b' : ''), null, W), HX + b * BW, 0, null, 448); if (b < 16) at(el('div', 'rul', String(b + 1), W), HX + b * BW + 5, 8); }
+  SONG.tracks.slice(0, 5).forEach((t, i) => { const y = 28 + i * 60; at(el('div', 'hl', null, W), 0, y, 984);
+    at(el('div', 'th', `<i class="cb" style="background:${HEX[i]}"></i><span class="nm">${t.name}</span><span class="in">${i === 0 ? '세션 연주자 · 드러머' : i === 3 ? '세션 연주자 · 키보드' : t.inst}</span>`, W), 0, y);
+    const g = rng(i * 5 + 1); t.clips.forEach(([b, len], ci) => { const ai = i === 1 && ci === 1;
+      const r = at(el('div', 'rg' + (ai ? ' ai' : ''), `<div class="tl">${t.name.split(' ')[0]} ${ci + 1}${ai ? ' · 도우미 제안' : ''}</div>`, W), HX + b * BW + 1, y + 4, len * BW - 2, 52);
+      r.style.background = rgba(HEX[i], .16); r.querySelector('.tl').style.background = HEX[i];
+      for (let s = 0; s < len * 4; s++) if (g() > .3) at(el('i', '', null, r), 4 + s * (len * BW - 10) / (len * 4), 20 + g() * 26, i === 0 ? 1.5 : 8, i === 0 ? 12 : 2).style.background = HEX[i];
+      if (ai) for (let s = 0; s < 6; s++) { const e = at(el('i', '', null, r), 30 + s * 60, 24 + (s % 3) * 8, 10, 2); e.style.background = 'transparent'; e.style.outline = '1px dashed #FFD60A'; } }); });
+  const S = el('div', 'sp', null, W);
+  at(el('div', 'lb2', '세션 연주자 · 키보드 — 로즈 1 · 코드 트랙을 따라 연주', S), 24, 20).style.color = 'var(--dt)';
+  const xy = at(el('div', 'xy', '<span class="ax" style="left:12px;bottom:8px">단순 → 복잡</span><span class="ax" style="right:10px;top:10px">↑ 세게</span>', S), 24, 56);
+  at(el('span', 'dot', null, xy), 150, 80);
+  const kr = at(el('div', '', null, S), 320, 60); kr.style.cssText += ';position:absolute;display:flex;gap:26px';
+  [[.4, '채우기 양', '40 %'], [.6, '채우기 복잡도', '60 %'], [.5, '스윙', '50 %'], [.3, '레이드백', '−8 ms']].forEach(([v, l, val]) => kr.insertAdjacentHTML('beforeend', knob5(v, 52, l, val, true)));
+  at(el('div', '', `<div style="display:flex;gap:6px"><span class="dseg"><span class="on">자유롭게</span><span>코드 리듬 따라</span><span>다른 트랙 리듬 따라</span></span></div>
+    <div style="display:flex;gap:6px;margin-top:10px"><span class="dfd" style="width:150px"><small>왼손</small><b>근음만</b></span><span class="dfd" style="width:200px"><small>오른손</small><b>꽉 찬 화음 · 중간 움직임</b></span>
+    <span class="dfd" style="width:150px"><small>스타일</small><b>소울 · 로즈</b></span></div>
+    <div style="display:flex;gap:6px;margin-top:14px"><span class="dchip">다시 만들기 ⟳</span><span class="dchip">일반 음표로 바꾸기</span><span class="dchip">결과는 그대로 음 단위 편집 가능</span></div>`, S), 320, 210).style.position = 'absolute';
+</script>
+<script src="../redesign-v4/extract4.js"></script>
+</body></html>

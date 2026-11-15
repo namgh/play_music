@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>v5 17 마스터링</title>
+<link rel="stylesheet" href="base.css"><script src="../redesign-v4/lib.js"></script><script src="shell.js"></script>
+<style>
+  .insp{left:56px;top:52px;width:280px;height:848px}
+  .tg{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+  .ws{left:336px;top:52px;width:1104px;height:848px}
+  .lg{position:absolute;display:flex;gap:16px;font-size:11px;color:var(--dt2)}
+  .lg i{display:inline-block;width:14px;height:2px;margin-right:6px;vertical-align:middle}
+  .ax{position:absolute;font-size:10.5px;color:var(--dt3)}
+  .bot{position:absolute;left:0;top:520px;width:1104px;height:328px;background:var(--d1);border-top:1px solid var(--dl2)}
+  .kr{position:absolute;left:24px;top:56px;display:flex;gap:28px}
+  .ab{position:absolute;left:24px;top:200px;display:flex;gap:8px;align-items:center}
+  .an{position:absolute;left:620px;top:20px;width:460px}
+  .an .t{font-size:12px;font-weight:600;color:var(--dt)}
+  .an .r{display:flex;align-items:center;gap:10px;height:38px;border-bottom:1px solid var(--dl);font-size:12.5px;color:var(--dt2)}
+  .an .r b{color:var(--dt);font-weight:600;margin-left:auto}
+  .an .r i{width:6px;height:6px;border-radius:50%;flex:none}
+  .meter{position:absolute;right:24px;top:20px;width:80px}
+</style></head>
+<body>
+<div class="pg" data-root id="root">
+  <div class="a insp">
+    <div class="ttl">마스터링 도우미</div><div class="st">출력 채널 · 곡 전체를 분석해 맞춤</div>
+    <div class="sec">어디에 낼 건가요</div>
+    <div class="tg"><div class="fd on"><small>스트리밍</small><b>−14<em>LUFS</em></b></div><div class="fd"><small>유튜브</small><b>−14<em>LUFS</em></b></div>
+      <div class="fd"><small>클럽 · 크게</small><b>−9<em>LUFS</em></b></div><div class="fd"><small>방송</small><b>−23<em>LUFS</em></b></div></div>
+    <div class="sec">성격</div>
+    <div class="seg"><span class="on">투명</span><span>따뜻</span><span>밝음</span><span>펀치</span></div>
+    <div class="sec">트루 피크 천장</div>
+    <div class="row"><span class="lb">천장</span><span class="tr"><i style="width:85%"></i><u style="left:calc(85% - 7px)"></u></span><b>−1.0 dB</b></div>
+    <div class="sec">분석 다시</div>
+    <div class="li">반복 구간만 분석<span>9 – 13마디</span></div>
+    <div class="li">레퍼런스 곡과 맞추기<span>파일 고르기</span></div>
+    <div class="note" style="margin-top:12px">도우미가 정한 값은 전부 아래에서 숫자로 보이고, 하나씩 덮어쓸 수 있습니다. 어떤 처리를 했는지 숨기지 않습니다.</div>
+  </div>
+  <div class="a ws" id="ws"></div>
+</div>
+<script>
+  const root = $('#root');
+  shell(root, { rail: 'mixer', pos: '1.1.000', phase: ['plan', '설계만'] });
+  const W = $('#ws'), Lx = 56, R = 1080, T = 60, B = 470;
+  const fx = f => Lx + (Math.log10(f) - Math.log10(20)) / 3 * (R - Lx), dy = db => T + (6 - db) / 54 * (B - T);
+  let g = '';
+  [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000].forEach(f => { g += `<line x1="${fx(f)}" y1="${T}" x2="${fx(f)}" y2="${B}" stroke="#202025"/>`; at(el('div', 'ax', f >= 1000 ? f / 1000 + 'k' : String(f), W), fx(f) - 8, B + 8); });
+  [0, -12, -24, -36, -48].forEach(d => { g += `<line x1="${Lx}" y1="${dy(d)}" x2="${R}" y2="${dy(d)}" stroke="#202025"/>`; at(el('div', 'ax', String(d), W), 20, dy(d) - 7); });
+  const spec = (f, k) => -18 + 10 * Math.exp(-Math.pow(Math.log10(f / 90), 2) / .12) - 9 * Math.max(0, Math.log10(f / 1500)) + Math.sin(Math.log(f) * 9) * .8 * k;
+  const tgt = f => -20 + 4 * Math.exp(-Math.pow(Math.log10(f / 70), 2) / .2) - 7 * Math.max(0, Math.log10(f / 2000));
+  const mk = (fn) => { let d = ''; for (let k = 0; k <= 240; k++) { const f = 20 * Math.pow(1000, k / 240); d += (k ? ' L ' : 'M ') + fx(f).toFixed(1) + ' ' + dy(fn(f)).toFixed(1); } return d; };
+  at(el('div', '', `<svg width="1104" height="${B + 30}" fill="none">${g}<path d="${mk(f => spec(f, 1))}" stroke="#5F5F68" stroke-width="1.6"/><path d="${mk(f => spec(f, 1) * .9 + tgt(f) * .1 + (f < 200 ? -1.4 : 0) + (f > 4000 && f < 9000 ? -1 : 0) + 3)}" stroke="#FFD60A" stroke-width="2.2"/>
+    <path d="${mk(tgt)}" stroke="#86D3A4" stroke-width="1.4" stroke-dasharray="5 5"/></svg>`, W), 0, 0).style.position = 'absolute';
+  el('div', 'lg', '<span><i style="background:#5F5F68"></i>원본</span><span><i style="background:#FFD60A"></i>마스터 후</span><span><i style="background:#86D3A4"></i>스트리밍 기준 곡선</span>', W).style.cssText += ';left:56px;top:24px';
+  const Bt = el('div', 'bot', null, W);
+  at(el('div', 'lb2', '도우미가 정한 값 — 돌려서 덮어쓰기', Bt), 24, 20);
+  const kr = el('div', 'kr', null, Bt);
+  [[.62, '소리 크기', '−14.0 LUFS'], [.5, '스펙트럼 균형', '자동 70 %'], [.55, '스테레오 폭', '110 %'], [.4, '다이내믹스', '+2 dB 압축'], [.3, '배음 (흥분)', '15 %']].forEach(([v, l, val]) => kr.insertAdjacentHTML('beforeend', knob5(v, 56, l, val, true)));
+  at(el('div', 'ab', '<span class="dseg"><span>원본</span><span class="on">마스터</span></span><span class="dchip">소리 크기 맞춰 비교 켬</span><span class="dchip">바이패스 단축키 B</span>', Bt), 24, 200);
+  const an = el('div', 'an', '<div class="t">분석 결과 · 곡 전체 0:41.7</div>', Bt);
+  [['#F2A97E', '저역 120 Hz 가 기준보다', '+2.1 dB → 줄임'], ['#82B4F0', '6 kHz 근처 치찰', '+1.3 dB → 살짝 줄임'], ['#86D3A4', '소리 크기', '−18.6 → −14.0 LUFS'], ['#B9A2EE', '트루 피크', '−3.2 → −1.0 dBTP'], ['#FFD60A', '좌우 상관', '+0.62 · 모노 호환 좋음']]
+    .forEach(([c, t, v]) => el('div', 'r', `<i style="background:${c}"></i>${t}<b>${v}</b>`, an));
+</script>
+<script src="../redesign-v4/extract4.js"></script>
+</body></html>

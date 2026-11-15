@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>v5 18 설정 · 단축키</title>
+<link rel="stylesheet" href="base.css"><script src="../redesign-v4/lib.js"></script><script src="shell.js"></script>
+<style>
+  .nav{left:56px;top:52px;width:220px;height:848px;border-right:1px solid var(--line);padding:16px 10px}
+  .nav .g{font-size:11px;font-weight:600;color:var(--tx3);margin:18px 10px 6px}
+  .main{left:276px;top:52px;width:700px;height:848px;padding:24px 28px}
+  .h1{font-size:22px;font-weight:700;letter-spacing:-.4px}
+  .search{height:40px;border-radius:10px;background:var(--sub);display:flex;align-items:center;gap:10px;padding:0 12px;font-size:13px;color:var(--tx3);margin-top:14px}
+  .grp{font-size:11px;font-weight:600;color:var(--tx3);margin:18px 0 4px}
+  .kc{display:flex;align-items:center;height:38px;border-bottom:1px solid var(--line);font-size:13px}
+  .kc .d{color:var(--tx3);font-size:11.5px;margin-left:10px}
+  .kc .ks{margin-left:auto;display:flex;gap:4px}
+  .kc kbd{min-width:24px;height:24px;border-radius:6px;background:var(--sub);border:1px solid var(--line);box-shadow:0 1px 0 var(--line);font:600 11.5px var(--ui);display:flex;align-items:center;justify-content:center;padding:0 6px;color:var(--tx)}
+  .kc.warn kbd{border-color:var(--rec);color:var(--rec)}
+  .kc .w{font-size:11px;color:var(--rec);margin-left:10px}
+  .side{left:976px;top:52px;width:464px;height:848px;border-left:1px solid var(--line);padding:24px 20px}
+  .dev{display:flex;align-items:center;gap:10px;height:40px;border-bottom:1px solid var(--line);font-size:13px}
+  .dev i{width:8px;height:8px;border-radius:50%;background:var(--ok);flex:none}
+  .dev i.off{background:var(--tx3)}
+  .dev span{margin-left:auto;font-size:11px;color:var(--tx3)}
+</style></head>
+<body>
+<div class="pg" data-root id="root">
+  <div class="a nav" id="nav"></div>
+  <div class="a main" id="main">
+    <div class="h1">단축키</div><div class="st">명령 412개 · 기본 배치 + 바꾼 것 6개 · Logic 배치로 바꾸기 가능</div>
+    <div class="search" id="sr"></div>
+    <div class="seg" style="margin-top:10px"><span class="on">우리 기본</span><span>Logic 처럼</span><span>Ableton 처럼</span><span>내 배치</span></div>
+    <div id="keys"></div>
+  </div>
+  <div class="a side">
+    <div class="ttl">오디오 · MIDI</div><div class="st">이 브라우저가 쓰는 장치</div>
+    <div class="sec">오디오 출력</div>
+    <div class="g2"><div class="fd"><small>장치</small><b>USB 인터페이스</b></div><div class="fd"><small>샘플레이트</small><b>48<em>kHz</em></b></div>
+      <div class="fd on"><small>버퍼</small><b>128<em>샘플 · 2.7 ms</em></b></div><div class="fd"><small>측정한 왕복 지연</small><b>8.4<em>ms</em></b></div></div>
+    <div class="row" style="margin-top:8px"><span class="lb">CPU</span><span class="tr"><i style="width:18%;background:var(--ok)"></i></span><b>18 %</b></div>
+    <div class="sec">MIDI 입력<span>Web MIDI</span></div>
+    <div class="dev"><i></i>건반 컨트롤러 49<span>노브 8 · 패드 8 · 연결됨</span></div>
+    <div class="dev"><i></i>드럼 패드<span>연결됨</span></div>
+    <div class="dev"><i class="off"></i>MPE 컨트롤러<span>꺼짐</span></div>
+    <div class="sec">조율</div>
+    <div class="g2"><div class="fd"><small>기준 음 A4</small><b>440.00<em>Hz</em></b></div><div class="fd"><small>방식</small><b>12평균율</b></div></div>
+    <div class="note" style="margin-top:8px">순정률·옛 조율·사용자 정의(Scala 파일)도 고를 수 있습니다. 음정 오차 ±1센트는 어떤 조율에서도 같습니다.</div>
+    <div class="sec">동기</div>
+    <div class="dev"><i class="off"></i>MIDI 클록 보내기<span>꺼짐</span></div>
+    <div class="dev"><i class="off"></i>다른 기기와 템포 맞추기<span>브라우저 한계로 일부만</span></div>
+  </div>
+</div>
+<script>
+  const root = $('#root');
+  shell(root, { rail: 'settings', phase: ['plan', '설계만'] });
+  $('#sr').innerHTML = ICON.search(15) + '명령 이름이나 키로 찾기 — 예: "나누기", "⌘T"';
+  const N = $('#nav');
+  [['일반'], ['오디오 · MIDI'], ['녹음'], ['단축키', 1], ['컨트롤러 할당'], ['조율'], ['메트로놈'], ['보기 · 색'], ['영상']].forEach(([n, on]) => el('div', 'li' + (on ? ' on' : ''), n, N));
+  el('div', 'g', '곡 설정', N); [['이 곡의 템포 · 박자'], ['샘플레이트'], ['에셋 · 저장 위치']].forEach(([n]) => el('div', 'li', n, N));
+  el('div', 'g', '계정', N); [['내 정보 · 구독'], ['클라우드 · 동기화']].forEach(([n]) => el('div', 'li', n, N));
+  const K = $('#keys');
+  [['재생', [['재생 · 정지', '', ['Space']], ['커서부터 재생', '', ['⇧', 'Space']], ['녹음', '', ['R']], ['반복 구간 켜기', '', ['C']], ['메트로놈', '', ['K']], ['맨 앞으로', '', ['Enter']]]],
+   ['편집', [['리전 나누기', '재생 위치에서', ['⌘', 'T']], ['합치기', '', ['⌘', 'J']], ['복제', '', ['⌘', 'D']], ['음 반음 위로', '', ['↑']], ['음 1센트 위로', '우리만', ['⌥', '↑']], ['퀀타이즈', '', ['Q']], ['선택 구간 반복', '', ['⌘', 'L']]]],
+   ['보기', [['믹서', '', ['X']], ['편집기', '', ['E']], ['라이브러리', '', ['Y']], ['스마트 컨트롤', '', ['B'], 1]]]].forEach(([g, items]) => {
+    el('div', 'grp', g, K); items.forEach(([n, d, ks, warn]) => el('div', 'kc' + (warn ? ' warn' : ''), `${n}${d ? `<span class="d">${d}</span>` : ''}${warn ? '<span class="w">마스터링 바이패스와 겹침</span>' : ''}<span class="ks">${ks.map(k => `<kbd>${k}</kbd>`).join('')}</span>`, K)); });
+</script>
+<script src="../redesign-v4/extract4.js"></script>
+</body></html>
