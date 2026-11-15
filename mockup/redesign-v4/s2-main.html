@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>v4 ② 메인</title>
+<link rel="stylesheet" href="base.css"><script src="lib.js"></script>
+<style>
+  /* 인스펙터 */
+  .insp{left:0;top:64px;width:272px;height:836px;border-right:1px solid var(--rule);padding:16px 18px}
+  .ih{display:flex;align-items:baseline;gap:8px;margin-top:14px}
+  .ih:first-child{margin-top:0}
+  .ih b{font-size:13px;font-weight:600}
+  .ih span{font-size:12px;color:var(--ink-3)}
+  .ir{display:flex;justify-content:space-between;align-items:center;height:29px;border-bottom:1px solid var(--rule);font-size:12px;color:var(--ink-2)}
+  .ir b{font:700 16px var(--num);color:var(--ink);font-weight:700;letter-spacing:.2px}
+  .ir em{font-style:normal;font-size:12px;color:var(--ink)}
+  .fx{display:flex;gap:4px;margin-top:8px}
+  .fx span{height:26px;border-radius:6px;background:var(--alu);border:1px solid var(--rule);font-size:11px;padding:0 8px;display:flex;align-items:center}
+  .fx span.add{background:none;border-style:dashed;color:var(--ink-3)}
+  /* 채널 스트립 */
+  .strips{left:18px;top:598px;width:236px;height:286px;display:flex;gap:10px}
+  .cs{flex:1;border-radius:12px;background:var(--alu);border:1px solid var(--rule);position:relative}
+  .cs .nm{position:absolute;left:0;right:0;bottom:10px;text-align:center;font-size:12px;font-weight:600}
+  .cs .db{position:absolute;left:12px;top:12px;font:700 15px var(--num)}
+  .cs .pan{position:absolute;right:12px;top:10px;width:22px;height:22px;border-radius:50%;border:1.5px solid var(--ink-2)}
+  .cs .pan i{position:absolute;left:9px;top:1px;width:1.5px;height:8px;background:var(--ink)}
+  .cs .rail{position:absolute;left:30px;top:48px;width:4px;height:170px;border-radius:2px;background:var(--alu-2)}
+  .cs .cap{position:absolute;left:20px;width:24px;height:14px;border-radius:4px;background:var(--ink)}
+  .cs .cap i{position:absolute;left:4px;right:4px;top:6px;height:1.5px;background:var(--body)}
+  .cs .met{position:absolute;left:62px;top:48px;width:12px;height:170px;border-radius:3px;background:var(--screen);overflow:hidden}
+  .cs .met i{position:absolute;bottom:0;width:4px;border-radius:1px}
+  .cs .ms{position:absolute;left:12px;right:12px;bottom:34px;display:flex;gap:4px}
+  .cs .ms span{flex:1;height:22px;border-radius:5px;border:1px solid var(--rule);background:var(--body);font-size:11px;display:flex;align-items:center;justify-content:center;color:var(--ink-2)}
+  /* 트랙 헤더 */
+  .hd-lbl{position:absolute;left:288px;font-size:11px;color:var(--ink-3)}
+  .th{position:absolute;left:280px;width:216px;height:66px;border-radius:10px;background:var(--alu);border:1px solid var(--rule)}
+  .th.sel{background:var(--ink);border-color:var(--ink);color:var(--body)}
+  .th .sw{position:absolute;left:10px;top:12px;width:6px;height:42px;border-radius:3px}
+  .th .nm{position:absolute;left:26px;top:11px;font-size:13px;font-weight:600}
+  .th .in{position:absolute;left:26px;top:31px;font-size:11px;color:var(--ink-3)}
+  .th.sel .in{color:var(--inv-2)}
+  .th .kd{position:absolute;left:26px;top:47px;font-size:10px;color:var(--ink-2);display:flex;align-items:center;gap:4px}
+  .th.sel .kd{color:var(--inv-2)}
+  .th .bt{position:absolute;right:8px;top:9px;display:flex;gap:3px}
+  .th .bt span{width:20px;height:18px;border-radius:4px;border:1px solid var(--rule);background:var(--body);font-size:9px;display:flex;align-items:center;justify-content:center;color:var(--ink-2)}
+  .th.sel .bt span{background:var(--inv-3);border-color:var(--inv-3);color:var(--body)}
+  .th .vol{position:absolute;right:10px;bottom:12px;width:66px;height:3px;border-radius:2px;background:var(--alu-2)}
+  .th.sel .vol{background:var(--inv-3)}
+  .th .vol i{position:absolute;left:0;top:0;bottom:0;border-radius:2px;background:var(--ink-2)}
+  .th.sel .vol i{background:var(--oak-2)}
+  /* 화면 내부 */
+  .arr{left:504px;top:76px;width:924px;height:520px}
+  .rul{position:absolute;top:0;font:700 13px var(--num);color:var(--s-ink-2)}
+  .vl{position:absolute;top:28px;bottom:0;width:1px;background:var(--grid)}
+  .vl.b{background:var(--grid-2)}
+  .hl{position:absolute;left:0;right:0;height:1px;background:var(--grid)}
+  .sec{position:absolute;top:30px;height:20px;border-radius:5px;background:var(--screen-2);color:var(--s-ink-2);font-size:11px;display:flex;align-items:center;padding-left:8px}
+  .sec.on{color:var(--oak-2)}
+  .ch{position:absolute;top:56px;font-size:12px;font-weight:600;color:var(--s-ink)}
+  .rg{position:absolute;border-radius:6px;overflow:hidden}
+  .rg .tl{position:absolute;left:0;right:0;top:0;height:15px;font-size:10px;font-weight:600;color:var(--screen);padding-left:6px;line-height:15px}
+  .rg i{position:absolute;border-radius:1px}
+  .ph{position:absolute;width:1.5px;background:var(--oak-2)}
+  .phh{position:absolute;width:11px;height:11px;border-radius:2px;background:var(--oak-2)}
+  /* 아래 편집기 */
+  .tabs{left:280px;top:610px;display:flex;gap:2px;padding:3px;border-radius:9px;background:var(--alu);border:1px solid var(--rule)}
+  .tabs span{height:24px;border-radius:6px;padding:0 12px;font-size:12px;display:flex;align-items:center;color:var(--ink-2)}
+  .tabs span.on{background:var(--ink);color:var(--body)}
+  .etitle{left:640px;top:614px;font-size:12px;color:var(--ink-2)}
+  .etitle b{color:var(--ink);font-weight:600}
+  .tools{left:1196px;top:610px;display:flex;gap:4px}
+  .tools span{width:30px;height:30px;border-radius:7px;border:1px solid var(--rule);background:var(--alu);color:var(--ink-2)}
+  .tools span.on{background:var(--ink);color:var(--body);border-color:var(--ink)}
+  .kb{position:absolute;left:452px;width:44px;border-radius:0 3px 3px 0;border:1px solid var(--rule);border-left:0;background:var(--keyw)}
+  .kb.bk{background:var(--keyb);width:28px;border-color:var(--keyb)}
+  .kl{position:absolute;font-size:9px;color:var(--ink-3)}
+  .ed{left:504px;top:650px;width:924px;height:238px}
+  .nt{position:absolute;border-radius:4px;background:var(--t2)}
+  .nt.sel{background:var(--oak);outline:1.5px solid var(--s-ink)}
+  .nt span{position:absolute;left:4px;top:1px;font-size:9px;font-weight:600;color:var(--screen)}
+  .note-k{position:absolute;font-size:10px;color:var(--s-ink-3)}
+</style></head>
+<body>
+<div class="pg" data-root id="root">
+  <div class="a insp">
+    <div class="ih"><b>리전</b><span>베이스 1 · 1–8마디</span></div>
+    <div class="ir">전조<b>0 st</b></div>
+    <div class="ir">퀀타이즈<em>1/16 · 강도 100</em></div>
+    <div class="ir">세기 오프셋<b>+0</b></div>
+    <div class="ir">이어 치기<b>80 ms</b></div>
+    <div class="ir">반복<em>끔</em></div>
+    <div class="ih"><b>트랙</b><span>베이스</span></div>
+    <div class="ir">악기<em>일렉 베이스</em></div>
+    <div class="ir">합성<em>물리 모델 줄</em></div>
+    <div class="ir">줄 길이<b>864 mm</b></div>
+    <div class="ir">뜯는 위치<b>18 %</b></div>
+    <div class="ir">울림<b>4.0 s</b></div>
+    <div class="ir">미세 조정<b>0 ¢</b></div>
+    <div class="ih"><b>이펙트</b><span>순서대로 통과</span></div>
+    <div class="fx"><span>채널 EQ</span><span>컴프레서</span><span class="add">+ 추가</span></div>
+    <div class="ir">보내기 · 리버브 버스<b>-12 dB</b></div>
+  </div>
+  <div class="a strips" id="strips"></div>
+
+  <div class="hd-lbl" style="top:82px">마디</div>
+  <div class="hd-lbl" style="top:108px">구간</div>
+  <div class="hd-lbl" style="top:132px">코드 트랙</div>
+  <div class="a screen arr" id="arr"></div>
+
+  <div class="a tabs"><span class="on">음 편집</span><span>스텝</span><span>오토메이션</span><span>악기</span><span>믹서</span></div>
+  <div class="a etitle"><b>베이스 1</b> · 1–8마디 · A1–E2</div>
+  <div class="a tools" id="tools"></div>
+  <div class="a screen ed" id="ed"></div>
+</div>
+<script>
+  const root = $('#root');
+  topbar(root, ['inspector', 'editor'], '9 . 1 . 000', ['part', '일부 구현']);
+  const TC = c => C.t[+c.slice(1) - 1];
+
+  // 채널 스트립 두 개
+  [['베이스', '-6.0', .62, [.55, .5]], ['출력', '-1.2', .78, [.7, .66]]].forEach(([n, db, f, m]) => {
+    const c = el('div', 'cs', `<span class="db">${db}</span><span class="pan"><i></i></span><span class="rail"></span><span class="met"></span>
+      <div class="ms"><span>M</span><span>S</span></div><span class="nm">${n}</span>`, $('#strips'));
+    el('span', 'cap', '<i></i>', c).style.top = (48 + (1 - f) * 170 - 7) + 'px';
+    m.forEach((v, k) => { const i = el('i', '', null, c.querySelector('.met'));
+      Object.assign(i.style, { left: (1 + k * 6) + 'px', height: (v * 170) + 'px', background: `linear-gradient(to top, ${C.ok} 0%, ${C.ok} 70%, ${C.acc2} 88%, ${C.rec} 100%)` }); });
+  });
+
+  // 편곡 화면
+  const A = $('#arr'), X0 = 8, BW = 908 / 16, LT = 76, LH = 72;
+  for (let b = 0; b <= 16; b++) {
+    el('div', 'vl' + (b % 4 === 0 ? ' b' : ''), null, A).style.left = (X0 + b * BW) + 'px';
+    if (b < 16) el('div', 'rul', String(b + 1), A).style.left = (X0 + b * BW + 5) + 'px';
+  }
+  A.querySelectorAll('.rul').forEach(r => r.style.top = '7px');
+  SONG.sections.forEach(([b, n], i) => { const s = el('div', 'sec' + (i === 2 ? ' on' : ''), n, A);
+    Object.assign(s.style, { left: (X0 + b * BW + 2) + 'px', width: (4 * BW - 4) + 'px' }); });
+  SONG.chords.forEach(([b, c]) => el('div', 'ch', c, A).style.left = (X0 + b * BW + 6) + 'px');
+  SONG.tracks.forEach((t, i) => {
+    const y = LT + i * LH;
+    el('div', 'hl', null, A).style.top = y + 'px';
+    // 헤더
+    const h = el('div', 'th' + (t.sel ? ' sel' : ''), `<span class="sw" style="background:var(--${t.col})"></span><span class="nm">${t.name}</span>
+      <span class="in">${t.inst}</span><span class="kd">${KINDS[t.kind][1](11)}${KINDS[t.kind][0]}</span>
+      <span class="bt"><span>M</span><span>S</span><span>R</span></span><span class="vol"><i style="width:${[70, 62, 48, 55, 40, 36][i]}%"></i></span>`, root);
+    h.style.top = (76 + y + 3) + 'px';
+    const g = rng(i * 13 + 5);
+    t.clips.forEach(([b, len], ci) => {
+      const sel = t.sel && ci === 0, x = X0 + b * BW + 1, w = len * BW - 2;
+      const r = el('div', 'rg', `<div class="tl">${t.name.split(' ')[0]} ${ci + 1}</div>`, A);
+      Object.assign(r.style, { left: x + 'px', top: (y + 4) + 'px', width: w + 'px', height: (LH - 8) + 'px',
+        background: rgba(TC(t.col), sel ? .3 : .15), border: sel ? `1.5px solid ${C.acc}` : 'none' });
+      r.querySelector('.tl').style.background = TC(t.col);
+      const ink = TC(t.col), H = LH - 8 - 20;
+      if (t.kind === 'drum') for (let s = 0; s < len * 8; s++) { if (g() < .35) continue;
+        const e = el('i', '', null, r); const hi = s % 4 === 0 ? H * .9 : H * (.25 + g() * .3);
+        Object.assign(e.style, { left: (4 + s * (w - 8) / (len * 8)) + 'px', width: '2px', height: hi + 'px', top: (18 + H - hi) + 'px', background: ink }); }
+      else if (t.kind === 'synth') [[0, .5], [.25, .3], [.5, .45], [.75, .2]].forEach(([p, yy]) => { const e = el('i', '', null, r);
+        Object.assign(e.style, { left: (4 + p * (w - 8)) + 'px', width: ((w - 8) / 4 - 3) + 'px', height: '3px', top: (20 + yy * H) + 'px', background: ink }); })
+      else if (t.kind === 'sampler') for (let s = 0; s < (w - 8) / 3; s++) { const e = el('i', '', null, r), hi = 2 + Math.abs(Math.sin(s * .37) * Math.sin(s * .09)) * H * .9;
+        Object.assign(e.style, { left: (4 + s * 3) + 'px', width: '2px', height: hi + 'px', top: (18 + (H - hi) / 2) + 'px', background: ink }); }
+      else for (let s = 0; s < len * (t.kind === 'modal' ? 2 : 4); s++) { if (g() < .15) continue; const n = t.kind === 'modal' ? 3 : 1;
+        for (let k = 0; k < n; k++) { const e = el('i', '', null, r), cw = (w - 8) / (len * (t.kind === 'modal' ? 2 : 4));
+          Object.assign(e.style, { left: (4 + s * cw) + 'px', width: (cw * (.5 + g() * .45)) + 'px', height: '3px', top: (20 + (g() * .8 + k * .08) * H) + 'px', background: ink }); } }
+    });
+  });
+  const px = X0 + 8 * BW;
+  const p1 = el('div', 'ph', null, A); Object.assign(p1.style, { left: px + 'px', top: '22px', bottom: '0' });
+  const ph = el('div', 'phh', null, A); Object.assign(ph.style, { left: (px - 5) + 'px', top: '22px' });
+
+  // 도구
+  ['pointer', 'pencil', 'scissors', 'magnet'].forEach((k, i) => el('span', 'ico' + (i === 0 ? ' on' : ''), ICON[k](16), $('#tools')));
+
+  // 아래 음 편집기: 베이스 1–8마디, E1–E2
+  const E = $('#ed'), PN = ['E2', 'D#2', 'D2', 'C#2', 'C2', 'B1', 'A#1', 'A1', 'G#1', 'G1', 'F#1', 'F1', 'E1'];
+  const RT = 24, RH = (238 - RT - 6) / 13, EW = 908 / 8;
+  PN.forEach((p, i) => { const y = 650 + RT + i * RH, bk = p.includes('#');
+    const k = el('div', 'kb' + (bk ? ' bk' : ''), null, root); Object.assign(k.style, { top: y + 'px', height: (RH - 1) + 'px' });
+    if (!bk && /^[EAC]/.test(p)) { const l = el('div', 'kl', p, root); Object.assign(l.style, { left: '424px', top: (y + RH / 2 - 6) + 'px' }); }
+    const hl = el('div', 'hl', null, E); hl.style.top = (RT + i * RH) + 'px'; if (bk) hl.style.background = 'var(--screen-2)', hl.style.height = RH + 'px'; });
+  for (let b = 0; b <= 8; b++) { el('div', 'vl' + (b % 4 === 0 ? ' b' : ''), null, E).style.cssText += `left:${X0 + b * EW}px;top:${RT}px`;
+    if (b < 8) { const r = el('div', 'rul', String(b + 1), E); Object.assign(r.style, { left: (X0 + b * EW + 5) + 'px', top: '5px' }); } }
+  // [시작(8분음표), 길이, 음]  Am F C G 진행을 따르는 예시 베이스
+  const BL = [[0, 3, 'A1'], [3, 1, 'E2'], [4, 4, 'A1'], [8, 3, 'F1'], [11, 1, 'C2'], [12, 4, 'F1'], [16, 3, 'C2'], [19, 1, 'G1'], [20, 4, 'C2'],
+              [24, 3, 'G1'], [27, 1, 'D2'], [28, 2, 'G1'], [30, 2, 'B1'], [32, 3, 'A1'], [35, 1, 'E2'], [36, 4, 'A1'], [40, 3, 'F1'], [43, 1, 'C2'],
+              [44, 4, 'F1'], [48, 3, 'C2'], [51, 1, 'G1'], [52, 4, 'C2'], [56, 4, 'G1'], [60, 4, 'E1']];
+  BL.forEach(([s, l, p], i) => { const r = PN.indexOf(p), x = X0 + s * EW / 8, w = l * EW / 8 - 2;
+    const n = el('div', 'nt' + (i === 2 ? ' sel' : ''), w > 22 ? `<span>${p}</span>` : null, E);
+    Object.assign(n.style, { left: x + 'px', top: (RT + r * RH + 1) + 'px', width: w + 'px', height: (RH - 2) + 'px' }); });
+  const p2 = el('div', 'ph', null, E); Object.assign(p2.style, { left: (X0 + 8 * EW) + 'px', top: '0', bottom: '0' });
+</script>
+<script src="extract4.js"></script>
+</body></html>

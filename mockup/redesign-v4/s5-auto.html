@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>v4 ⑤ 오토메이션</title>
+<link rel="stylesheet" href="base.css"><script src="lib.js"></script>
+<style>
+  .insp{left:0;top:64px;width:272px;height:836px}
+  .mode{margin-top:10px}
+  .shape{display:flex;gap:6px;margin-top:8px}
+  .shape span{flex:1;height:44px;border-radius:8px;border:1px solid var(--rule);background:var(--alu);display:flex;align-items:center;justify-content:center}
+  .shape span.on{background:var(--ink);border-color:var(--ink)}
+  .note{margin-top:14px;font-size:11.5px;line-height:1.6;color:var(--ink-2)}
+  .th{position:absolute;left:280px;width:216px;border-radius:10px;background:var(--alu);border:1px solid var(--rule)}
+  .th .sw{position:absolute;left:10px;top:12px;width:6px;bottom:12px;border-radius:3px}
+  .th .nm{position:absolute;left:26px;top:10px;font-size:13px;font-weight:600}
+  .th .in{position:absolute;left:26px;top:30px;font-size:11px;color:var(--ink-3)}
+  .th .bt{position:absolute;right:8px;top:9px;display:flex;gap:3px}
+  .th .bt span{width:20px;height:18px;border-radius:4px;border:1px solid var(--rule);background:var(--body);font-size:9px;display:flex;align-items:center;justify-content:center;color:var(--ink-2)}
+  .sub-h{position:absolute;left:296px;width:200px;border-radius:9px;border:1px solid var(--rule);background:var(--body)}
+  .sub-h.sel{background:var(--ink);border-color:var(--ink);color:var(--body)}
+  .sub-h .p{position:absolute;left:12px;top:9px;font-size:12px;font-weight:600}
+  .sub-h .m{position:absolute;left:12px;top:28px;font-size:11px;color:var(--ink-3)}
+  .sub-h.sel .m{color:var(--inv-2)}
+  .sub-h .v{position:absolute;right:10px;top:9px;font:700 16px var(--num)}
+  .sub-h .tag{position:absolute;right:10px;bottom:9px;font-size:10px;color:var(--ink-3)}
+  .sub-h.sel .tag{color:var(--inv-2)}
+  .arr{left:504px;top:76px;width:924px;height:812px}
+  .sec{position:absolute;top:30px;height:20px;border-radius:5px;background:var(--screen-2);color:var(--s-ink-2);font-size:11px;display:flex;align-items:center;padding-left:8px}
+  .rg{position:absolute;border-radius:6px;overflow:hidden}
+  .rg .tl{position:absolute;left:0;right:0;top:0;height:15px;font-size:10px;font-weight:600;color:var(--screen);padding-left:6px;line-height:15px}
+  .rg i{position:absolute;border-radius:1px}
+  .lanebg{position:absolute;left:0;right:0;background:var(--screen-2)}
+  .bub{position:absolute;height:30px;border-radius:8px;background:var(--grid-2);border:1px solid var(--s-ink-3);color:var(--s-ink);font-size:12px;display:flex;align-items:center;gap:8px;padding:0 10px;white-space:nowrap}
+  .bub b{font:700 17px var(--num);color:var(--oak-2)}
+  .ph{position:absolute;width:1.5px;background:var(--oak-2)}
+  .plan{position:absolute;height:20px;border-radius:10px;padding:0 8px;font-size:10px;display:flex;align-items:center;background:var(--grid-2);color:var(--s-ink-2)}
+</style></head>
+<body>
+<div class="pg" data-root id="root">
+  <div class="a insp side">
+    <div class="ttl">볼륨 오토메이션</div><div class="sub">베이스 · 점 2개 선택</div>
+    <div class="seg mode"><span class="on">읽기</span><span>터치</span><span>래치</span><span>쓰기</span></div>
+    <div class="ih"><b>선택한 점</b><span>9 . 1 . 000</span></div>
+    <div class="ir">값<b>-6.0 dB</b></div>
+    <div class="ir">위치<b>9 . 1 . 000</b></div>
+    <div class="ir">마디에 붙이기<em>켬 · 1/16</em></div>
+    <div class="ih"><b>곡선 모양</b><span>앞 점에서 이 점까지</span></div>
+    <div class="shape" id="shape"></div>
+    <div class="ih"><b>덕킹</b><span>킥이 칠 때 베이스를 눌러 줌</span></div>
+    <div class="ir">원천<em>킥 · 스네어 트랙</em></div>
+    <div class="ir">깊이<b>-8 dB</b></div>
+    <div class="ir">회복<b>120 ms</b></div>
+    <div class="note">오토메이션은 재생과 내보내기에서 똑같이 적용됩니다. 점을 끌면 값이 dB·밀리초로 바로 보입니다.</div>
+  </div>
+  <div class="a screen arr" id="arr"></div>
+</div>
+<script>
+  const root = $('#root');
+  topbar(root, ['inspector'], '9 . 1 . 000', ['part', '일부 구현']);
+  const sh = $('#shape');
+  [['M4 20 L20 4', 1], ['M4 20 C 12 20, 12 4, 20 4', 0], ['M4 20 C 4 8, 12 4, 20 4', 0], ['M4 20 L12 20 L12 4 L20 4', 0]].forEach(([d, on]) =>
+    el('span', on ? 'on' : '', `<svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="${d}" stroke="${on ? C.body : C.ink}" stroke-width="1.8" stroke-linecap="round"/></svg>`, sh));
+
+  const A = $('#arr'), X0 = 8, BW = 908 / 16;
+  for (let b = 0; b <= 16; b++) { const v = el('div', 'vl' + (b % 4 === 0 ? ' b' : ''), null, A); Object.assign(v.style, { left: (X0 + b * BW) + 'px', top: '28px', bottom: '0' });
+    if (b < 16) { const r = el('div', 'rul', String(b + 1), A); Object.assign(r.style, { left: (X0 + b * BW + 5) + 'px', top: '7px' }); } }
+  SONG.sections.forEach(([b, n]) => { const s = el('div', 'sec', n, A); Object.assign(s.style, { left: (X0 + b * BW + 2) + 'px', width: (4 * BW - 4) + 'px' }); });
+
+  // 행 배치: 트랙(64) / 하위 레인(84)
+  const LAYOUT = [
+    { t: 0, h: 64 },
+    { t: 1, h: 64 }, { sub: '볼륨', t: 1, h: 92, sel: 1, mode: '읽기', v: '-6.0 dB', tag: '구현됨' }, { sub: '덕킹 (원천: 킥)', t: 1, h: 74, mode: '자동', v: '-8 dB', tag: '구현됨' },
+    { t: 4, h: 64 }, { sub: '필터 컷오프', t: 4, h: 92, mode: '읽기', v: '2.4 kHz', tag: '설계만' },
+    { t: 3, h: 64 },
+    { t: 2, h: 64 }, { sub: '팬', t: 2, h: 84, mode: '읽기', v: 'L 20', tag: '설계만' },
+    { t: 5, h: 64 },
+  ];
+  let y = 56;
+  const svgNS = (w, h, inner) => `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" fill="none">${inner}</svg>`;
+  LAYOUT.forEach((L, i) => {
+    const t = SONG.tracks[L.t], col = C.t[+t.col.slice(1) - 1];
+    if (!L.sub) {
+      el('div', 'hl', null, A).style.top = y + 'px';
+      const h = el('div', 'th', `<span class="sw" style="background:${col}"></span><span class="nm">${t.name}</span><span class="in">${t.inst}</span>
+        <span class="bt"><span>M</span><span>S</span><span>A</span></span>`, root); Object.assign(h.style, { top: (76 + y + 3) + 'px', height: (L.h - 6) + 'px' });
+      const g = rng(i * 7 + 3);
+      t.clips.forEach(([b, len], ci) => { const r = el('div', 'rg', `<div class="tl">${t.name.split(' ')[0]} ${ci + 1}</div>`, A);
+        Object.assign(r.style, { left: (X0 + b * BW + 1) + 'px', top: (y + 4) + 'px', width: (len * BW - 2) + 'px', height: (L.h - 8) + 'px', background: rgba(col, .15) });
+        r.querySelector('.tl').style.background = col;
+        for (let s = 0; s < len * 4; s++) { if (g() < .3) continue; const e = el('i', '', null, r);
+          Object.assign(e.style, { left: (4 + s * (len * BW - 10) / (len * 4)) + 'px', width: t.kind === 'drum' ? '2px' : '9px', height: t.kind === 'drum' ? (8 + g() * 26) + 'px' : '3px',
+            top: t.kind === 'drum' ? '22px' : (22 + g() * 26) + 'px', background: col }); } });
+    } else {
+      const bg = el('div', 'lanebg', null, A); Object.assign(bg.style, { top: y + 'px', height: L.h + 'px' });
+      el('div', 'hl', null, A).style.top = y + 'px';
+      const h = el('div', 'sub-h' + (L.sel ? ' sel' : ''), `<span class="p">${L.sub}</span><span class="m">${L.mode}</span><span class="v">${L.v}</span><span class="tag">${L.tag}</span>`, root);
+      Object.assign(h.style, { top: (76 + y + 4) + 'px', height: (L.h - 8) + 'px' });
+      const W = 908, top = 10, H = L.h - 20; let pts;
+      if (L.sub === '볼륨') pts = [[0, .7], [4, .7], [7.5, .7], [8, .55], [12, .55], [14, .85], [16, .85]];
+      else if (L.sub.startsWith('덕킹')) { pts = []; for (let q = 0; q < 64; q++) { const hit = [0, 4, 7, 10, 12].includes(q % 16); pts.push([q / 4, hit ? .25 : .95]); pts.push([q / 4 + .18, .95]); } }
+      else pts = [[0, .2], [8, .2], [10, .8], [12, .5], [14, .9], [16, .4]];
+      const P = pts.map(([b, v]) => [X0 + b * BW, top + (1 - v) * H]);
+      const line = P.map((p, k) => (k ? 'L' : 'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join(' ');
+      const area = line + ` L ${P[P.length - 1][0]} ${top + H} L ${P[0][0]} ${top + H} Z`;
+      const plan = L.tag === '설계만';
+      let dots = '';
+      if (!L.sub.startsWith('덕킹')) P.forEach(([x, yy], k) => { const sel = L.sel && (k === 3 || k === 4);
+        dots += `<circle cx="${x}" cy="${yy}" r="${sel ? 5.5 : 4}" fill="${sel ? C.acc : C.screen}" stroke="${sel ? C.acc : col}" stroke-width="2"/>`; });
+      const s = el('div', '', svgNS(916, L.h, `<path d="${area}" fill="${rgba(col, plan ? .06 : .14)}"/><path d="${line}" stroke="${col}" stroke-width="2" ${plan ? 'stroke-dasharray="5 4"' : ''}/>${dots}`), A);
+      Object.assign(s.style, { position: 'absolute', left: '0', top: y + 'px' });
+      if (L.sel) { const b = el('div', 'bub', '값 <b>-6.0 dB</b> 9.1.000 · 직선', A); Object.assign(b.style, { left: (X0 + 8 * BW + 12) + 'px', top: (y + 2) + 'px' }); }
+      if (plan) { const p = el('div', 'plan', '설계만 — 지금 엔진은 볼륨만 지원', A); Object.assign(p.style, { left: (X0 + 2 * BW) + 'px', top: (y + 10) + 'px' }); }
+    }
+    y += L.h;
+  });
+  el('div', 'hl', null, A).style.top = y + 'px';
+  const ph = el('div', 'ph', null, A); Object.assign(ph.style, { left: (X0 + 8 * BW) + 'px', top: '22px', bottom: '0' });
+</script>
+<script src="extract4.js"></script>
+</body></html>

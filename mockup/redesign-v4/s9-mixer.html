@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>v4 ⑨ 믹서</title>
+<link rel="stylesheet" href="base.css"><script src="lib.js"></script>
+<style>
+  .bar2{left:24px;top:76px;display:flex;gap:8px;align-items:center}
+  .bar2 .t{font-size:12px;color:var(--ink-3);margin-left:6px}
+  .strip{position:absolute;top:120px;width:146px;height:768px;border-radius:14px;background:var(--alu);border:1px solid var(--rule)}
+  .strip.sel{background:var(--ink);border-color:var(--ink);color:var(--body)}
+  .strip .cb{position:absolute;left:12px;right:12px;top:10px;height:5px;border-radius:3px}
+  .strip .nm{position:absolute;left:12px;top:24px;font-size:14px;font-weight:600}
+  .strip .kd{position:absolute;left:12px;top:44px;font-size:11px;color:var(--ink-3)}
+  .strip.sel .kd{color:var(--inv-2)}
+  .slot{position:absolute;left:10px;right:10px;height:24px;border-radius:6px;font-size:11px;display:flex;align-items:center;justify-content:space-between;padding:0 8px;background:var(--body);border:1px solid var(--rule);color:var(--ink)}
+  .strip.sel .slot{background:var(--inv-3);border-color:var(--inv-3);color:var(--body)}
+  .slot.empty{background:none;border-style:dashed;color:var(--ink-3)}
+  .strip.sel .slot.empty{background:none;border-color:var(--inv-3);color:var(--inv-2)}
+  .slot b{font:700 13px var(--num)}
+  .lbl2{position:absolute;left:12px;font-size:10px;color:var(--ink-3)}
+  .strip.sel .lbl2{color:var(--inv-2)}
+  .pan{position:absolute;left:0;right:0;top:250px;display:flex;justify-content:center}
+  .strip.sel .kn b{color:var(--body)}
+  .fd{position:absolute;left:10px;right:10px;top:350px;height:318px;border-radius:10px}
+  .fd .sc{position:absolute;left:8px;font:700 10px var(--num);color:var(--s-ink-3)}
+  .fd .rail{position:absolute;left:48px;top:14px;bottom:14px;width:4px;border-radius:2px;background:var(--grid-2)}
+  .fd .cap{position:absolute;left:34px;width:32px;height:18px;border-radius:5px;background:var(--keyw);border:1px solid var(--s-ink-3)}
+  .fd .cap i{position:absolute;left:5px;right:5px;top:8px;height:1.5px;background:var(--keyb)}
+  .fd .m{position:absolute;top:14px;bottom:14px;width:7px;border-radius:2px;background:var(--grid)}
+  .fd .m i{position:absolute;left:0;right:0;bottom:0;border-radius:2px}
+  .fd .pk{position:absolute;left:84px;top:4px;font:700 11px var(--num);color:var(--s-ink-2)}
+  .db{position:absolute;left:12px;top:678px;font:700 20px var(--num)}
+  .ms{position:absolute;left:10px;right:10px;bottom:12px;display:flex;gap:4px}
+  .ms span{flex:1;height:26px;border-radius:6px;border:1px solid var(--rule);background:var(--body);font-size:11px;display:flex;align-items:center;justify-content:center;color:var(--ink-2)}
+  .strip.sel .ms span{background:var(--inv-3);border-color:var(--inv-3);color:var(--body)}
+  .ms span.on{background:var(--oak);border-color:var(--oak);color:var(--acc-ink)}
+  .out{left:1146px;top:120px;width:270px;height:768px;border-radius:14px;padding:16px;color:var(--s-ink)}
+  .out .k{font-size:11px;color:var(--s-ink-3)}
+  .out .big{font:700 52px/1 var(--num);color:var(--oak-2);margin-top:6px}
+  .out .big small{font:400 13px var(--sans);color:var(--s-ink-2);margin-left:4px}
+  .out .row{display:flex;justify-content:space-between;align-items:baseline;margin-top:10px;font-size:12px;color:var(--s-ink-2)}
+  .out .row b{font:700 17px var(--num);color:var(--s-ink)}
+  .out .tgt{margin-top:12px;height:22px;border-radius:11px;background:var(--okbg);color:var(--ok);font-size:11px;display:inline-flex;align-items:center;padding:0 9px}
+  .out .plan{margin-top:8px;font-size:10px;color:var(--s-ink-3)}
+</style></head>
+<body>
+<div class="pg" data-root id="root">
+  <div class="a bar2"><div class="seg"><span class="on">전체</span><span>트랙만</span><span>버스</span></div><span class="t">트랙 6 · 버스 1 · 출력 1 — 색 띠는 편곡 화면의 트랙 색과 같습니다</span></div>
+  <div class="a screen out" id="out">
+    <div class="k">출력 · 소리 크기</div>
+    <div class="big">-14.2 <small>LUFS 통합</small></div>
+    <div class="row"><span>짧은 구간 (3초)</span><b>-12.8 LUFS</b></div>
+    <div class="row"><span>트루 피크</span><b>-1.1 dBTP</b></div>
+    <div class="row"><span>여유 (헤드룸)</span><b>1.1 dB</b></div>
+    <div class="tgt">스트리밍 기준 -14 LUFS 근처</div>
+    <div class="plan">소리 크기 측정 표시는 설계만 — 지금은 피크 미터</div>
+  </div>
+</div>
+<script>
+  const root = $('#root');
+  topbar(root, ['mixer'], '9 . 1 . 000', ['part', '일부 구현']);
+  document.documentElement.style.setProperty('--okbg', rgba(C.ok, .16));
+  const scale = [[0, 0], [-6, .2], [-12, .38], [-24, .62], [-48, .9]];
+  const pos = db => { for (let k = 1; k < scale.length; k++) { const [d0, y0] = scale[k - 1], [d1, y1] = scale[k]; if (db >= d1) return y0 + (db - d0) / (d1 - d0) * (y1 - y0); } return .9; };
+  const STR = [
+    ...SONG.tracks.map((t, i) => ({ n: t.name, k: KINDS[t.kind][0], c: C.t[+t.col.slice(1) - 1], sel: t.sel,
+      ins: [['EQ', 'EQ · 컴프', 'EQ', 'EQ · 딜레이', '컴프', 'EQ'][i]], send: ['', '-12', '-9', '-6', '-4', '-8'][i], pan: [0, 0, -.35, .2, 0, .3][i],
+      f: [.24, .3, .36, .28, .4, .45][i], m: [[.8, .78], [.7, .7], [.55, .5], [.6, .62], [.5, .52], [.03, .03]][i], db: ['-3.0', '-6.0', '-8.5', '-5.0', '-10.0', '-12.0'][i], mute: i === 5 })),
+    { n: '리버브 버스', k: '버스 · 설계만', c: C.ink3, ins: ['리버브'], send: '', pan: 0, f: .34, m: [.35, .37], db: '-7.0' },
+  ];
+  STR.forEach((s, i) => {
+    const st = el('div', 'strip' + (s.sel ? ' sel' : ''), `<i class="cb" style="background:${s.c}"></i><span class="nm">${s.n}</span><span class="kd">${s.k}</span>`, root);
+    st.style.left = (24 + i * 160) + 'px';
+    el('span', 'lbl2', '이펙트', st).style.top = '70px';
+    const ins = s.ins[0].split(' · ');
+    [0, 1, 2].forEach(k => { const sl = el('div', 'slot' + (ins[k] ? '' : ' empty'), ins[k] || '+', st); sl.style.top = (86 + k * 28) + 'px'; });
+    el('span', 'lbl2', '보내기 · 리버브', st).style.top = '178px';
+    const se = el('div', 'slot' + (s.send ? '' : ' empty'), s.send ? `버스 1<b>${s.send} dB</b>` : '+', st); se.style.top = '194px';
+    const pn = el('div', 'pan', knob(.5 + s.pan / 2, 46, '팬', s.pan === 0 ? 'C' : (s.pan < 0 ? 'L ' : 'R ') + Math.round(Math.abs(s.pan) * 100), s.sel), st);
+    const fd = el('div', 'screen fd', '<span class="rail"></span>', st);
+    scale.forEach(([d, y]) => { const t = el('span', 'sc', String(d), fd); t.style.top = (14 + y * 290 - 6) + 'px'; });
+    const cap = el('span', 'cap', '<i></i>', fd); cap.style.top = (14 + pos(+s.db) * 290 - 9) + 'px';
+    s.m.forEach((v, k) => { const m = el('span', 'm', `<i style="height:${v * 100}%;background:linear-gradient(to top, ${C.ok} 0%, ${C.ok} 72%, ${C.acc} 90%, ${C.rec} 100%)"></i>`, fd); m.style.left = (88 + k * 11) + 'px'; });
+    el('span', 'db', s.db, st);
+    el('div', 'ms', `<span class="${s.mute ? 'on' : ''}">M</span><span>S</span><span>R</span>`, st);
+  });
+  // 출력 페이더 + 기록 그래프
+  const O = $('#out');
+  let d = ''; const g = rng(4); for (let k = 0; k <= 60; k++) { const v = -14 + Math.sin(k / 6) * 2.4 + (g() - .5) * 1.6; d += (k ? ' L ' : 'M ') + (k * 4) + ' ' + (60 - (v + 24) / 16 * 60).toFixed(1); }
+  const gr = el('div', '', `<div class="k" style="margin-top:22px">최근 30초</div><svg width="240" height="70" fill="none" style="margin-top:6px">
+    <line x1="0" y1="${60 - 10 / 16 * 60}" x2="240" y2="${60 - 10 / 16 * 60}" stroke="${C.ok}" stroke-dasharray="3 4"/><path d="${d}" stroke="${C.acc}" stroke-width="2"/></svg>`, O);
+  const fdo = el('div', 'fd', '<span class="rail"></span>', O); Object.assign(fdo.style, { position: 'absolute', left: '16px', right: 'auto', width: '140px', top: '410px', height: '300px', background: C.screen2 });
+  scale.forEach(([dd, y]) => { const t = el('span', 'sc', String(dd), fdo); t.style.top = (14 + y * 272 - 6) + 'px'; });
+  el('span', 'cap', '<i></i>', fdo).style.top = (14 + pos(-1) * 272 - 9) + 'px';
+  [.86, .84].forEach((v, k) => { const m = el('span', 'm', `<i style="height:${v * 100}%;background:linear-gradient(to top, ${C.ok} 0%, ${C.ok} 72%, ${C.acc} 90%, ${C.rec} 100%)"></i>`, fdo); m.style.left = (88 + k * 11) + 'px'; });
+  const on = el('div', '', `<div style="font:700 20px var(--num);color:${C.sInk}">-1.0</div><div style="font-size:12px;color:${C.sInk2};margin-top:2px">출력</div>`, O);
+  Object.assign(on.style, { position: 'absolute', left: '176px', top: '420px' });
+</script>
+<script src="extract4.js"></script>
+</body></html>

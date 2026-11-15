@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>v4 ③ 음 편집기</title>
+<link rel="stylesheet" href="base.css"><script src="lib.js"></script>
+<style>
+  .side{left:0;top:64px;width:232px;height:836px;border-right:1px solid var(--rule);padding:16px 18px}
+  .side .t{font:500 22px var(--disp);letter-spacing:-.3px}
+  .side .s{font-size:12px;color:var(--ink-3);margin-top:4px}
+  .grp{margin-top:20px}
+  .grp .k{font-size:11px;color:var(--ink-3);margin-bottom:6px}
+  .tl4{display:flex;gap:4px}
+  .tl4 span{width:44px;height:36px;border-radius:8px;border:1px solid var(--rule);background:var(--alu);color:var(--ink-2)}
+  .tl4 span.on{background:var(--ink);border-color:var(--ink);color:var(--body)}
+  .ir{display:flex;justify-content:space-between;align-items:center;height:30px;border-bottom:1px solid var(--rule);font-size:12px;color:var(--ink-2)}
+  .ir b{font:700 16px var(--num);color:var(--ink);font-weight:700}
+  .ir em{font-style:normal;color:var(--ink)}
+  .tog{width:30px;height:18px;border-radius:9px;background:var(--ink);position:relative}
+  .tog i{position:absolute;right:2px;top:2px;width:14px;height:14px;border-radius:50%;background:var(--oak-2)}
+  .hint{font-size:11.5px;line-height:1.6;color:var(--ink-2);margin-top:4px}
+  .hint b{font-weight:600;color:var(--ink)}
+  /* 건반 + 화면 */
+  .kb{position:absolute;left:240px;width:44px;border-radius:4px 0 0 4px;border:1px solid var(--rule);border-right:0;background:var(--keyw)}
+  .kb.bk{background:var(--keyb);border-color:var(--keyb);left:252px;width:32px}
+  .kl{position:absolute;left:244px;font-size:10px;color:var(--ink-3)}
+  .grid{left:288px;top:76px;width:784px;height:588px}
+  .rul{position:absolute;top:7px;font:700 13px var(--num);color:var(--s-ink-2)}
+  .vl{position:absolute;top:28px;bottom:0;width:1px;background:var(--grid)}
+  .vl.b{background:var(--grid-2)}
+  .row{position:absolute;left:0;right:0;border-top:1px solid var(--grid)}
+  .row.bk{background:var(--screen-2)}
+  .nt{position:absolute;border-radius:6px;background:var(--nf);border:1px solid var(--nb)}
+  .nt.sel{background:var(--nsf);border:1.5px solid var(--oak-2)}
+  .nt span{position:absolute;left:7px;top:5px;font-size:11px;font-weight:600;color:var(--t2)}
+  .nt small{position:absolute;right:7px;top:6px;font:400 10px var(--sans);color:var(--s-ink-2)}
+  .hs{position:absolute;width:13px;height:13px;border-radius:50%;background:var(--screen);border:2px solid var(--oak-2)}
+  .hs.on{background:var(--oak-2)}
+  .hsl{position:absolute;font-size:10px;color:var(--s-ink-2)}
+  .bub{position:absolute;height:30px;border-radius:8px;background:var(--grid-2);border:1px solid var(--s-ink-3);color:var(--s-ink);font-size:12px;display:flex;align-items:center;gap:8px;padding:0 10px}
+  .bub b{font:700 17px var(--num);color:var(--oak-2);font-weight:700}
+  .ph{position:absolute;top:22px;bottom:0;width:1.5px;background:var(--oak-2)}
+  /* 레인 */
+  .ltabs{left:288px;top:674px;display:flex;gap:2px;padding:3px;border-radius:9px;background:var(--alu);border:1px solid var(--rule)}
+  .ltabs span{height:22px;border-radius:6px;padding:0 11px;font-size:12px;display:flex;align-items:center;color:var(--ink-2)}
+  .ltabs span.on{background:var(--ink);color:var(--body)}
+  .lane{left:288px;top:710px;width:784px;height:178px}
+  .stem{position:absolute;width:2px;background:var(--t2)}
+  .knob{position:absolute;width:9px;height:9px;border-radius:50%;background:var(--t2)}
+  .knob.sel{background:var(--oak-2);width:11px;height:11px}
+  .lv{position:absolute;font:700 12px var(--num);color:var(--s-ink-2)}
+  .gl{position:absolute;left:0;right:0;height:1px;background:var(--grid)}
+  .glt{position:absolute;left:6px;font-size:9px;color:var(--s-ink-3)}
+  /* 오른쪽 */
+  .rp{left:1084px;top:64px;width:356px;height:836px;padding:16px 18px 0 0}
+  .rp .k{font-size:11px;color:var(--ink-3)}
+  .big{font:500 92px/1 var(--disp);letter-spacing:-3px;margin-top:6px}
+  .hz{display:flex;align-items:baseline;gap:10px;margin-top:6px}
+  .hz b{font:700 26px var(--num);font-weight:700}
+  .hz span{font-size:12px;color:var(--ink-3)}
+  .tuner{margin-top:14px;border-radius:14px;height:176px;position:relative;overflow:hidden}
+  .tuner .cap{position:absolute;left:14px;top:12px;font-size:11px;color:var(--s-ink-3)}
+  .tuner .val{position:absolute;left:0;right:0;top:104px;text-align:center;font:700 30px var(--num);color:var(--s-ink);font-weight:700}
+  .tuner .val small{font:400 12px var(--sans);color:var(--s-ink-2);margin-left:4px}
+  .tuner .ok{position:absolute;left:50%;top:144px;transform:translateX(-50%);height:20px;border-radius:10px;background:var(--okbg);color:var(--ok);font-size:11px;padding:0 9px;display:flex;align-items:center;white-space:nowrap}
+  .tuner .ok{left:108px;transform:none}
+  .prm{margin-top:12px}
+  .prm .ir{height:33px}
+  .prm .ir span.u{font-size:11px;color:var(--ink-3);margin-left:4px;font-family:var(--sans)}
+  .prm .ir .lab{display:flex;align-items:center;gap:8px}
+  .prm .ir .lab i{width:8px;height:8px;border-radius:50%;border:1.5px solid var(--ink-3)}
+  .prm .ir .lab i.on{background:var(--oak);border-color:var(--ink)}
+</style></head>
+<body>
+<div class="pg" data-root id="root">
+  <div class="a side">
+    <div class="t">베이스 1</div>
+    <div class="s">1–2마디 확대 · 일렉 베이스 · 물리 모델 줄</div>
+    <div class="grp"><div class="k">도구</div><div class="tl4" id="tl4"></div></div>
+    <div class="grp">
+      <div class="k">격자</div>
+      <div class="ir">스냅<em>1/8</em></div>
+      <div class="ir">스케일에 고정<em>A minor</em></div>
+      <div class="ir">이어 치기 표시<span class="tog"><i></i></span></div>
+    </div>
+    <div class="grp">
+      <div class="k">음 위 손잡이</div>
+      <div class="hint">위 줄 — 왼쪽 시작 글라이드 · 가운데 흔들림 · 오른쪽 끝 글라이드</div>
+      <div class="hint">아래 줄 — 왼쪽 세기 · 가운데 뜯는 위치 · 오른쪽 길이</div>
+      <div class="hint" style="color:var(--ink-3)">끌면 센트·밀리초 단위로 바뀌고, 숫자를 눌러 직접 입력할 수 있습니다.</div>
+    </div>
+    <div class="grp">
+      <div class="k">선택</div>
+      <div class="ir">음<b>1 / 6</b></div>
+      <div class="ir">같은 음 모두<em>A1 · 3개</em></div>
+    </div>
+  </div>
+
+  <div class="a screen grid" id="grid"></div>
+  <div class="a ltabs"><span class="on">세기</span><span>음정 곡선</span><span>뜯는 위치</span><span>볼륨 오토메이션</span></div>
+  <div class="a screen lane" id="lane"></div>
+
+  <div class="a rp">
+    <div class="k">선택한 음 · 1마디 3박</div>
+    <div class="big">A1</div>
+    <div class="hz"><b>54.91 Hz</b><span>기준 55.00 · 미세 조정 −3 ¢</span></div>
+    <div class="screen tuner" id="tuner"><span class="cap">합성된 음정 측정</span>
+      <div class="val">+0.2<small>¢ 오차</small></div><div class="ok">±1센트 안</div></div>
+    <div class="prm" id="prm"></div>
+  </div>
+</div>
+<script>
+  const root = $('#root');
+  Object.entries({ nf: rgba(C.t[1], .2), nb: rgba(C.t[1], .7), nsf: rgba(C.acc, .28), okbg: rgba(C.ok, .16) }).forEach(([k, v]) => document.documentElement.style.setProperty('--' + k, v));
+  topbar(root, ['editor'], '1 . 2 . 000', ['part', '일부 구현']);
+  ['pointer', 'pencil', 'scissors', 'magnet'].forEach((k, i) => el('span', 'ico' + (i === 0 ? ' on' : ''), ICON[k](17), $('#tl4')));
+
+  const G = $('#grid'), PN = ['E2', 'D#2', 'D2', 'C#2', 'C2', 'B1', 'A#1', 'A1', 'G#1', 'G1', 'F#1', 'F1', 'E1'];
+  const X0 = 8, RT = 28, RH = (588 - RT) / 13, S8 = (784 - 16) / 16;
+  PN.forEach((p, i) => { const y = RT + i * RH, bk = p.includes('#');
+    const r = el('div', 'row' + (bk ? ' bk' : ''), null, G); Object.assign(r.style, { top: y + 'px', height: RH + 'px' });
+    const k = el('div', 'kb' + (bk ? ' bk' : ''), null, root); Object.assign(k.style, { top: (76 + y + 1) + 'px', height: (RH - 2) + 'px' });
+    if (!bk) { const l = el('div', 'kl', p, root); l.style.top = (76 + y + RH / 2 - 6) + 'px'; if (p === 'A1') { l.style.color = 'var(--ink)'; l.style.fontWeight = '700'; } }
+  });
+  for (let s = 0; s <= 16; s++) { const v = el('div', 'vl' + (s % 8 === 0 ? ' b' : ''), null, G); v.style.left = (X0 + s * S8) + 'px';
+    if (s % 2 === 0 && s < 16) { const r = el('div', 'rul', `${1 + Math.floor(s / 8)}.${1 + (s % 8) / 2}`, G); r.style.left = (X0 + s * S8 + 5) + 'px'; } }
+  const yOf = p => RT + PN.indexOf(p) * RH;
+  // [시작 8분, 길이, 음, 세기]
+  const N = [[0, 3, 'A1', 104], [3, 1, 'E2', 72], [4, 4, 'A1', 96], [8, 3, 'F1', 100], [11, 1, 'C2', 70], [12, 4, 'F1', 92]];
+  N.forEach(([s, l, p, v], i) => { const x = X0 + s * S8 + 2, w = l * S8 - 4, y = yOf(p) + 4;
+    const n = el('div', 'nt' + (i === 2 ? ' sel' : ''), `<span>${p}</span>${w > 70 ? `<small>${v}</small>` : ''}`, G);
+    Object.assign(n.style, { left: x + 'px', top: y + 'px', width: w + 'px', height: (RH - 8) + 'px' }); });
+
+  // 음정 곡선 + 이어 치기(앞 음에서 미끄러져 옴)
+  const svg = (w, h, inner) => `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" fill="none">${inner}</svg>`;
+  const curves = el('div', '', null, G); Object.assign(curves.style, { position: 'absolute', left: '0', top: '0' });
+  const cy = p => yOf(p) + RH / 2, c50 = RH / 2;   // ±50센트 = 반 칸
+  const sx = X0 + 4 * S8, ex = X0 + 8 * S8;
+  let d = `M${sx} ${cy('A1') - c50 * .48} C ${sx + 18} ${cy('A1') - c50 * .3}, ${sx + 30} ${cy('A1') + 2}, ${sx + 46} ${cy('A1') + 1}`;
+  for (let x = sx + 46; x <= ex - 30; x += 4) d += ` L ${x} ${(cy('A1') + Math.sin((x - sx - 46) / 9) * c50 * .3 * Math.min(1, (x - sx - 46) / 60)).toFixed(1)}`;
+  d += ` L ${ex - 6} ${cy('A1')}`;
+  let dd = '';
+  [[0, 3, 'A1'], [8, 3, 'F1'], [12, 4, 'F1'], [3, 1, 'E2'], [11, 1, 'C2']].forEach(([s, l, p]) => { const a = X0 + s * S8 + 6, b = X0 + (s + l) * S8 - 8;
+    dd += `M${a} ${cy(p) + 3} C ${a + 10} ${cy(p) - 1}, ${a + 20} ${cy(p)}, ${b} ${cy(p)} `; });
+  curves.innerHTML = svg(784, 588, `<path d="${dd}" stroke="${C.t[1]}" stroke-width="1.5" opacity=".75"/>
+    <path d="M${X0 + 4 * S8 - 8} ${cy('E2') + 4} C ${X0 + 4 * S8 - 2} ${cy('E2') + 40}, ${sx - 4} ${cy('A1') - c50 * .9}, ${sx} ${cy('A1') - c50 * .48}" stroke="${C.acc2}" stroke-width="1.5" stroke-dasharray="3 4"/>
+    <path d="${d}" stroke="${C.acc2}" stroke-width="2"/>
+    <line x1="${sx}" y1="${cy('A1')}" x2="${ex}" y2="${cy('A1')}" stroke="${C.acc2}" stroke-width="1" stroke-dasharray="2 4" opacity=".6"/>`);
+  // 손잡이 6개
+  const ny = yOf('A1') + 4, nh = RH - 8;
+  [[sx + 2, ny, 1, '시작'], [(sx + ex) / 2, ny, 0, '흔들림'], [ex - 4, ny, 0, '끝'], [sx + 2, ny + nh, 0, '세기'], [(sx + ex) / 2, ny + nh, 0, '뜯는 위치'], [ex - 4, ny + nh, 0, '길이']]
+    .forEach(([x, y, on, t], i) => { const h = el('div', 'hs' + (on ? ' on' : ''), null, G); Object.assign(h.style, { left: (x - 6.5) + 'px', top: (y - 6.5) + 'px' });
+      const l = el('div', 'hsl', t, G); Object.assign(l.style, { left: (x - 12) + 'px', top: (i < 3 ? y - 22 : y + 10) + 'px' }); if (on) l.style.color = 'var(--oak-2)'; });
+  const b = el('div', 'bub', `시작 글라이드 <b>+24 ¢</b> 40 ms`, G); Object.assign(b.style, { left: (sx - 30) + 'px', top: (ny - 70) + 'px' });
+  const ph = el('div', 'ph', null, G); ph.style.left = (X0 + 2 * S8) + 'px';
+
+  // 세기 레인
+  const L = $('#lane');
+  [[127, 14], [64, 82], [0, 150]].forEach(([v, y]) => { el('div', 'gl', null, L).style.top = y + 'px'; el('div', 'glt', String(v), L).style.top = (y - 11) + 'px'; });
+  N.forEach(([s, l, p, v], i) => { const x = X0 + s * S8 + 4, top = 150 - v / 127 * 136;
+    const st = el('div', 'stem', null, L); Object.assign(st.style, { left: (x + 4) + 'px', top: top + 'px', height: (150 - top) + 'px' });
+    const k = el('div', 'knob' + (i === 2 ? ' sel' : ''), null, L); Object.assign(k.style, { left: (x + (i === 2 ? -0.5 : 0.5)) + 'px', top: (top - 5) + 'px' });
+    const t = el('div', 'lv', String(v), L); Object.assign(t.style, { left: (x + 12) + 'px', top: (top - 6) + 'px' }); if (i === 2) t.style.color = C.acc2; });
+
+  // 튜너 반원
+  const T = $('#tuner'), W = 338, cx = W / 2, cyT = 118, R = 84;
+  const ang = c => Math.PI * (1 - (c + 50) / 100);
+  const pt = (c, r) => [cx + Math.cos(ang(c)) * r, cyT - Math.sin(ang(c)) * r];
+  let ticks = '';
+  for (let c = -50; c <= 50; c += 5) { const [x1, y1] = pt(c, R), [x2, y2] = pt(c, R - (c % 25 === 0 ? 12 : 6));
+    ticks += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${c % 25 === 0 ? C.sInk2 : C.grid2}" stroke-width="1.5"/>`; }
+  const [b1x, b1y] = pt(-1, R + 6), [b2x, b2y] = pt(1, R + 6), [nx, ny2] = pt(.2, R - 4);
+  const lab = (c, t) => { const [x, y] = pt(c, R + 16); return `<text x="${x}" y="${y + 3}" fill="${C.sInk3}" font-size="10" text-anchor="middle" font-family="Avenir Next">${t}</text>`; };
+  const tv = el('div', '', svg(W, 176, `${ticks}<path d="M${b1x} ${b1y} A ${R + 6} ${R + 6} 0 0 1 ${b2x} ${b2y}" stroke="${C.ok}" stroke-width="5"/>
+    <line x1="${cx}" y1="${cyT}" x2="${nx}" y2="${ny2}" stroke="${C.acc2}" stroke-width="2"/><circle cx="${cx}" cy="${cyT}" r="4" fill="${C.acc2}"/>
+    ${lab(-50, '−50')}${lab(50, '+50')}${lab(0, '0')}`), T);
+  Object.assign(tv.style, { position: 'absolute', left: '0', top: '0' });
+  const tvv = T.querySelector('.val'); tvv.style.top = '126px'; tvv.style.textAlign = 'left'; tvv.style.left = '14px';
+  T.querySelector('.ok').style.top = '136px'; T.querySelector('.ok').style.left = '226px';
+  T.style.width = W + 'px';
+
+  // 파라미터
+  const P = $('#prm');
+  [['세기', '96', '', 0], ['길이', '1/2', '박', 0], ['시작 글라이드', '+24', '¢ · 40 ms', 1], ['흔들림', '15', '¢ · 5.2 Hz', 2], ['끝 글라이드', '0', '¢', 2],
+   ['이어 치기', '80', 'ms · 앞 음 E2', 0], ['뜯는 위치', '18', '%', 2]].forEach(([k, v, u, h]) =>
+    el('div', 'ir', `<span class="lab">${h ? `<i class="${h === 1 ? 'on' : ''}"></i>` : ''}${k}</span><span><b>${v}</b><span class="u">${u}</span></span>`, P));
+</script>
+<script src="extract4.js"></script>
+</body></html>

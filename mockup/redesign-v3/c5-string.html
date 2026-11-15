@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>줄</title>
+<script src="data.js"></script>
+<style>
+  :root{
+    --bg:#191D2B; --bg-2:#1F2435; --bg-3:#272D41; --line:#2E3550; --line-2:#3B4363;
+    --tx:#EEF0F7; --tx-2:#A3A9C2; --tx-3:#6C7393;
+    --h1:#8FB4FF; --h2:#B79BFF; --h3:#FF9DC4; --h4:#FFC78A; --ok:#7FE0B4;
+    --sans:"Avenir Next","Apple SD Gothic Neo",sans-serif; --num:"Avenir Next","Helvetica Neue",sans-serif; --mono:Menlo,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#000;font-family:var(--sans);color:var(--tx)}
+  .app{width:1440px;height:900px;position:relative;overflow:hidden;
+       background:radial-gradient(900px 520px at 46% 78%,#2A3152 0%,#191D2B 70%)}
+  .a{position:absolute}
+
+  /* top */
+  .top{left:24px;right:24px;top:18px;height:44px;display:flex;align-items:center;gap:14px}
+  .top h1{font-size:17px;font-weight:600;letter-spacing:-.2px}
+  .top .tag{font-size:11px;color:var(--tx-3)}
+  .cap{position:absolute;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:4px;height:44px;padding:0 6px;border-radius:22px;background:var(--bg-3);border:1px solid var(--line)}
+  .cap .b{width:34px;height:34px;border-radius:17px;display:flex;align-items:center;justify-content:center;color:var(--tx-2)}
+  .cap .b.on{background:var(--tx);color:var(--bg)}
+  .cap .b.rec{color:#FF7A85}
+  .cap .t{font:500 15px var(--num);padding:0 12px;letter-spacing:.4px;font-variant-numeric:tabular-nums}
+  .cap .m{font-size:11px;color:var(--tx-3);padding-right:12px}
+  .cap .m b{color:var(--tx-2);font-weight:500}
+  .ex{margin-left:auto;height:36px;padding:0 16px;border-radius:18px;border:1px solid var(--line-2);display:flex;align-items:center;gap:8px;font-size:13px;color:var(--tx)}
+
+  /* tracks */
+  .tracks{left:24px;top:92px;width:196px}
+  .tl{font-size:11px;color:var(--tx-3);margin-bottom:10px}
+  .tr{height:58px;border-radius:12px;padding:10px 12px;position:relative;margin-bottom:6px}
+  .tr.on{background:var(--bg-3)}
+  .tr b{font-size:14px;font-weight:600;display:block}
+  .tr small{font-size:11px;color:var(--tx-3)}
+  .tr .kind{position:absolute;right:12px;top:12px;font-size:10px;color:var(--tx-3);border:1px solid var(--line-2);border-radius:9px;padding:1px 7px}
+  .tr.on .kind{color:var(--h1);border-color:#8FB4FF66}
+  .addt{font-size:12px;color:var(--tx-3);display:flex;gap:6px;align-items:center;padding:8px 12px}
+
+  /* blob view */
+  .blobs{left:244px;top:92px;width:924px;height:372px}
+  .hd{display:flex;align-items:baseline;gap:10px;margin-bottom:10px}
+  .hd b{font-size:15px;font-weight:600}
+  .hd span{font-size:12px;color:var(--tx-3)}
+  .hd .r{margin-left:auto;font-size:12px;color:var(--tx-3)}
+  .cvs{position:relative;height:336px;border-top:1px solid var(--line)}
+  .gl{position:absolute;left:44px;right:0;height:1px;background:#262C42}
+  .kl{position:absolute;left:0;font:10px var(--mono);color:var(--tx-3);transform:translateY(-50%)}
+  .vl{position:absolute;top:0;bottom:0;width:1px;background:#262C42}
+  .vl.bar{background:var(--line-2)}
+  .bn{position:absolute;top:6px;font:11px var(--mono);color:var(--tx-3)}
+
+  /* string scene */
+  .scene{left:244px;top:484px;width:924px;height:336px;border-radius:20px;background:#141826;border:1px solid var(--line);overflow:hidden}
+  .scene .hd{position:absolute;left:24px;top:18px;right:24px}
+  .cap2{position:absolute;font-size:11px;color:var(--tx-3)}
+  .cap2 b{display:block;font:500 15px var(--num);color:var(--tx);margin-top:2px}
+  .say{position:absolute;left:24px;bottom:20px;width:560px;font-size:13px;line-height:1.6;color:var(--tx-2)}
+  .say b{color:var(--tx);font-weight:500}
+  .partl{position:absolute;right:24px;top:58px;width:250px;padding-left:4px}
+  .partl .tl{display:flex;justify-content:space-between}
+
+  /* tuner */
+  .tune{left:1192px;top:92px;width:224px}
+  .note{font:600 76px/1 var(--num);letter-spacing:-3px}
+  .note small{font-size:28px;letter-spacing:-1px;color:var(--tx-2);margin-left:4px}
+  .hz{font:500 15px var(--num);color:var(--tx-2);margin-top:6px}
+  .gauge{position:relative;height:132px;margin-top:14px}
+  .lock{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--ok);background:#7FE0B41A;border:1px solid #7FE0B455;border-radius:12px;padding:4px 10px;margin-top:4px}
+  .lock i{width:7px;height:7px;border-radius:50%;background:var(--ok)}
+  .ps{margin-top:22px}
+  .p{display:flex;justify-content:space-between;align-items:baseline;padding:10px 0;border-top:1px solid var(--line)}
+  .p span{font-size:13px;color:var(--tx-2)}
+  .p span small{display:block;font-size:11px;color:var(--tx-3);margin-top:2px}
+  .p b{font:500 17px var(--num)}
+  .p b.on{color:var(--ok);font-size:13px}
+  .notice{display:flex;gap:8px;font-size:11px;line-height:1.6;color:var(--tx-3);margin-top:14px}
+  .notice svg{flex:none;margin-top:2px}
+
+  /* arrangement strip */
+  .arr{left:244px;top:840px;width:924px;height:40px}
+  .arr .ln{position:absolute;left:0;right:0;height:6px;border-radius:3px}
+  .arr .c{position:absolute;top:0;height:6px;border-radius:3px;background:var(--line-2)}
+  .arr .c.on{background:var(--h1)}
+  .arr .win{position:absolute;top:-6px;height:44px;border:1px solid var(--tx-2);border-radius:8px}
+  .arrl{left:24px;top:846px;font-size:11px;color:var(--tx-3);width:196px}
+  .arrl b{display:block;color:var(--tx-2);font-weight:500;font-size:12px}
+</style></head>
+<body>
+<div class="app" data-root>
+  <div class="a top">
+    <h1>비 오는 새벽</h1><span class="tag">RESONA · 이름 임시</span>
+    <div class="cap"><div class="b" id="b-stop"></div><div class="b on" id="b-play"></div><div class="b" id="b-loop"></div><div class="b rec" id="b-rec"></div>
+      <span class="t">01 · 1 · 00</span><span class="m"><b>92</b> BPM　<b>A minor</b>　<b>4/4</b></span></div>
+    <div class="ex" id="b-exp"></div>
+  </div>
+
+  <div class="a tracks"><div class="tl">트랙</div><div id="tracks"></div><div class="addt" id="add"></div></div>
+
+  <div class="a blobs">
+    <div class="hd"><b>베이스</b><span>1 – 4 마디 · 음 9개</span><span class="r">음 덩어리의 굵기 = 실제로 울리는 세기</span></div>
+    <div class="cvs" id="cvs"></div>
+  </div>
+
+  <div class="a scene">
+    <div class="hd"><b>줄</b><span>선택한 음이 지금 이렇게 떨립니다</span></div>
+    <svg id="str" width="924" height="336" style="position:absolute;left:0;top:0"></svg>
+    <div class="cap2" style="left:24px;top:214px">너트</div>
+    <div class="cap2" style="left:566px;top:214px;text-align:right;width:40px">브리지</div>
+    <div class="partl"><div class="tl"><span>배음</span><span>뜯는 위치가 정한다</span></div><svg id="part" width="250" height="150"></svg></div>
+    <div class="cap2" style="left:674px;top:236px">줄 길이<b>864 mm</b></div>
+    <div class="cap2" style="left:774px;top:236px">울림<b>4초</b></div>
+    <div class="cap2" style="left:844px;top:236px">편광 차<b>1.8¢</b></div>
+    <div class="say">줄은 <b>위아래와 앞뒤, 두 방향</b>으로 떨고 두 떨림의 음정이 1.8센트 다릅니다. 그래서 소리가 "삐-" 하고 꺼지지 않고 숨 쉬듯 흔들리며 사라집니다. 샘플을 틀지 않고 이 줄을 매번 새로 울립니다.</div>
+  </div>
+
+  <div class="a tune">
+    <div class="note">A<small>1</small></div>
+    <div class="hz">55.00 Hz</div>
+    <div class="gauge"><svg id="gauge" width="224" height="132"></svg></div>
+    <div class="lock"><i></i>±1센트 안 · 정확</div>
+    <div class="ps">
+      <div class="p"><span>미세조정</span><b>0¢</b></div>
+      <div class="p"><span>이어 치기<small>앞 음에서 미끄러져 들어감</small></span><b>80 ms</b></div>
+      <div class="p"><span>시작 글라이드</span><b>24¢</b></div>
+      <div class="p"><span>흔들림</span><b>15¢</b></div>
+      <div class="p"><span>포먼트 유지</span><b class="on">켜짐</b></div>
+    </div>
+    <div class="notice"><span id="lock"></span><span>이 수정은 기기 안에서 바로 처리됩니다. AI를 다시 부르지 않으니 나머지 소리는 그대로예요.</span></div>
+  </div>
+
+  <div class="a arrl"><b>편곡 16 마디</b>WAV 48kHz / 24bit · 무료</div>
+  <div class="a arr" id="arr"></div>
+</div>
+<script>
+  ['stop', 'play', 'loop', 'rec'].forEach(k => $('#b-' + k).innerHTML = ICON[k]);
+  $('#b-exp').innerHTML = ICON.export + '내보내기'; $('#lock').innerHTML = ICON.lock; $('#add').innerHTML = ICON.plus + '트랙 추가';
+  const KIND = ['합성 드럼', '물리 모델 줄', '신스', '샘플'];
+  TRACKS.forEach((t, i) => el('div', 'tr' + (i === 1 ? ' on' : ''), `<b>${t.name}</b><small>${t.tone}</small><span class="kind">${KIND[i]}</span>`, $('#tracks')));
+
+  // ---- blob view: bass line, bars 1–4, E1..E2 ----
+  const ROWS = ['E2', 'D#2', 'D2', 'C#2', 'C2', 'B1', 'A#1', 'A1', 'G#1', 'G1', 'F#1', 'F1', 'E1'];
+  const BL = [{ s: 0, l: 2, p: 'A1' }, { s: 2, l: 1, p: 'A1' }, { s: 3, l: 1, p: 'C2' }, { s: 4, l: 2, p: 'D2' }, { s: 6, l: 2, p: 'E2' },
+              { s: 8, l: 2, p: 'G1' }, { s: 10, l: 1, p: 'G1' }, { s: 11, l: 1, p: 'A1' }, { s: 12, l: 4, p: 'E1' }];
+  const V = $('#cvs'), X0 = 44, W = 880, H = 336, T0 = 30, rh = (H - T0 - 10) / 12;
+  ROWS.forEach((p, i) => { const y = T0 + i * rh; const g = el('div', 'gl', null, V); g.style.top = y + 'px';
+    if (!p.includes('#')) { const k = el('div', 'kl', p, V); k.style.top = y + 'px'; } });
+  for (let s = 0; s <= 16; s++) { const v = el('div', 'vl' + (s % 4 === 0 ? ' bar' : ''), null, V); v.style.left = (X0 + s / 16 * W) + 'px';
+    if (s % 4 === 0 && s < 16) { const n = el('div', 'bn', String(1 + s / 4), V); n.style.left = (X0 + s / 16 * W + 6) + 'px'; } }
+  // each note = a decaying blob (string energy) with its pitch line inside
+  let svg = `<svg width="${W + X0}" height="${H}" style="position:absolute;left:0;top:0">
+    <defs><linearGradient id="bg1" x1="0" x2="1"><stop offset="0" stop-color="#8FB4FF" stop-opacity=".95"/><stop offset="1" stop-color="#8FB4FF" stop-opacity=".25"/></linearGradient>
+    <linearGradient id="bg0" x1="0" x2="1"><stop offset="0" stop-color="#A3A9C2" stop-opacity=".55"/><stop offset="1" stop-color="#A3A9C2" stop-opacity=".12"/></linearGradient></defs>`;
+  BL.forEach((n, i) => {
+    const x = X0 + n.s / 16 * W + 3, w = n.l / 16 * W - 6, y = T0 + ROWS.indexOf(n.p) * rh, sel = i === 0;
+    const top = [], bot = [];
+    for (let k = 0; k <= 30; k++) { const t = k / 30, a = 4 + 12 * Math.exp(-t * 2.2) * Math.sqrt(Math.min(1, t * 8 + .35));
+      top.push([x + t * w, y - a]); bot.unshift([x + t * w, y + a]); }
+    const d = 'M' + top.concat(bot).map(p => p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join(' L') + ' Z';
+    svg += `<path d="${d}" fill="url(#${sel ? 'bg1' : 'bg0'})"/>`;
+    // pitch line: legato notes slide in from the previous pitch
+    const prev = BL[i - 1], lg = prev && prev.s + prev.l === n.s && prev.p !== n.p;
+    const py = lg ? T0 + ROWS.indexOf(prev.p) * rh : y;
+    svg += `<path d="M${x} ${py.toFixed(1)} C ${x + 10} ${py.toFixed(1)}, ${x + 6} ${y.toFixed(1)}, ${x + 22} ${y.toFixed(1)} L ${x + w} ${y.toFixed(1)}" stroke="${sel ? '#FFFFFF' : '#EEF0F7'}" stroke-opacity="${sel ? 1 : .55}" stroke-width="1.5" fill="none"/>`;
+    if (sel) svg += `<rect x="${x - 4}" y="${y - 20}" width="${w + 8}" height="40" rx="10" fill="none" stroke="#EEF0F7" stroke-opacity=".7"/>`;
+    svg += `<text x="${x + 4}" y="${y - 20 - 6}" font-family="Menlo" font-size="10" fill="${sel ? '#EEF0F7' : '#6C7393'}">${n.p}</text>`;
+  });
+  V.insertAdjacentHTML('beforeend', svg + '</svg>');
+
+  // ---- the string: long-exposure snapshots of modes 1..8, plucked at p = 0.18 ----
+  const P = 0.18, SX = 24, SW = 580, SY = 132, AMP = 62, N = 10;
+  const an = Array.from({ length: N }, (_, k) => { const n = k + 1; return Math.abs(Math.sin(n * Math.PI * P)) / (n * n); });
+  const a1 = an[0];
+  let s = '';
+  for (let f = 0; f < 34; f++) {
+    const ph = f / 34 * Math.PI * 2, pts = [];
+    for (let k = 0; k <= 120; k++) {
+      const x = k / 120; let y = 0;
+      for (let n = 1; n <= N; n++) y += an[n - 1] / a1 * Math.cos(n * ph + n * 0.7) * Math.sin(n * Math.PI * x);
+      pts.push((SX + x * SW).toFixed(1) + ' ' + (SY + y * AMP * 0.62).toFixed(1));
+    }
+    const hue = ['#8FB4FF', '#B79BFF', '#FF9DC4'][f % 3];
+    s += `<path d="M${pts.join(' L')}" stroke="${hue}" stroke-opacity="0.22" stroke-width="1.1" fill="none"/>`;
+  }
+  // envelope of the fundamental + the string at rest
+  const env = [], env2 = [];
+  for (let k = 0; k <= 60; k++) { const x = k / 60; env.push((SX + x * SW).toFixed(1) + ' ' + (SY - Math.sin(Math.PI * x) * AMP).toFixed(1));
+    env2.push((SX + x * SW).toFixed(1) + ' ' + (SY + Math.sin(Math.PI * x) * AMP).toFixed(1)); }
+  s += `<path d="M${env.join(' L')}" stroke="#EEF0F7" stroke-opacity=".25" stroke-dasharray="2 4" fill="none"/>`;
+  s += `<path d="M${env2.join(' L')}" stroke="#EEF0F7" stroke-opacity=".25" stroke-dasharray="2 4" fill="none"/>`;
+  s += `<line x1="${SX}" y1="${SY}" x2="${SX + SW}" y2="${SY}" stroke="#EEF0F7" stroke-opacity=".35" stroke-width="1"/>`;
+  // the instant of the pluck: a triangle with its apex at the pluck point
+  s += `<path d="M${SX} ${SY} L ${SX + P * SW} ${SY - AMP * 0.9} L ${SX + SW} ${SY}" stroke="#FFFFFF" stroke-width="2" stroke-linejoin="round" fill="none"/>`;
+  s += `<rect x="${SX - 4}" y="${SY - 70}" width="4" height="140" rx="2" fill="#3B4363"/><rect x="${SX + SW}" y="${SY - 70}" width="4" height="140" rx="2" fill="#3B4363"/>`;
+  const px = SX + P * SW;
+  s += `<line x1="${px}" y1="${SY - 84}" x2="${px}" y2="${SY + 84}" stroke="#FFC78A" stroke-dasharray="3 3"/><circle cx="${px}" cy="${SY - AMP * 0.9}" r="5" fill="#FFC78A"/>`;
+  s += `<text x="${px + 10}" y="${SY - AMP * 0.9 - 8}" font-family="Apple SD Gothic Neo" font-size="12" fill="#FFC78A">여기를 뜯음 · 18%</text>`;
+  $('#str').innerHTML = s;
+
+  // partials: amplitude of mode n for a pluck at p (sin(nπp)/n²)
+  let pp = '';
+  an.forEach((a, k) => { const h = a / a1 * 112, x = 4 + k * 24.5;
+    pp += `<rect x="${x}" y="${120 - h}" width="14" height="${Math.max(2, h)}" rx="3" fill="${['#8FB4FF', '#B79BFF', '#FF9DC4', '#FFC78A'][k % 4]}" fill-opacity="${k === 0 ? 1 : .8}"/>`;
+    pp += `<text x="${x + 7}" y="138" text-anchor="middle" font-family="Menlo" font-size="10" fill="#6C7393">${k + 1}</text>`; });
+  $('#part').innerHTML = pp;
+
+  // tuner gauge: ±50¢ arc, ±1¢ band, needle at 0
+  const cx = 112, cy = 118, R = 100;
+  const pt = (c, r) => { const a = (c / 50) * (Math.PI / 2.6) - Math.PI / 2; return [cx + r * Math.cos(a), cy + r * Math.sin(a)]; };
+  let gg = '';
+  for (let c = -50; c <= 50; c += 5) { const [x1, y1] = pt(c, R), [x2, y2] = pt(c, R - (c % 25 === 0 ? 14 : 7));
+    gg += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#3B4363" stroke-width="1.5"/>`; }
+  const [a1x, a1y] = pt(-6, R + 8), [a2x, a2y] = pt(6, R + 8);
+  gg += `<path d="M${a1x} ${a1y} A ${R + 8} ${R + 8} 0 0 1 ${a2x} ${a2y}" stroke="#7FE0B4" stroke-width="4" stroke-linecap="round" fill="none"/>`;
+  gg += `<line x1="${cx}" y1="${cy}" x2="${cx}" y2="${cy - R + 4}" stroke="#EEF0F7" stroke-width="2" stroke-linecap="round"/><circle cx="${cx}" cy="${cy}" r="5" fill="#EEF0F7"/>`;
+  [[-50, '−50'], [0, '0'], [50, '+50']].forEach(([c, l]) => { const [x, y] = pt(c, R - 28); gg += `<text x="${x}" y="${y + 4}" text-anchor="middle" font-family="Menlo" font-size="10" fill="#6C7393">${l}</text>`; });
+  $('#gauge').innerHTML = gg;
+
+  // arrangement strip with the visible window (bars 1–4)
+  const A = $('#arr'), AW = 924;
+  TRACKS.forEach((t, i) => { const ln = el('div', 'ln', null, A); ln.style.top = (i * 9 + 2) + 'px';
+    t.clips.forEach(c => { const e = el('div', 'c' + (i === 1 ? ' on' : ''), null, ln); e.style.left = (c[0] / 16 * AW + 1) + 'px'; e.style.width = (c[1] / 16 * AW - 3) + 'px'; }); });
+  const w = el('div', 'win', null, A); w.style.left = '-4px'; w.style.width = (4 / 16 * AW + 6) + 'px';
+</script>
+</body></html>

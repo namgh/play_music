@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>v4 ⑦ 스마트 컨트롤</title>
+<link rel="stylesheet" href="base.css"><script src="lib.js"></script>
+<style>
+  .left{left:0;top:64px;width:240px;height:836px}
+  .tr{display:flex;align-items:center;gap:10px;height:40px;border-radius:9px;padding:0 10px;margin-top:4px;font-size:13px}
+  .tr i{width:6px;height:22px;border-radius:3px}
+  .tr span{margin-left:auto;font-size:10px;color:var(--ink-3)}
+  .tr.on{background:var(--ink);color:var(--body)}
+  .tr.on span{color:var(--inv-2)}
+  .panel{left:252px;top:76px;width:828px;height:424px;border-radius:16px;background:var(--alu);border:1px solid var(--rule)}
+  .ph{position:absolute;left:22px;top:18px;font:500 22px var(--disp)}
+  .ph small{font:400 12px var(--sans);color:var(--ink-3)}
+  .mk{position:absolute;display:flex;flex-direction:column;align-items:center;width:180px;padding:10px 0;border-radius:14px}
+  .mk.on{background:var(--body);border:1.5px solid var(--ink)}
+  .mk .kn b{font-size:20px}
+  .mk .kn span{font-size:13px;color:var(--ink);font-weight:600}
+  .mk em{font-style:normal;font-size:10px;color:var(--ink-3);margin-top:3px}
+  .map{left:252px;top:512px;width:828px;height:376px}
+  .mh{position:absolute;left:20px;top:16px;font-size:13px;color:var(--s-ink);font-weight:600}
+  .mh span{font-weight:400;color:var(--s-ink-2);font-size:12px}
+  .mr{position:absolute;left:20px;right:20px;height:62px;border-top:1px solid var(--grid)}
+  .mr .n{position:absolute;left:0;top:10px;font-size:13px;color:var(--s-ink);font-weight:600}
+  .mr .u{position:absolute;left:0;top:30px;font-size:11px;color:var(--s-ink-3)}
+  .mr .rng{position:absolute;left:230px;top:22px;width:360px;height:6px;border-radius:3px;background:var(--grid-2)}
+  .mr .rng i{position:absolute;top:0;bottom:0;border-radius:3px}
+  .mr .rng b{position:absolute;top:-5px;width:16px;height:16px;border-radius:50%;border:2px solid var(--screen)}
+  .mr .ft{position:absolute;left:230px;top:36px;width:360px;display:flex;justify-content:space-between;font:700 13px var(--num);color:var(--s-ink-2)}
+  .mr .cur{position:absolute;left:610px;top:12px;font:700 22px var(--num);color:var(--oak-2)}
+  .mr .crv{position:absolute;right:0;top:16px;height:22px;border-radius:6px;background:var(--grid-2);color:var(--s-ink-2);font-size:11px;display:flex;align-items:center;padding:0 8px}
+  .right{left:1092px;top:64px;width:348px;height:836px;padding:16px 18px 0 0}
+  .cc{margin-top:12px;border-radius:12px;background:var(--alu);border:1px solid var(--rule);padding:14px}
+  .cc .t{font-size:13px;font-weight:600}
+  .cc p{font-size:11.5px;line-height:1.6;color:var(--ink-2);margin-top:6px}
+  .cc .lr{display:flex;align-items:center;gap:10px;margin-top:12px;height:40px;border-radius:9px;background:var(--body);border:1.5px dashed var(--ink-3);padding:0 12px;font-size:12px;color:var(--ink-2)}
+  .cc .lr i{width:8px;height:8px;border-radius:50%;background:var(--rec)}
+</style></head>
+<body>
+<div class="pg" data-root id="root">
+  <div class="a left side" id="left"><div class="ttl">트랙</div><div class="sub">고른 트랙의 손잡이를 보여 줌</div></div>
+  <div class="a panel" id="panel"><div class="ph">베이스 <small>— 손잡이 8개 · 일렉 베이스 기본 배치</small></div></div>
+  <div class="a screen map" id="map"><div class="mh">밝기 <span>이 손잡이 하나가 움직이는 실제 값 4개 — 숨기지 않고 보여 줍니다</span></div></div>
+  <div class="a right">
+    <div class="ttl">손잡이 배치</div><div class="sub">베이스 · 사용자 배치 1</div>
+    <div class="ih"><b>밝기</b><span>고른 손잡이</span></div>
+    <div class="ir">현재<b>62 %</b></div>
+    <div class="ir">연결된 값<b>4</b></div>
+    <div class="ir">오토메이션<em>쓸 수 있음</em></div>
+    <div class="ir">리셋 값<b>50 %</b></div>
+    <div class="cc">
+      <div class="t">하드웨어 노브에 연결</div>
+      <p>MIDI 컨트롤러의 노브를 돌리면 이 손잡이에 붙습니다. MIDI 입력은 다음 단계(Phase 2)에서 만듭니다.</p>
+      <div class="lr"><i></i>노브를 돌려 보세요 — 학습 중</div>
+    </div>
+    <div class="ih"><b>배치</b><span>저장해 다른 곡에서 쓰기</span></div>
+    <div class="ir">기본 배치<em>일렉 베이스</em></div>
+    <div class="ir">내 배치<em>사용자 배치 1 · 2</em></div>
+  </div>
+</div>
+<script>
+  const root = $('#root');
+  topbar(root, ['inspector'], '9 . 1 . 000', ['plan', '설계만']);
+  SONG.tracks.forEach(t => el('div', 'tr' + (t.sel ? ' on' : ''), `<i style="background:${C.t[+t.col.slice(1) - 1]}"></i>${t.name}<span>${KINDS[t.kind][0]}</span>`, $('#left')));
+  const P = $('#panel');
+  const MK = [[.62, '밝기', '62 %', '뜯는 위치 · 톤 · 감쇠 · 고역', 1], [.5, '울림', '4.0 s', '울림 길이 · 감쇠'], [.55, '세게 뜯기', '55 %', '뜯는 세기 · 드라이브'], [.4, '몸통', '40 %', '픽업 위치 · 저역'],
+    [.2, '공간', '20 %', '리버브 섞기 · 길이'], [.3, '거칠기', '30 %', '드라이브 · 캐비닛'], [.45, '압축', '3 : 1', '스레숄드 · 레이시오'], [.7, '출력', '-3 dB', '채널 볼륨']];
+  MK.forEach(([v, l, val, m, on], i) => { const k = el('div', 'mk' + (on ? ' on' : ''), knob(v, 76, l, val) + `<em>${m}</em>`, P);
+    Object.assign(k.style, { left: (16 + (i % 4) * 200) + 'px', top: (60 + Math.floor(i / 4) * 178) + 'px' }); });
+  const M = $('#map');
+  // [이름, 단위설명, 시작, 끝, 현재비율, 표시값, 곡선, 반대로]
+  const MAP = [['뜯는 위치', '줄 물리 값 · 브리지 쪽으로 갈수록 밝음', '24 %', '9 %', .62, '14.7 %', '직선 · 반대'], ['톤', '앰프 고역 필터', '2.0 kHz', '5.5 kHz', .62, '3.7 kHz', '로그'],
+    ['감쇠', '줄 고역 감쇠 — 작을수록 오래 반짝임', '0.080', '0.040', .62, '0.055', '직선 · 반대'], ['EQ 고역', '채널 EQ', '0 dB', '+3 dB', .62, '+1.9 dB', '직선'],
+    ['(추가)', '값을 끌어다 놓아 연결', '', '', 0, '', '']];
+  MAP.forEach(([n, u, a, b, r, cur, crv], i) => { const row = el('div', 'mr', null, M); row.style.top = (50 + i * 64) + 'px';
+    if (!a) { row.innerHTML = `<span class="n" style="color:${C.sInk3}">+ 값 연결</span><span class="u">${u}</span>`; return; }
+    row.innerHTML = `<span class="n">${n}</span><span class="u">${u}</span><div class="rng"><i style="left:0;width:${r * 100}%;background:${rgba(C.acc, .55)}"></i><b style="left:calc(${r * 100}% - 8px);background:${C.acc}"></b></div>
+      <div class="ft"><span>${a}</span><span>${b}</span></div><span class="cur">${cur}</span><span class="crv">${crv}</span>`; });
+</script>
+<script src="extract4.js"></script>
+</body></html>

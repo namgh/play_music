@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>v4 ⑧ 이펙트</title>
+<link rel="stylesheet" href="base.css"><script src="lib.js"></script>
+<style>
+  .chain{left:24px;top:80px;width:1056px;height:92px;display:flex;align-items:center;gap:10px}
+  .io{font-size:12px;color:var(--ink-3);width:44px;text-align:center}
+  .fx{width:176px;height:76px;border-radius:12px;background:var(--alu);border:1px solid var(--rule);position:relative}
+  .fx.on{background:var(--ink);border-color:var(--ink);color:var(--body)}
+  .fx b{position:absolute;left:14px;top:12px;font-size:14px;font-weight:600}
+  .fx span{position:absolute;left:14px;top:34px;font-size:11px;color:var(--ink-3)}
+  .fx.on span{color:var(--inv-2)}
+  .fx .pw{position:absolute;right:12px;top:12px;width:12px;height:12px;border-radius:50%;background:var(--ok)}
+  .fx .mini{position:absolute;left:14px;right:14px;bottom:10px;height:12px}
+  .fx.add{background:none;border-style:dashed;width:120px}
+  .ar{color:var(--ink-3)}
+  .eq{left:24px;top:186px;width:1056px;height:420px}
+  .ax{position:absolute;font:700 12px var(--num);color:var(--s-ink-3)}
+  .nd{position:absolute;width:26px;height:26px;border-radius:50%;font:700 12px var(--num);display:flex;align-items:center;justify-content:center}
+  .nd.on{background:var(--oak);color:var(--acc-ink)}
+  .nd.off{background:var(--screen);border:2px solid var(--s-ink-2);color:var(--s-ink)}
+  .tag{position:absolute;font-size:11px;color:var(--s-ink-2)}
+  .kr{left:24px;top:620px;width:1056px;height:150px;display:flex;justify-content:space-around;align-items:center;border-radius:14px;background:var(--alu);border:1px solid var(--rule)}
+  .ab{left:24px;top:786px;display:flex;gap:8px;align-items:center}
+  .ab .t{font-size:12px;color:var(--ink-3);margin-left:6px}
+  .right{left:1092px;top:64px;width:348px;height:836px;padding:16px 18px 0 0}
+  .cp{margin-top:8px;border-radius:14px;height:230px;position:relative}
+  .cp .c{position:absolute;left:14px;top:12px;font-size:11px;color:var(--s-ink-3)}
+  .cp .gr{position:absolute;right:16px;top:30px;width:14px;height:150px;border-radius:4px;background:var(--grid)}
+  .cp .gr i{position:absolute;left:0;right:0;top:0;border-radius:4px;background:var(--oak)}
+  .cp .gv{position:absolute;right:38px;top:56px;font:700 22px var(--num);color:var(--oak-2)}
+  .cp .gl{position:absolute;right:38px;top:84px;font-size:10px;color:var(--s-ink-3)}
+</style></head>
+<body>
+<div class="pg" data-root id="root">
+  <div class="a chain" id="chain"></div>
+  <div class="a screen eq" id="eq"></div>
+  <div class="a kr" id="kr"></div>
+  <div class="a ab"><span class="btn">켬</span><span class="btn">A</span><span class="btn">B</span><span class="btn">A → B 복사</span><span class="t">설정 두 개를 번갈아 들으며 비교합니다 · 소리 크기는 맞춰서 비교</span></div>
+  <div class="a right">
+    <div class="ttl">나머지 칸</div><div class="sub">눌러서 가운데에 크게 엽니다</div>
+    <div class="ih"><b>컴프레서</b><span>두 번째 칸</span></div>
+    <div class="screen cp" id="cp"><span class="c">입력 → 출력 · 지금 눌리는 양</span><div class="gr"><i style="height:21%"></i></div><span class="gv">-3.2</span><span class="gl">dB 압축 중</span></div>
+    <div class="ir">스레숄드<b>-18 dB</b></div>
+    <div class="ir">레이시오<b>3 : 1</b></div>
+    <div class="ir">어택<b>8 ms</b></div>
+    <div class="ir">릴리즈<b>180 ms</b></div>
+    <div class="ir">메이크업<b>+2.0 dB</b></div>
+    <div class="ih"><b>딜레이</b><span>세 번째 칸</span></div>
+    <div class="ir">시간<b>1/8 · 326 ms</b></div>
+    <div class="ir">피드백 · 섞기<b>35 % · 25 %</b></div>
+    <div class="ih"><b>리버브</b><span>네 번째 칸</span></div>
+    <div class="ir">길이 · 고역 감쇠<b>1.6 s · 4.0 kHz</b></div>
+  </div>
+</div>
+<script>
+  const root = $('#root');
+  topbar(root, ['mixer'], '9 . 1 . 000', ['part', '일부 구현']);
+  const CH = $('#chain');
+  el('span', 'io', '베이스<br>입력', CH);
+  [['채널 EQ', '3밴드', 1], ['컴프레서', '-3.2 dB 압축'], ['딜레이', '1/8 · 25 %'], ['리버브', '1.6 s · 20 %']].forEach(([n, d, on], i) => {
+    el('span', 'ar', ICON.chev(16), CH);
+    el('div', 'fx' + (on ? ' on' : ''), `<b>${n}</b><span>${d}</span><i class="pw"></i>`, CH); });
+  el('span', 'ar', ICON.chev(16), CH);
+  el('div', 'fx add', `<b style="color:var(--ink-3)">+ 추가</b>`, CH);
+  el('span', 'io', '채널<br>출력', CH);
+
+  // EQ: 20 Hz–20 kHz 로그, ±18 dB
+  const E = $('#eq'), W = 1056, H = 420, L = 56, R = W - 24, T = 30, B = H - 40;
+  const fx = f => L + (Math.log10(f) - Math.log10(20)) / 3 * (R - L), dy = db => T + (18 - db) / 36 * (B - T);
+  let g = '';
+  [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000].forEach(f => { g += `<line x1="${fx(f)}" y1="${T}" x2="${fx(f)}" y2="${B}" stroke="${C.grid}"/>`;
+    const a = el('div', 'ax', f >= 1000 ? f / 1000 + 'k' : String(f), E); Object.assign(a.style, { left: (fx(f) - 8) + 'px', top: (B + 10) + 'px' }); });
+  [-18, -12, -6, 0, 6, 12, 18].forEach(d => { g += `<line x1="${L}" y1="${dy(d)}" x2="${R}" y2="${dy(d)}" stroke="${d === 0 ? C.grid2 : C.grid}"/>`;
+    const a = el('div', 'ax', (d > 0 ? '+' : '') + d, E); Object.assign(a.style, { left: '16px', top: (dy(d) - 7) + 'px' }); });
+  // 베이스 스펙트럼(예시 모양)
+  let sp = `M ${L} ${B}`; for (let k = 0; k <= 200; k++) { const f = 20 * Math.pow(1000, k / 200), x = fx(f);
+    const lv = -30 + 26 * Math.exp(-Math.pow(Math.log10(f / 70), 2) / .09) + 8 * Math.exp(-Math.pow(Math.log10(f / 900), 2) / .2) - 10 * Math.max(0, Math.log10(f / 2000)) + Math.sin(k * 1.7) * 1.5;
+    sp += ` L ${x.toFixed(1)} ${dy(Math.max(-18, lv * .55)).toFixed(1)}`; } sp += ` L ${R} ${B} Z`;
+  // 3밴드 응답: 저역 셸프 +3 @ 100, 중역 피크 -4 @ 800 Q1, 고역 셸프 +1.5 @ 8k
+  const resp = f => 3 / (1 + Math.pow(f / 100, 2)) - 4 * Math.exp(-Math.pow(Math.log2(f / 800), 2) / .9) + 1.5 / (1 + Math.pow(8000 / f, 2));
+  let cv = ''; for (let k = 0; k <= 240; k++) { const f = 20 * Math.pow(1000, k / 240); cv += (k ? ' L ' : 'M ') + fx(f).toFixed(1) + ' ' + dy(resp(f)).toFixed(1); }
+  const s = el('div', '', `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" fill="none">${g}<path d="${sp}" fill="${rgba(C.t[1], .22)}"/>
+    <path d="${cv} L ${R} ${dy(0)} L ${L} ${dy(0)} Z" fill="${rgba(C.acc, .1)}"/><path d="${cv}" stroke="${C.acc}" stroke-width="2.5"/></svg>`, E);
+  Object.assign(s.style, { position: 'absolute', left: '0', top: '0' });
+  [[100, 3, '1', 'off', '저역 셸프 100 Hz'], [800, -4, '2', 'on', '중역 800 Hz · -4.0 dB'], [8000, 1.5, '3', 'off', '고역 셸프 8 kHz']].forEach(([f, d, n, st, t]) => {
+    const nd = el('div', 'nd ' + st, n, E); Object.assign(nd.style, { left: (fx(f) - 13) + 'px', top: (dy(resp(f)) - 13) + 'px' });
+    const tg = el('div', 'tag', t, E); Object.assign(tg.style, { left: (fx(f) - 40) + 'px', top: (dy(resp(f)) + (d < 0 ? 18 : -34)) + 'px' }); if (st === 'on') tg.style.color = C.acc2; });
+  const cap = el('div', 'tag', '채널 EQ · 베이스 스펙트럼 위에 겹쳐 보기', E); Object.assign(cap.style, { left: '16px', top: '8px' });
+
+  [[.58, '저역', '+3.0 dB'], [.39, '중역', '-4.0 dB'], [.46, '중역 중심', '800 Hz'], [.54, '고역', '+1.5 dB'], [.5, '출력', '0.0 dB']].forEach(([v, l, val]) => $('#kr').insertAdjacentHTML('beforeend', knob(v, 72, l, val)));
+
+  // 컴프레서 전달 곡선
+  const CP = $('#cp'), cw = 230, ch = 170, ox = 16, oy = 198;
+  const io = x => x < -18 ? x : -18 + (x + 18) / 3;
+  let d = ''; for (let x = -60; x <= 0; x += 1) d += (x === -60 ? 'M ' : ' L ') + (ox + (x + 60) / 60 * cw).toFixed(1) + ' ' + (oy - (io(x) + 60) / 60 * ch).toFixed(1);
+  const tx = ox + (42 / 60) * cw;
+  const cs = el('div', '', `<svg width="300" height="230" fill="none"><rect x="${ox}" y="${oy - ch}" width="${cw}" height="${ch}" stroke="${C.grid}"/>
+    <line x1="${ox}" y1="${oy}" x2="${ox + cw}" y2="${oy - ch}" stroke="${C.grid2}" stroke-dasharray="3 4"/>
+    <line x1="${tx}" y1="${oy - ch}" x2="${tx}" y2="${oy}" stroke="${C.sInk3}" stroke-dasharray="2 3"/>
+    <path d="${d}" stroke="${C.acc}" stroke-width="2.5"/><circle cx="${ox + (50 / 60) * cw}" cy="${oy - (io(-10) + 60) / 60 * ch}" r="5" fill="${C.acc}"/></svg>`, CP);
+  Object.assign(cs.style, { position: 'absolute', left: '0', top: '0' });
+</script>
+<script src="extract4.js"></script>
+</body></html>

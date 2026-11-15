@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>v4 ① 시작</title>
+<link rel="stylesheet" href="base.css"><script src="lib.js"></script>
+<style>
+  .hero{left:40px;top:96px;font:500 64px/1 var(--disp);letter-spacing:-1.5px}
+  .hero-sub{left:44px;top:170px;font-size:14px;color:var(--ink-2);line-height:1.6;width:420px}
+  .col-h{font:600 15px var(--sans)}
+  .col-h small{font:400 12px var(--sans);color:var(--ink-3)}
+  /* 템플릿 */
+  .tpl{left:40px;top:250px;width:470px}
+  .trow{display:flex;gap:14px;align-items:center;padding:12px 12px;border-radius:12px;margin-top:8px;background:var(--alu);border:1px solid var(--rule)}
+  .trow.on{background:var(--ink);border-color:var(--ink);color:var(--body)}
+  .trow.on .d{color:var(--inv-2)}
+  .thumb{width:88px;height:52px;border-radius:7px;background:var(--screen);position:relative;flex:none;overflow:hidden}
+  .thumb i{position:absolute;height:5px;border-radius:2px}
+  .trow b{font-size:14px;font-weight:600;display:block}
+  .trow .d{font-size:12px;color:var(--ink-2);margin-top:3px;display:block}
+  .trow .n{margin-left:auto;font:700 20px var(--num);color:var(--ink-3)}
+  .trow.on .n{color:var(--oak-2)}
+  /* 최근 곡 */
+  .recent{left:550px;top:96px;width:500px}
+  .rrow{display:flex;gap:16px;align-items:center;padding:14px 0;border-bottom:1px solid var(--rule)}
+  .rthumb{width:196px;height:60px;border-radius:8px;background:var(--screen);position:relative;flex:none;overflow:hidden}
+  .rthumb i{position:absolute;height:6px;border-radius:2px;opacity:.9}
+  .rthumb .ph{position:absolute;top:0;bottom:0;width:1.5px;background:var(--oak-2)}
+  .rrow b{font-size:15px;font-weight:600;display:block}
+  .rrow .m{font-size:12px;color:var(--ink-3);margin-top:5px;display:block}
+  .rrow .m em{font-style:normal;color:var(--ink-2)}
+  .rrow .go{margin-left:auto;color:var(--ink-3)}
+  .open{display:flex;gap:8px;margin-top:18px}
+  /* 설정 패널 */
+  .set{left:1086px;top:96px;width:314px;height:768px;border-radius:16px;background:var(--alu);border:1px solid var(--rule);padding:22px}
+  .set .t{font:500 26px var(--disp);letter-spacing:-.4px}
+  .set .s{font-size:12px;color:var(--ink-3);margin-top:6px}
+  .fld{margin-top:16px}
+  .fld .k{font-size:11px;color:var(--ink-3)}
+  .fld .v{margin-top:6px;height:38px;border-radius:9px;background:var(--body);border:1px solid var(--rule);display:flex;align-items:center;padding:0 12px;font-size:14px;justify-content:space-between}
+  .fld .v b{font:700 20px var(--num);letter-spacing:.3px;font-weight:700}
+  .fld .v span{font-size:12px;color:var(--ink-3)}
+  .two{display:flex;gap:10px}.two .fld{flex:1}
+  .tune{margin-top:18px;border-radius:12px;background:var(--screen);padding:14px;color:var(--s-ink)}
+  .tune .k{font-size:11px;color:var(--s-ink-3)}
+  .tune .big{font:700 34px/1 var(--num);color:var(--oak-2);margin-top:8px}
+  .tune .big small{font:400 13px var(--sans);color:var(--s-ink-2);margin-left:6px}
+  .tune .row{display:flex;justify-content:space-between;margin-top:12px;font-size:12px;color:var(--s-ink-2)}
+  .tune .row b{color:var(--s-ink);font-weight:500}
+  .make{position:absolute;left:22px;right:22px;bottom:22px;height:48px;border-radius:24px;background:var(--ink);color:var(--body);display:flex;align-items:center;justify-content:center;gap:10px;font-size:15px;font-weight:600}
+  .make kbd{font:400 11px var(--sans);color:var(--inv-2);border:1px solid var(--inv-3);border-radius:4px;padding:1px 5px}
+  .trk{margin-top:18px}
+  .trk .k{font-size:11px;color:var(--ink-3);margin-bottom:4px}
+  .tk{display:flex;align-items:center;gap:10px;height:27px;border-bottom:1px solid var(--rule);font-size:13px}
+  .tk i{width:10px;height:10px;border-radius:3px;flex:none}
+  .tk span{margin-left:auto;font-size:11px;color:var(--ink-3)}
+  .foot{left:40px;top:858px;font-size:12px;color:var(--ink-3)}
+</style></head>
+<body>
+<div class="pg" data-root>
+  <div class="a top"></div>
+  <div class="a brand">RESONA <small>이름 임시</small></div>
+  <div class="a" style="left:1086px;top:16px;display:flex;gap:8px"><span class="btn" id="b-imp"></span><span class="btn" id="b-set">설정</span></div>
+  <div class="a song" style="left:150px;top:22px;font-size:12px">시작</div>
+
+  <div class="a hero">새 곡</div>
+  <div class="a hero-sub">틀을 고르고 오른쪽에서 템포·조성·기준 음을 정한 뒤 만듭니다. 모든 소리는 이 기기에서 실시간으로 합성됩니다.</div>
+
+  <div class="a tpl" id="tpl"><div class="col-h">틀 <small>트랙 구성만 정해 둔 빈 곡</small></div></div>
+
+  <div class="a recent" id="recent"><div class="col-h">최근 곡 <small>이어서 작업</small></div></div>
+
+  <div class="a set">
+    <div class="t">새 곡 설정</div>
+    <div class="s">밴드 4트랙 틀 · 나중에 바꿀 수 있습니다</div>
+    <div class="fld"><div class="k">이름</div><div class="v">제목 없는 곡 3</div></div>
+    <div class="two">
+      <div class="fld"><div class="k">템포</div><div class="v"><b>92</b><span>BPM</span></div></div>
+      <div class="fld"><div class="k">박자</div><div class="v"><b>4/4</b></div></div>
+    </div>
+    <div class="fld"><div class="k">조성</div><div class="v">A minor<span id="k-down"></span></div></div>
+    <div class="two">
+      <div class="fld"><div class="k">샘플레이트</div><div class="v"><b>48</b><span>kHz</span></div></div>
+      <div class="fld"><div class="k">비트 깊이</div><div class="v"><b>24</b><span>bit</span></div></div>
+    </div>
+    <div class="tune">
+      <div class="k">기준 음</div>
+      <div class="big">440.00 <small>Hz · A4</small></div>
+      <div class="row"><span>조율</span><b>12평균율</b></div>
+      <div class="row"><span>음정 오차 허용</span><b>±1센트</b></div>
+    </div>
+    <div class="trk" id="trk"><div class="k">트랙 구성</div></div>
+    <div class="make">곡 만들기 <kbd>⏎</kbd></div>
+  </div>
+  <div class="a foot">곡은 이 기기에 먼저 저장됩니다 — 인터넷 없이도 작업할 수 있습니다.</div>
+</div>
+<script>
+  $('#b-imp').innerHTML = ICON.folder(14) + '가져오기'; $('#k-down').innerHTML = ICON.down(14);
+  [['드럼', '합성 드럼', 't6'], ['베이스', '물리 모델 줄', 't2'], ['기타', '물리 모델 줄', 't1'], ['건반', '모달', 't3']].forEach(([n, k, c]) =>
+    el('div', 'tk', `<i style="background:var(--${c})"></i>${n}<span>${k}</span>`, $('#trk')));
+  const T = $('#tpl');
+  const tpls = [
+    ['빈 곡', '트랙 없이 시작', 0, []],
+    ['밴드 4트랙', '드럼 · 베이스 · 기타 · 건반', 4, ['t6', 't2', 't1', 't3']],
+    ['비트', '합성 드럼 · 베이스 · 신스 패드', 3, ['t6', 't2', 't5']],
+    ['피아노 한 대', '모달 피아노 · 페달 레인', 1, ['t3']],
+    ['줄 실험실', '물리 모델 줄 하나 + 튜닝 도구', 1, ['t1']],
+  ];
+  tpls.forEach(([n, d, c, cols], i) => {
+    const r = el('div', 'trow' + (i === 1 ? ' on' : ''), `<div class="thumb"></div><div><b>${n}</b><span class="d">${d}</span></div><span class="n">${c}</span>`, T);
+    const th = r.querySelector('.thumb'), g = rng(i + 3);
+    cols.forEach((col, k) => { for (let x = 6; x < 80;) { const w = 8 + g() * 20; if (g() > .25) { const e = el('i', '', null, th);
+      Object.assign(e.style, { left: x + 'px', width: Math.min(w, 82 - x) + 'px', top: (8 + k * 10) + 'px', background: `var(--${col})` }); } x += w + 3; } });
+  });
+  const R = $('#recent');
+  const songs = [['비 오는 새벽', '오늘 14:20', '0:42 · 92 BPM · A minor', 16, 6, .56],
+    ['여름 끝 골목', '어제', '2:58 · 104 BPM · D major', 48, 7, .3],
+    ['줄 튜닝 연습', '3일 전', '0:20 · 80 BPM · E minor', 8, 1, .8],
+    ['밤 버스', '11월 2일', '3:31 · 86 BPM · F# minor', 64, 8, .15],
+    ['모달 실험 2', '10월 28일', '1:05 · 120 BPM · C major', 24, 3, .5]];
+  const cs = ['t6', 't2', 't1', 't3', 't5', 't4', 't6', 't1'];
+  songs.forEach(([n, t, m, bars, tr, ph], i) => {
+    const r = el('div', 'rrow', `<div class="rthumb"></div><div><b>${n}</b><span class="m"><em>${t}</em> · ${m}</span><span class="m">${tr}트랙 · ${bars}마디</span></div><span class="go">${ICON.chev(16)}</span>`, R);
+    const th = r.querySelector('.rthumb'), g = rng(i * 7 + 2), lane = Math.min(7, 52 / tr);
+    for (let k = 0; k < tr; k++) for (let x = 4; x < 192;) { const w = 14 + g() * 46; if (g() > .3) { const e = el('i', '', null, th);
+      Object.assign(e.style, { left: x + 'px', width: Math.min(w, 192 - x) + 'px', top: (4 + k * lane) + 'px', height: Math.max(3, lane - 2) + 'px', background: `var(--${cs[k]})` }); } x += w + 2; }
+    el('i', 'ph', null, th).style.left = (ph * 196) + 'px';
+  });
+  el('div', 'open', `<span class="btn">${ICON.folder(14)}파일에서 열기</span><span class="btn">모든 곡 보기</span>`, R);
+</script>
+<script src="extract4.js"></script>
+</body></html>

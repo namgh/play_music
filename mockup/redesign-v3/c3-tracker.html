@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>트래커</title>
+<script src="data.js"></script>
+<style>
+  :root{
+    --bg:#1B1E24; --s1:#20242B; --s2:#272C34; --s3:#30363F; --line:#2D323B; --line-2:#3A414C;
+    --tx:#E4E7EC; --tx-2:#9AA1AD; --tx-3:#646C79;
+    --t1:#F08A6C; --t2:#6FA6F0; --t3:#CFE07B; --t4:#B49CF0;
+    --ui:"Avenir Next","Apple SD Gothic Neo",sans-serif; --mono:Menlo,monospace; --cond:"Avenir Next Condensed","Avenir Next",sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#000;font-family:var(--ui);color:var(--tx);font-size:12px}
+  .app{width:1440px;height:900px;position:relative;overflow:hidden;background:var(--bg)}
+  .top{position:absolute;left:0;right:0;top:0;height:56px;border-bottom:1px solid var(--line);display:flex;align-items:center;padding:0 20px;gap:14px;background:var(--s1)}
+  .top h1{font-size:15px;font-weight:600}
+  .badge{font-size:10px;color:var(--tx-3);border:1px solid var(--line-2);border-radius:4px;padding:2px 6px}
+  .tb{display:flex;gap:4px;margin-left:36px}
+  .tb div{width:34px;height:30px;border-radius:6px;display:flex;align-items:center;justify-content:center;color:var(--tx-2);background:var(--s2)}
+  .tb .on{background:var(--t3);color:#1B1E24}
+  .tb .rec{color:#F06A6A}
+  .clock{font:400 20px var(--mono);letter-spacing:1px;margin-left:14px}
+  .clock small{font-size:11px;color:var(--tx-3);margin-left:8px;letter-spacing:0}
+  .meta{display:flex;gap:22px;margin-left:auto;font-size:11px;color:var(--tx-3)}
+  .meta b{display:block;font:400 13px var(--mono);color:var(--tx)}
+  .exp{height:32px;padding:0 14px;border-radius:7px;background:var(--tx);color:#1B1E24;font-weight:600;display:flex;align-items:center;gap:6px;margin-left:18px}
+
+  /* left rail: vertical arrangement */
+  .rail{position:absolute;left:0;top:56px;width:232px;bottom:0;border-right:1px solid var(--line);padding:18px 18px}
+  .rl{font-size:11px;color:var(--tx-3);display:flex;justify-content:space-between;margin-bottom:12px}
+  .ov{position:relative;height:640px}
+  .ov .bn{position:absolute;left:0;width:26px;font:10px var(--mono);color:var(--tx-3);text-align:right}
+  .ov .cl{position:absolute;width:30px;border-radius:4px;opacity:.85}
+  .ov .gl{position:absolute;left:34px;right:0;height:1px;background:var(--line)}
+  .ov .br{position:absolute;left:30px;right:-6px;border:1.5px solid var(--tx);border-radius:6px}
+  .ov .th{position:absolute;top:-22px;font-size:10px;color:var(--tx-3);width:30px;text-align:center}
+
+  /* tracker */
+  .trk{position:absolute;left:232px;top:56px;width:848px;bottom:0}
+  .hd{position:absolute;left:0;right:0;top:0;height:72px;border-bottom:1px solid var(--line-2);display:flex;background:var(--s1)}
+  .hd .rn{width:72px;border-right:1px solid var(--line)}
+  .hd .tc{flex:1;border-right:1px solid var(--line);padding:12px 14px;position:relative}
+  .hd .tc .bar{position:absolute;left:0;right:0;top:0;height:3px}
+  .hd .tc b{font-size:13px;font-weight:600;display:block}
+  .hd .tc small{color:var(--tx-3);font-size:11px}
+  .hd .ms{position:absolute;right:12px;top:14px;display:flex;gap:4px}
+  .hd .ms i{font:600 10px var(--mono);font-style:normal;width:20px;height:18px;border-radius:4px;background:var(--s3);color:var(--tx-2);display:flex;align-items:center;justify-content:center}
+  .hd .lv{position:absolute;left:14px;right:14px;bottom:10px;height:3px;border-radius:2px;background:var(--s3)}
+  .hd .lv i{position:absolute;left:0;top:0;bottom:0;border-radius:2px}
+  .colh{position:absolute;left:0;right:0;top:72px;height:26px;display:flex;font:10px var(--mono);color:var(--tx-3);border-bottom:1px solid var(--line)}
+  .colh div{flex:1;display:flex;gap:0;padding:7px 14px;border-right:1px solid var(--line)}
+  .colh div:first-child{flex:none;width:72px}
+  .colh span{width:48px}
+  .rows{position:absolute;left:0;right:0;top:98px}
+  .r{height:40px;display:flex;border-bottom:1px solid var(--line);font:13px var(--mono)}
+  .r.beat1{background:var(--s1)}
+  .r .n{width:72px;flex:none;padding:12px 0 0 16px;color:var(--tx-3);font-size:12px;border-right:1px solid var(--line)}
+  .r.beat1 .n{color:var(--tx-2)}
+  .r .c{flex:1;padding:11px 14px 0;border-right:1px solid var(--line);display:flex;color:var(--tx-3)}
+  .r .c span{width:48px}
+  .r .c .x{color:var(--tx)}
+  .r .c .d{color:var(--tx-3)}
+  .r.sel{background:#2B313A}
+  .r.sel .c.on{background:#CFE07B1F;box-shadow:inset 2px 0 0 var(--t3)}
+  .r.play .n{color:var(--t3)}
+  .r .c .hold{display:block;width:2px;height:16px;background:var(--line-2);margin-left:10px}
+  .keys{position:absolute;left:0;right:0;bottom:0;height:48px;border-top:1px solid var(--line);display:flex;align-items:center;gap:22px;padding:0 18px;font-size:11px;color:var(--tx-3);background:var(--s1)}
+  .keys kbd{font:11px var(--mono);color:var(--tx-2);background:var(--s3);border-radius:4px;padding:2px 6px;margin-right:6px}
+
+  /* inspector */
+  .ins{position:absolute;left:1080px;top:56px;right:0;bottom:0;border-left:1px solid var(--line);background:var(--s1);padding:22px 24px}
+  .il{font-size:11px;color:var(--tx-3);margin-bottom:6px}
+  .note{display:flex;align-items:flex-end;gap:14px}
+  .note b{font:600 104px/0.9 var(--cond);letter-spacing:-3px;color:var(--t3)}
+  .note div{padding-bottom:8px}
+  .note div span{display:block;font:15px var(--mono);color:var(--tx)}
+  .note div small{color:var(--tx-3);font-size:11px}
+  .cent{margin-top:22px;position:relative;height:56px}
+  .cent .tk{position:absolute;bottom:20px;width:1px;background:var(--line-2)}
+  .cent .nd{position:absolute;left:50%;bottom:16px;width:2px;height:32px;background:var(--t3);margin-left:-1px}
+  .cent .lb{position:absolute;bottom:0;font:10px var(--mono);color:var(--tx-3);transform:translateX(-50%)}
+  .box{margin-top:22px;border:1px solid var(--line-2);border-radius:10px;position:relative;height:120px;background:var(--bg)}
+  .box .bl{position:absolute;left:12px;top:10px;font-size:11px;color:var(--tx-3)}
+  .steps{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
+  .st{border:1px solid var(--line-2);border-radius:10px;padding:10px 12px;position:relative}
+  .st small{font-size:11px;color:var(--tx-3)}
+  .st b{display:block;font:500 22px var(--mono);margin-top:4px}
+  .st .pm{position:absolute;right:10px;top:12px;display:flex;flex-direction:column;gap:4px}
+  .st .pm i{width:22px;height:18px;border-radius:4px;background:var(--s3);font-style:normal;color:var(--tx-2);font:12px var(--mono);display:flex;align-items:center;justify-content:center}
+  .tg{margin-top:14px;display:flex;align-items:center;justify-content:space-between;border:1px solid var(--line-2);border-radius:10px;padding:12px}
+  .tg small{display:block;color:var(--tx-3);font-size:11px;margin-top:2px}
+  .sw{width:34px;height:20px;border-radius:10px;background:var(--t3);position:relative;flex:none}
+  .sw i{position:absolute;right:3px;top:3px;width:14px;height:14px;border-radius:50%;background:#1B1E24}
+  .nt{margin-top:14px;display:flex;gap:8px;font-size:11px;line-height:1.6;color:var(--tx-2)}
+  .nt svg{flex:none;color:var(--t3);margin-top:2px}
+  .kv{display:flex;justify-content:space-between;font-size:12px;padding:6px 0;border-bottom:1px solid var(--line);color:var(--tx-2)}
+  .kv b{color:var(--tx);font-weight:500}
+  .free{color:var(--t3);font-size:11px}
+</style></head>
+<body>
+<div class="app" data-root>
+  <div class="top">
+    <h1>비 오는 새벽</h1><span class="badge">RESONA · 이름 임시</span>
+    <div class="tb"><div id="b-stop"></div><div class="on" id="b-play"></div><div id="b-loop"></div><div class="rec" id="b-rec"></div></div>
+    <div class="clock">05.1.00<small>마디 · 박 · 틱</small></div>
+    <div class="meta"><div>템포<b>92</b></div><div>조성<b>A min</b></div><div>박자<b>4/4</b></div><div>출력<b>48k/24</b></div></div>
+    <div class="tb" style="margin-left:18px"><div id="b-undo"></div><div id="b-redo"></div></div>
+    <div class="exp" id="b-exp"></div>
+  </div>
+
+  <div class="rail">
+    <div class="rl"><span>곡 구성</span><span>16 마디</span></div>
+    <div class="ov" id="ov" style="margin-top:28px"></div>
+  </div>
+
+  <div class="trk">
+    <div class="hd" id="hd"><div class="rn"></div></div>
+    <div class="colh" id="colh"><div>박</div></div>
+    <div class="rows" id="rows"></div>
+    <div class="keys"><span><kbd>↑ ↓</kbd>반음 이동</span><span><kbd>⇧ ↑ ↓</kbd>1센트씩</span><span><kbd>Enter</kbd>음 입력</span><span><kbd>⌫</kbd>지우기</span><span style="margin-left:auto">한 줄 = 1박</span></div>
+  </div>
+
+  <div class="ins">
+    <div class="il">선택한 음 · 신스 리드 05.1</div>
+    <div class="note"><b>A4</b><div><span>440.00 Hz</span><small>미세조정 0¢</small></div></div>
+    <div class="cent" id="cent"></div>
+    <div class="box"><span class="bl">음정 곡선</span><svg id="cv" width="310" height="118" style="position:absolute;left:0;top:0"></svg></div>
+    <div class="steps">
+      <div class="st"><small>시작 글라이드</small><b>24¢</b><div class="pm"><i>+</i><i>−</i></div></div>
+      <div class="st"><small>흔들림</small><b>15¢</b><div class="pm"><i>+</i><i>−</i></div></div>
+    </div>
+    <div class="tg"><div>포먼트 유지<small>음정만 옮기고 목소리 질감은 그대로 둡니다</small></div><div class="sw"><i></i></div></div>
+    <div class="nt"><span id="lock"></span><span>이 수정은 기기 안에서 바로 처리됩니다. AI를 다시 부르지 않으니 나머지 소리는 그대로예요.</span></div>
+    <div style="margin-top:20px">
+      <div class="kv"><span>구간</span><b>5 – 8 마디</b></div>
+      <div class="kv"><span>음 개수 · 수정한 음</span><b>9 · 0</b></div>
+      <div class="kv"><span>WAV 48kHz / 24bit</span><span class="free">무료</span></div>
+    </div>
+  </div>
+</div>
+<script>
+  ['stop', 'play', 'loop', 'rec', 'undo', 'redo'].forEach(k => $('#b-' + k).innerHTML = ICON[k]);
+  $('#b-exp').innerHTML = ICON.export + '내보내기'; $('#lock').innerHTML = ICON.lock;
+  const COL = ['var(--t1)', 'var(--t2)', 'var(--t3)', 'var(--t4)'];
+
+  // vertical arrangement overview
+  const O = $('#ov'), bh = 40;
+  for (let b = 0; b < 16; b++) {
+    const n = el('div', 'bn', String(b + 1).padStart(2, '0'), O); n.style.top = (b * bh + 13) + 'px';
+    const g = el('div', 'gl', null, O); g.style.top = (b * bh) + 'px';
+  }
+  TRACKS.forEach((t, i) => {
+    const h = el('div', 'th', t.name.slice(0, 2), O); h.style.left = (40 + i * 40) + 'px';
+    t.clips.forEach(c => { const e = el('div', 'cl', null, O);
+      Object.assign(e.style, { left: (40 + i * 40) + 'px', top: (c[0] * bh + 3) + 'px', height: (c[1] * bh - 6) + 'px', background: COL[i] }); });
+  });
+  const br = el('div', 'br', null, O); Object.assign(br.style, { top: (4 * bh - 2) + 'px', height: (4 * bh + 4) + 'px' });
+
+  // track headers
+  const vol = [.72, .64, .58, .80];
+  TRACKS.forEach((t, i) => el('div', 'tc', `<span class="bar" style="background:${COL[i]}"></span><b>${t.name}</b><small>${t.tone}</small><div class="ms"><i>M</i><i>S</i></div><div class="lv"><i style="width:${vol[i] * 100}%;background:${COL[i]}"></i></div>`, $('#hd')));
+  ['소리 · 세기', '음 · 세기', '음 · 미세 · 글라', '음 · 세기'].forEach((h, i) => {
+    const d = el('div', '', null, $('#colh')); h.split(' · ').forEach(x => el('span', '', x, d)); });
+
+  // rows: 16 beats, bars 5–8
+  const kick = s => (s % 2 === 0 ? ['킥', '100'] : ['스네어', '90']);
+  const bass = { 0: 'A1', 4: 'G1', 8: 'F1', 12: 'E1' };
+  const lead = {}; NOTES.forEach((n, i) => { lead[n.step] = { ...n, i }; for (let k = 1; k < n.len; k++) lead[n.step + k] = { hold: true }; });
+  for (let s = 0; s < 16; s++) {
+    const r = el('div', 'r' + (s % 4 === 0 ? ' beat1' : '') + (s === 0 ? ' sel play' : ''), null, $('#rows'));
+    el('div', 'n', `${String(5 + Math.floor(s / 4)).padStart(2, '0')}.${s % 4 + 1}`, r);
+    const [k, v] = kick(s);
+    el('div', 'c', `<span class="x">${k}</span><span>${v}</span>`, r);
+    el('div', 'c', bass[s] ? `<span class="x">${bass[s]}</span><span>80</span>` : (s % 4 ? '<span class="hold"></span>' : '<span class="d">···</span>'), r);
+    const L = lead[s];
+    el('div', 'c' + (s === 0 ? ' on' : ''), L ? (L.hold ? '<span class="hold"></span>' :
+      `<span class="x">${PITCHES[L.p]}</span><span class="x">+00</span><span>${L.i === 0 ? '24' : '--'}</span>`) : '<span class="d">···</span>', r);
+    el('div', 'c', '<span class="d">···</span>', r);
+  }
+
+  // cent ruler −50 … +50
+  const C = $('#cent'), CW = 310;
+  for (let c = -50; c <= 50; c += 5) { const t = el('div', 'tk', null, C);
+    Object.assign(t.style, { left: ((c + 50) / 100 * CW) + 'px', height: (c % 25 === 0 ? 18 : 8) + 'px' });
+    if (c % 25 === 0) { const l = el('div', 'lb', (c > 0 ? '+' : '') + c, C); l.style.left = ((c + 50) / 100 * CW) + 'px'; } }
+  el('div', 'nd', null, C);
+  $('#cv').innerHTML = `<line x1="0" y1="64" x2="310" y2="64" stroke="#3A414C" stroke-dasharray="3 3"/><path d="${curvePath(310, 128, .45, .22).replace(/ ([\d.]+)(?= |$)/g, (m, y) => ' ' + (+y))}" fill="none" stroke="#CFE07B" stroke-width="2"/>`;
+</script>
+
+</body></html>

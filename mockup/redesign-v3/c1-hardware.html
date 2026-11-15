@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>하드웨어</title>
+<script src="data.js"></script>
+<style>
+  :root{
+    --panel:#DCDCD7; --panel-2:#CFCFC9; --key:#C6C6BF; --key-hi:#EDEDE8; --ink:#1C1C1A; --ink-2:#5E5E58; --ink-3:#8C8C85;
+    --orange:#FF5B14; --blue:#2D68D8; --green:#1E9E62; --lcd:#0E100E; --lcd-ink:#E9EEE6; --lcd-dim:#5C655B;
+    --sans:"Helvetica Neue","Apple SD Gothic Neo",sans-serif; --mono:Menlo,monospace; --num:"DIN Condensed","Helvetica Neue",sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#9E9E98;font-family:var(--sans);color:var(--ink)}
+  .dev{width:1440px;height:900px;position:relative;overflow:hidden;
+       background:linear-gradient(180deg,#E3E3DE 0%,#D6D6D0 100%)}
+  /* --- top strip --- */
+  .top{position:absolute;left:32px;right:32px;top:22px;height:40px;display:flex;align-items:center;gap:18px}
+  .brand{font-weight:700;font-size:15px;letter-spacing:-.2px}
+  .tag{font-size:11px;color:var(--ink-2);border:1px solid #A9A9A2;border-radius:4px;padding:2px 6px}
+  .song{font-size:15px;color:var(--ink);margin-left:20px}
+  .song-s{font-size:12px;color:var(--ink-3);margin-left:-8px}
+  .grille{margin-left:auto;display:grid;grid-template-columns:repeat(18,5px);gap:5px}
+  .grille i{width:5px;height:5px;border-radius:50%;background:#2A2A27;opacity:.75}
+  .hairline{position:absolute;left:32px;right:32px;top:76px;height:1px;background:#B9B9B2}
+
+  /* --- left: track keys --- */
+  .tracks{position:absolute;left:32px;top:96px;width:200px;display:flex;flex-direction:column;gap:10px}
+  .tk{height:88px;border-radius:10px;background:linear-gradient(180deg,#D2D2CC,#C3C3BC);
+      box-shadow:0 2px 0 #A4A49D,0 3px 6px rgba(0,0,0,.12);padding:12px 14px;position:relative}
+  .tk.on{background:linear-gradient(180deg,#F4F4F0,#E6E6E1)}
+  .tk .n{font-size:16px;font-weight:600;color:var(--ink)}
+  .tk .t{font-size:12px;color:var(--ink-2);margin-top:3px}
+  .tk .led{position:absolute;right:14px;top:15px;width:8px;height:8px;border-radius:50%;background:#9C9C95}
+  .tk.on .led{background:var(--orange)}
+  .tk .ms{position:absolute;left:14px;bottom:11px;display:flex;gap:6px}
+  .tk .ms b{width:24px;height:18px;border-radius:4px;border:1px solid #9E9E97;font:600 10px var(--mono);
+            color:var(--ink-2);display:flex;align-items:center;justify-content:center}
+  .tk .num{position:absolute;right:14px;bottom:10px;font:700 22px var(--num);color:#A3A39C}
+  .tk.on .num{color:var(--orange)}
+  .addk{height:44px;border-radius:10px;border:1.5px dashed #A3A39C;display:flex;align-items:center;justify-content:center;
+        gap:6px;font-size:13px;color:var(--ink-2)}
+
+  /* --- LCD --- */
+  .bezel{position:absolute;left:256px;top:96px;width:928px;height:504px;border-radius:18px;
+         background:linear-gradient(180deg,#2B2B29,#1C1C1A);padding:10px;box-shadow:0 1px 0 #F4F4F0}
+  .lcd{width:100%;height:100%;border-radius:10px;background:var(--lcd);position:relative;overflow:hidden;font-family:var(--mono);color:var(--lcd-ink)}
+  .status{position:absolute;left:20px;right:20px;top:14px;display:flex;gap:26px;font-size:12px;color:var(--lcd-dim)}
+  .status b{color:var(--lcd-ink);font-weight:400}
+  .status .r{margin-left:auto;color:var(--orange)}
+  .arr{position:absolute;left:20px;right:20px;top:44px;height:76px}
+  .arr .row{position:absolute;left:0;right:0;height:14px}
+  .arr .c{position:absolute;top:0;height:14px;border:1px solid #6F7A6D;border-radius:3px}
+  .arr .c.sel{background:var(--orange);border-color:var(--orange)}
+  .arr .bar{position:absolute;top:-2px;bottom:-2px;width:1px;background:#1E231E}
+  .div{position:absolute;left:20px;right:20px;top:132px;height:1px;background:#262B25}
+  .roll{position:absolute;left:58px;right:200px;top:150px;bottom:20px}
+  .roll .ln{position:absolute;left:0;right:0;height:1px;background:#1E231D}
+  .roll .ln.blk{background:#161A15}
+  .roll .k{position:absolute;left:-40px;font-size:10px;color:var(--lcd-dim);transform:translateY(-6px)}
+  .roll .v{position:absolute;top:0;bottom:0;width:1px;background:#1E231D}
+  .roll .v.bar{background:#3A4239}
+  .roll .nt{position:absolute;height:14px;border-radius:3px;background:var(--lcd-ink)}
+  .roll .nt.sel{background:var(--orange)}
+  .roll .bn{position:absolute;top:-20px;font-size:10px;color:var(--lcd-dim)}
+  .read{position:absolute;right:20px;top:150px;width:160px}
+  .read .big{font:700 84px/1 var(--num);color:var(--lcd-ink);letter-spacing:-1px}
+  .read .row{display:flex;justify-content:space-between;font-size:12px;color:var(--lcd-dim);border-top:1px solid #262B25;padding:9px 0}
+  .read .row b{color:var(--lcd-ink);font-weight:400}
+  .read .row b.o{color:var(--orange)}
+  .read .cv{margin-top:14px;border:1px solid #262B25;border-radius:6px;height:74px;position:relative}
+  .read .cv span{position:absolute;left:8px;top:6px;font-size:10px;color:var(--lcd-dim)}
+
+  /* --- right column --- */
+  .side{position:absolute;left:1208px;top:96px;width:200px}
+  .lab{font-size:11px;color:var(--ink-3);letter-spacing:.2px;margin-bottom:8px}
+  .kv{display:flex;justify-content:space-between;font-size:13px;padding:7px 0;border-bottom:1px solid #C3C3BC}
+  .kv span{color:var(--ink-2)}
+  .kv b{font-weight:500}
+  .bigkey{margin-top:22px;height:88px;border-radius:12px;background:linear-gradient(180deg,#FF6A2A,#F04E0A);
+          box-shadow:0 2px 0 #B83A06,0 4px 10px rgba(0,0,0,.14);color:#fff;padding:14px 16px;position:relative}
+  .bigkey b{font-size:16px;font-weight:600}
+  .bigkey small{display:block;font-size:12px;opacity:.85;margin-top:4px}
+  .bigkey svg{position:absolute;right:16px;top:16px}
+  .free{font-size:11px;color:var(--green);font-weight:600}
+  .undo{display:flex;gap:10px;margin-top:22px}
+  .undo div{flex:1;height:52px;border-radius:10px;background:linear-gradient(180deg,#D2D2CC,#C3C3BC);
+            box-shadow:0 2px 0 #A4A49D;display:flex;align-items:center;justify-content:center;gap:6px;font-size:12px;color:var(--ink-2)}
+
+  /* --- bottom: transport, knobs, keys --- */
+  .trans{position:absolute;left:32px;top:628px;width:200px;display:grid;grid-template-columns:95px 95px;gap:10px}
+  .tr{height:95px;border-radius:12px;background:linear-gradient(180deg,#D2D2CC,#C3C3BC);box-shadow:0 2px 0 #A4A49D,0 3px 6px rgba(0,0,0,.1);
+      display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:var(--ink);font-size:11px}
+  .tr span{color:var(--ink-2)}
+  .tr.play{background:linear-gradient(180deg,#2A2A27,#1A1A18);color:#F2F2EE;box-shadow:0 2px 0 #000}
+  .tr.play span{color:#B6B6AF}
+  .tr.rec{color:var(--orange)}
+  .knobs{position:absolute;left:256px;top:628px;width:560px;display:flex;justify-content:space-between}
+  .kn{width:124px;text-align:center}
+  .kn .cap{width:104px;height:104px;margin:0 auto;border-radius:50%;position:relative;
+           box-shadow:0 6px 0 rgba(0,0,0,.14),0 10px 18px rgba(0,0,0,.18)}
+  .kn .cap .ptr{position:absolute;left:50%;top:9px;width:4px;height:26px;margin-left:-2px;border-radius:2px;background:rgba(255,255,255,.9)}
+  .kn.w .cap .ptr{background:#1C1C1A}
+  .kn .l{font-size:12px;color:var(--ink-2);margin-top:16px}
+  .kn .v{font:700 26px/1.1 var(--num);color:var(--ink);margin-top:3px}
+  .kn.b .cap{background:radial-gradient(circle at 38% 30%,#5C8FEA 0%,#2D68D8 55%,#204FA8 100%)}
+  .kn.g .cap{background:radial-gradient(circle at 38% 30%,#45C389 0%,#1E9E62 55%,#14784A 100%)}
+  .kn.w .cap{background:radial-gradient(circle at 38% 30%,#FFFFFF 0%,#EFEFEA 55%,#CFCFC8 100%)}
+  .kn.o .cap{background:radial-gradient(circle at 38% 30%,#FF8A55 0%,#FF5B14 55%,#CC4407 100%)}
+  .notice{position:absolute;left:256px;top:842px;width:560px;display:flex;gap:8px;align-items:center;font-size:12px;color:var(--ink-2)}
+  .keys{position:absolute;left:848px;top:628px;width:336px;height:200px}
+  .wk{position:absolute;top:0;width:44px;height:200px;border-radius:0 0 8px 8px;background:linear-gradient(180deg,#F4F4F0,#E8E8E3);
+      box-shadow:0 2px 0 #A9A9A2,inset 0 0 0 1px #BDBDB6;display:flex;align-items:flex-end;justify-content:center;padding-bottom:12px;font:11px var(--mono);color:var(--ink-3)}
+  .wk.on{background:linear-gradient(180deg,#FF7A3D,#FF5B14);color:#fff}
+  .bk{position:absolute;top:0;width:28px;height:118px;border-radius:0 0 6px 6px;background:linear-gradient(180deg,#2C2C29,#161614);box-shadow:0 2px 0 #000}
+  .klab{position:absolute;left:848px;top:842px;font-size:12px;color:var(--ink-2)}
+  .klab b{color:var(--orange);font-weight:600}
+</style></head>
+<body>
+<div class="dev" data-root>
+  <div class="top">
+    <span class="brand">RESONA</span><span class="tag">이름 임시</span>
+    <span class="song">비 오는 새벽</span><small class="song-s">4 트랙 · 16 마디</small>
+    <div class="grille" id="grille"></div>
+  </div>
+  <div class="hairline"></div>
+
+  <div class="tracks" id="tracks"></div>
+
+  <div class="bezel"><div class="lcd">
+    <div class="status"><span>BPM <b>092</b></span><span>KEY <b>A MIN</b></span><span>SIG <b>4/4</b></span><span>OUT <b>48K / 24B</b></span><span class="r">▶ 05 . 1 . 00</span></div>
+    <div class="arr" id="arr"></div>
+    <div class="div"></div>
+    <div class="roll" id="roll"></div>
+    <div class="read">
+      <div class="big">A4</div>
+      <div class="row" style="margin-top:12px"><span>미세조정</span><b>+0¢</b></div>
+      <div class="row"><span>주파수</span><b>440.00 Hz</b></div>
+      <div class="row"><span>포먼트</span><b class="o">유지</b></div>
+      <div class="cv"><span>음정 곡선</span><svg id="cv" width="158" height="72" style="position:absolute;left:0;top:0"></svg></div>
+    </div>
+  </div></div>
+
+  <div class="side">
+    <div class="lab">클립 정보</div>
+    <div class="kv"><span>구간</span><b>5 – 8 마디</b></div>
+    <div class="kv"><span>음 개수</span><b>9</b></div>
+    <div class="kv"><span>수정한 음</span><b>0</b></div>
+    <div class="kv"><span>출처</span><b>직접 작성</b></div>
+    <div class="undo"><div id="u"></div><div id="r"></div></div>
+    <div class="bigkey"><b>내보내기</b><small>WAV · 48kHz / 24bit</small><span id="ex"></span></div>
+    <div class="kv" style="margin-top:12px"><span>WAV 파일</span><span class="free">무료</span></div>
+    <div class="kv"><span>스템 개별</span><span class="free">무료</span></div>
+  </div>
+
+  <div class="trans" id="trans"></div>
+  <div class="knobs">
+    <div class="kn b"><div class="cap"><div class="ptr"></div></div><div class="l">미세조정</div><div class="v">0¢</div></div>
+    <div class="kn g"><div class="cap" id="k2"><div class="ptr"></div></div><div class="l">시작 글라이드</div><div class="v">24¢</div></div>
+    <div class="kn w"><div class="cap"><div class="ptr"></div></div><div class="l">흔들림</div><div class="v">15¢</div></div>
+    <div class="kn o"><div class="cap"><div class="ptr"></div></div><div class="l">포먼트 유지</div><div class="v">ON</div></div>
+  </div>
+  <div class="notice"><span id="lock"></span><span>이 수정은 <b>기기 안에서 바로 처리</b>됩니다. AI를 다시 부르지 않으니 나머지 소리는 그대로예요.</span></div>
+  <div class="keys" id="keys"></div>
+  <div class="klab">선택한 음 <b>A4</b> · 건반을 누르면 음을 바꿉니다</div>
+</div>
+<script>
+  for (let i = 0; i < 36; i++) el('i', '', null, $('#grille'));
+  TRACKS.forEach((t, i) => el('div', 'tk' + (i === 2 ? ' on' : ''),
+    `<div class="n">${t.name}</div><div class="t">${t.tone}</div><span class="led"></span><div class="ms"><b>M</b><b>S</b></div><span class="num">0${i + 1}</span>`, $('#tracks')));
+  el('div', 'addk', ICON.plus + '<span>트랙 추가</span>', $('#tracks'));
+
+  // arrangement strip on the LCD (16 bars)
+  const A = $('#arr'), W = 888;
+  for (let b = 1; b < 16; b++) { const v = el('div', 'bar', null, A); v.style.left = (b / 16 * W) + 'px'; }
+  TRACKS.forEach((t, i) => {
+    const row = el('div', 'row', null, A); row.style.top = (i * 19) + 'px';
+    t.clips.forEach(c => { const e = el('div', 'c' + (c[2] ? ' sel' : ''), null, row);
+      e.style.left = (c[0] / 16 * W + 1) + 'px'; e.style.width = (c[1] / 16 * W - 3) + 'px'; });
+  });
+
+  // piano roll
+  const R = $('#roll'), RW = 650, RH = 304, rh = RH / 13;
+  PITCHES.forEach((p, i) => {
+    const l = el('div', 'ln' + (BLACK.has(p) ? ' blk' : ''), null, R); l.style.top = (i * rh + rh / 2) + 'px';
+    if (!BLACK.has(p)) { const k = el('div', 'k', p, R); k.style.top = (i * rh + rh / 2) + 'px'; }
+  });
+  for (let s = 0; s <= 16; s++) { const v = el('div', 'v' + (s % 4 === 0 ? ' bar' : ''), null, R); v.style.left = (s / 16 * RW) + 'px';
+    if (s % 4 === 0 && s < 16) { const n = el('div', 'bn', String(5 + s / 4), R); n.style.left = (s / 16 * RW + 4) + 'px'; } }
+  NOTES.forEach((n, i) => { const e = el('div', 'nt' + (i === 0 ? ' sel' : ''), null, R);
+    e.style.left = (n.step / 16 * RW + 2) + 'px'; e.style.width = (n.len / 16 * RW - 4) + 'px'; e.style.top = (n.p * rh + rh / 2 - 7) + 'px'; });
+  $('#cv').innerHTML = `<line x1="0" y1="40" x2="158" y2="40" stroke="#262B25"/><path d="${curvePath(158, 80, .5, .22)}" fill="none" stroke="#FF5B14" stroke-width="2"/>`;
+
+  // transport keys
+  [['stop', '정지', ''], ['play', '재생', ' play'], ['loop', '반복', ''], ['rec', '녹음', ' rec']].forEach(([k, l, c]) =>
+    el('div', 'tr' + c, ICON[k] + `<span>${l}</span>`, $('#trans')));
+  $('#u').innerHTML = ICON.undo + '되돌리기'; $('#r').innerHTML = ICON.redo + '다시';
+  $('#ex').innerHTML = ICON.export.replace(/16/g, '20'); $('#lock').innerHTML = ICON.lock;
+
+  // keyboard C4..C5 (8 white keys)
+  const whites = ['C4', 'D4', 'E4', 'F4', 'G4', 'A4', 'B4', 'C5'], K = $('#keys');
+  whites.forEach((p, i) => { const k = el('div', 'wk' + (p === 'A4' ? ' on' : ''), p, K); k.style.left = (i * 42) + 'px'; });
+  [0, 1, 3, 4, 5].forEach(i => { const k = el('div', 'bk', null, K); k.style.left = (i * 42 + 29) + 'px'; });
+</script>
+
+</body></html>

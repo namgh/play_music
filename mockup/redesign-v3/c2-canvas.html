@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>캔버스</title>
+<script src="data.js"></script>
+<style>
+  :root{
+    --canvas:#1F1F1F; --grid:#272727; --panel:#2C2C2C; --panel-2:#383838; --line:#3D3D3D; --line-2:#4A4A4A;
+    --tx:#F0F0F0; --tx-2:#ABABAB; --tx-3:#7A7A7A; --sel:#0D99FF;
+    --t1:#FF8A73; --t2:#6FA8FF; --t3:#B78CFF; --t4:#4CD6A4;
+    --sans:Inter,"Apple SD Gothic Neo",sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#000;font-family:var(--sans);color:var(--tx);font-size:12px}
+  .cv{width:1440px;height:900px;position:relative;overflow:hidden;background:var(--canvas)}
+  .gl{position:absolute;background:var(--grid)}
+  .float{position:absolute;background:var(--panel);border-radius:14px;border:1px solid var(--line);
+         box-shadow:0 1px 2px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.35)}
+
+  /* file panel */
+  .file{left:12px;top:12px;width:248px;padding:10px}
+  .fh{display:flex;align-items:center;gap:10px;padding:6px 6px 12px;border-bottom:1px solid var(--line)}
+  .logo{width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,#B78CFF,#6FA8FF)}
+  .fh b{font-size:13px;font-weight:600;display:block}
+  .fh small{font-size:11px;color:var(--tx-3)}
+  .sec{font-size:11px;color:var(--tx-3);padding:12px 6px 6px;display:flex;justify-content:space-between}
+  .tr{display:flex;align-items:center;gap:10px;height:44px;padding:0 8px;border-radius:8px}
+  .tr.on{background:#0D99FF22}
+  .sw{width:10px;height:10px;border-radius:3px}
+  .tr b{font-size:12px;font-weight:600;display:block}
+  .tr small{font-size:11px;color:var(--tx-3)}
+  .tr .ms{margin-left:auto;display:flex;gap:2px}
+  .tr .ms i{font-style:normal;width:22px;height:22px;border-radius:5px;color:var(--tx-3);font-size:11px;font-weight:600;
+            display:flex;align-items:center;justify-content:center}
+  .add{display:flex;align-items:center;gap:8px;height:36px;padding:0 8px;color:var(--tx-2);border-radius:8px;margin-top:4px}
+
+  /* transport pill */
+  .tp{left:520px;top:12px;height:48px;padding:0 6px;display:flex;align-items:center;gap:2px;border-radius:12px}
+  .ib{width:36px;height:36px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--tx)}
+  .ib.on{background:var(--sel);color:#fff}
+  .ib.rec{color:#FF5C5C}
+  .sep{width:1px;height:24px;background:var(--line);margin:0 8px}
+  .pos{font-size:15px;font-weight:600;font-variant-numeric:tabular-nums;padding:0 8px;letter-spacing:.3px}
+  .meta{display:flex;flex-direction:column;padding:0 10px}
+  .meta small{font-size:10px;color:var(--tx-3)}
+  .meta b{font-size:12px;font-weight:600}
+  .exp{position:absolute;left:1136px;top:12px;height:48px;width:292px;display:flex;align-items:center;gap:8px;padding:0 6px 0 14px}
+  .exp .z{color:var(--tx-2)}
+  .btn{margin-left:auto;height:34px;padding:0 14px;border-radius:8px;background:var(--sel);color:#fff;font-weight:600;font-size:12px;display:flex;align-items:center;gap:6px}
+
+  /* canvas frames */
+  .flabel{position:absolute;font-size:11px;color:var(--tx-2);display:flex;gap:8px}
+  .flabel span{color:var(--tx-3)}
+  .frame{position:absolute;background:#262626;border:1px solid #333}
+  .arr{left:300px;top:110px;width:808px;height:232px}
+  .ruler{position:absolute;left:0;right:0;top:0;height:24px;border-bottom:1px solid #333}
+  .ruler i{position:absolute;top:6px;font-style:normal;font-size:10px;color:var(--tx-3)}
+  .lane{position:absolute;left:0;right:0;height:52px}
+  .clip{position:absolute;top:6px;height:40px;border-radius:8px;overflow:hidden;display:flex;align-items:center;gap:2px;padding:0 8px}
+  .clip i{flex:1;border-radius:1px;background:rgba(0,0,0,.28)}
+  .clip .nm{position:absolute;left:8px;top:4px;font-size:10px;font-weight:600;color:rgba(0,0,0,.6)}
+  .selbox{position:absolute;border:1.5px solid var(--sel)}
+  .h{position:absolute;width:8px;height:8px;background:#fff;border:1.5px solid var(--sel);border-radius:2px}
+  .dim{position:absolute;background:var(--sel);color:#fff;font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px}
+  .ph{position:absolute;top:0;bottom:0;width:1.5px;background:#FF5C5C}
+
+  .ed{left:300px;top:420px;width:808px;height:400px}
+  .keys{position:absolute;left:0;top:0;bottom:0;width:52px;border-right:1px solid #333}
+  .key{position:absolute;left:0;right:0;font-size:10px;color:var(--tx-3);padding-left:10px;display:flex;align-items:center}
+  .key.blk{background:#1F1F1F}
+  .row{position:absolute;left:52px;right:0;height:1px;background:#2F2F2F}
+  .rowb{position:absolute;left:52px;right:0;background:#222}
+  .col{position:absolute;top:0;bottom:0;width:1px;background:#2F2F2F}
+  .col.bar{background:#3D3D3D}
+  .nt{position:absolute;height:22px;border-radius:6px;background:var(--t3);display:flex;align-items:center;padding-left:7px;font-size:10px;font-weight:600;color:#2A1550}
+  .chip{position:absolute;display:flex;align-items:center;gap:10px;height:32px;padding:0 4px 0 12px;border-radius:9px;background:#383838;border:1px solid var(--line-2);
+        box-shadow:0 6px 16px rgba(0,0,0,.4);font-size:12px}
+  .chip b{font-weight:600}
+  .chip span{color:var(--tx-2)}
+  .chip .cb{height:24px;padding:0 8px;border-radius:6px;background:#4A4A4A;display:flex;align-items:center;font-size:11px}
+
+  /* inspector */
+  .insp{left:1136px;top:72px;width:292px;bottom:12px;padding:0}
+  .tabs{display:flex;gap:4px;padding:10px 10px 0;border-bottom:1px solid var(--line)}
+  .tab{padding:8px 10px 10px;font-size:12px;color:var(--tx-3);font-weight:600}
+  .tab.on{color:var(--tx);border-bottom:2px solid var(--tx)}
+  .grp{padding:14px 16px;border-bottom:1px solid var(--line)}
+  .gt{font-size:11px;font-weight:600;color:var(--tx);margin-bottom:10px;display:flex;justify-content:space-between}
+  .gt span{color:var(--tx-3);font-weight:400}
+  .fields{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .fd{height:32px;border-radius:7px;background:#383838;display:flex;align-items:center;padding:0 10px;gap:8px;font-size:12px}
+  .fd small{color:var(--tx-3);font-size:11px}
+  .fd b{font-weight:600;font-variant-numeric:tabular-nums}
+  .fd .u{margin-left:auto;color:var(--tx-3)}
+  .big{display:flex;align-items:baseline;gap:10px;margin-bottom:12px}
+  .big b{font-size:36px;font-weight:700;letter-spacing:-1px}
+  .big span{color:var(--tx-2);font-size:13px}
+  .curve{height:84px;border-radius:8px;background:#232323;border:1px solid var(--line);position:relative;margin-top:10px}
+  .sl{margin-top:12px}
+  .sl .lb{display:flex;justify-content:space-between;font-size:12px;color:var(--tx-2);margin-bottom:8px}
+  .sl .lb b{color:var(--tx);font-weight:600}
+  .trk{height:4px;border-radius:2px;background:#444;position:relative}
+  .trk i{position:absolute;left:0;top:0;bottom:0;border-radius:2px;background:var(--sel)}
+  .trk em{position:absolute;top:-6px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.4)}
+  .tg{display:flex;align-items:center;justify-content:space-between;margin-top:14px;font-size:12px}
+  .tg small{display:block;color:var(--tx-3);font-size:11px;margin-top:3px}
+  .sw2{width:32px;height:18px;border-radius:9px;background:var(--sel);position:relative;flex:none}
+  .sw2 i{position:absolute;right:2px;top:2px;width:14px;height:14px;border-radius:50%;background:#fff}
+  .note{display:flex;gap:8px;font-size:11px;line-height:1.55;color:var(--tx-2);background:#0D99FF14;border:1px solid #0D99FF33;border-radius:8px;padding:10px;margin-top:14px}
+  .note svg{flex:none;color:var(--sel);margin-top:1px}
+  .kv{display:flex;justify-content:space-between;font-size:12px;padding:4px 0;color:var(--tx-2)}
+  .kv b{color:var(--tx);font-weight:500}
+
+  /* bottom toolbar */
+  .tool{left:520px;top:836px;height:48px;padding:0 6px;display:flex;align-items:center;gap:2px;border-radius:12px}
+  .tool .ib{color:var(--tx-2)}
+  .tool .ib.on{color:#fff}
+  .zoom{position:absolute;left:12px;bottom:12px;height:32px;padding:0 12px;display:flex;align-items:center;gap:10px;font-size:11px;color:var(--tx-2);border-radius:10px}
+</style></head>
+<body>
+<div class="cv" data-root>
+  <div id="grid"></div>
+
+  <!-- canvas content -->
+  <div class="flabel" style="left:300px;top:90px">편곡 <span>16마디 · 4 트랙</span></div>
+  <div class="frame arr" id="arr"></div>
+  <svg style="position:absolute;left:0;top:0" width="1440" height="900" id="wire"></svg>
+  <div class="flabel" style="left:300px;top:400px">신스 리드 <span>5 – 8 마디 · 음 9개</span></div>
+  <div class="frame ed" id="ed"></div>
+
+  <!-- floating UI -->
+  <div class="float file">
+    <div class="fh"><div class="logo"></div><div><b>비 오는 새벽</b><small>RESONA · 이름 임시</small></div></div>
+    <div class="sec"><span>트랙</span><span>4</span></div>
+    <div id="tracks"></div>
+    <div class="add" id="add"></div>
+  </div>
+
+  <div class="float tp">
+    <div class="ib" id="b-stop"></div><div class="ib on" id="b-play"></div><div class="ib" id="b-loop"></div><div class="ib rec" id="b-rec"></div>
+    <div class="sep"></div><div class="pos">05 · 1 · 00</div><div class="sep"></div>
+    <div class="meta"><small>템포</small><b>92 BPM</b></div>
+    <div class="meta"><small>조성</small><b>A minor</b></div>
+    <div class="meta"><small>박자</small><b>4/4</b></div>
+  </div>
+
+  <div class="float exp"><span class="z" id="b-undo"></span><span class="z" id="b-redo"></span><span class="z" style="font-size:11px">48k / 24bit</span>
+    <div class="btn" id="b-exp">내보내기</div></div>
+
+  <div class="float insp">
+    <div class="tabs"><div class="tab on">음정</div><div class="tab">클립</div><div class="tab">내보내기</div></div>
+    <div class="grp">
+      <div class="gt">선택한 음 <span>1 / 9</span></div>
+      <div class="big"><b>A4</b><span>440.00 Hz</span></div>
+      <div class="fields">
+        <div class="fd"><small>음</small><b>A4</b></div>
+        <div class="fd"><small>미세</small><b>0</b><span class="u">¢</span></div>
+      </div>
+    </div>
+    <div class="grp">
+      <div class="gt">음정 곡선 <span>시작 글라이드 + 흔들림</span></div>
+      <div class="curve"><svg id="cv" width="258" height="82" style="position:absolute;left:0;top:0"></svg></div>
+      <div class="sl"><div class="lb">시작 글라이드 <b>24¢</b></div><div class="trk"><i style="width:24%"></i><em style="left:calc(24% - 8px)"></em></div></div>
+      <div class="sl" style="margin-top:18px"><div class="lb">흔들림 <b>15¢</b></div><div class="trk"><i style="width:15%"></i><em style="left:calc(15% - 8px)"></em></div></div>
+      <div class="tg"><div>포먼트 유지<small>음정만 옮기고 목소리 질감은 그대로 둡니다</small></div><div class="sw2"><i></i></div></div>
+      <div class="note"><span id="lock"></span><span>이 수정은 기기 안에서 바로 처리됩니다. AI를 다시 부르지 않으니 나머지 소리는 그대로예요.</span></div>
+    </div>
+    <div class="grp" style="border:0">
+      <div class="gt">클립 정보</div>
+      <div class="kv"><span>구간</span><b>5 – 8 마디</b></div>
+      <div class="kv"><span>음 개수</span><b>9</b></div>
+      <div class="kv"><span>수정한 음</span><b>0</b></div>
+      <div class="kv"><span>출처</span><b>직접 작성</b></div>
+    </div>
+  </div>
+
+  <div class="float tool">
+    <div class="ib on" id="t1" style="background:var(--sel)"></div><div class="ib" id="t2"></div><div class="ib" id="t3"></div><div class="ib" id="t4"></div>
+    <div class="sep"></div><div class="ib" id="t5"></div>
+  </div>
+  <div class="float zoom">100%<span style="color:var(--tx-3)">맞춤</span></div>
+</div>
+<script>
+  // background grid
+  const G = $('#grid');
+  for (let x = 0; x < 1440; x += 80) { const l = el('div', 'gl', null, G); Object.assign(l.style, { left: x + 'px', top: 0, width: '1px', height: '900px' }); }
+  for (let y = 0; y < 900; y += 80) { const l = el('div', 'gl', null, G); Object.assign(l.style, { top: y + 'px', left: 0, height: '1px', width: '1440px' }); }
+
+  const COLORS = ['var(--t1)', 'var(--t2)', 'var(--t3)', 'var(--t4)'];
+  TRACKS.forEach((t, i) => el('div', 'tr' + (i === 2 ? ' on' : ''),
+    `<span class="sw" style="background:${COLORS[i]}"></span><div><b>${t.name}</b><small>${t.tone}</small></div><div class="ms"><i>M</i><i>S</i></div>`, $('#tracks')));
+  $('#add').innerHTML = ICON.plus + '트랙 추가';
+  ['stop', 'play', 'loop', 'rec'].forEach(k => $('#b-' + k).innerHTML = ICON[k]);
+  $('#b-undo').innerHTML = ICON.undo; $('#b-redo').innerHTML = ICON.redo; $('#b-exp').innerHTML = ICON.export + '내보내기';
+  $('#lock').innerHTML = ICON.lock;
+  ['cursor', 'pen', 'cut', 'curve', 'undo'].forEach((k, i) => $('#t' + (i + 1)).innerHTML = ICON[k]);
+
+  // arrangement frame
+  const A = $('#arr'), AW = 806, bw = AW / 16;
+  for (let b = 0; b < 16; b++) { const r = el('i', '', String(b + 1), null); A.appendChild(el('div', 'ruler')); }
+  const R = A.querySelector('.ruler'); A.querySelectorAll('.ruler').forEach((r, i) => i && r.remove());
+  for (let b = 0; b < 16; b++) { const i = el('i', '', String(b + 1), R); i.style.left = (b * bw + 6) + 'px'; }
+  TRACKS.forEach((t, ti) => {
+    const ln = el('div', 'lane', null, A); ln.style.top = (26 + ti * 51) + 'px';
+    t.clips.forEach((c, ci) => {
+      const e = el('div', 'clip', null, ln);
+      e.style.left = (c[0] * bw + 3) + 'px'; e.style.width = (c[1] * bw - 6) + 'px'; e.style.background = COLORS[ti];
+      wave(e, Math.round(c[1] * 5), 7 + ti * 13 + ci, '');
+    });
+  });
+  // selection on 신스 리드 clip (bars 5–8)
+  const sx = 300 + 1 + 4 * bw + 3, sy = 110 + 1 + 26 + 2 * 51 + 6, sw = 4 * bw - 6, sh = 40;
+  const C = $('.cv');
+  const sb = el('div', 'selbox', null, C); Object.assign(sb.style, { left: (sx - 2) + 'px', top: (sy - 2) + 'px', width: (sw + 4) + 'px', height: (sh + 4) + 'px' });
+  [[0, 0], [1, 0], [0, 1], [1, 1]].forEach(([a, b]) => { const h = el('div', 'h', null, C); h.style.left = (sx - 6 + a * (sw + 4)) + 'px'; h.style.top = (sy - 6 + b * (sh + 4)) + 'px'; });
+  const dm = el('div', 'dim', '4마디', C); dm.style.left = (sx + sw / 2 - 20) + 'px'; dm.style.top = (sy + sh + 8) + 'px';
+  const ph = el('div', 'ph', null, A); ph.style.left = (4 * bw) + 'px';
+  // connector from clip to the editor frame
+  $('#wire').innerHTML = `<path d="M${sx + sw / 2} ${sy + sh + 30} C ${sx + sw / 2} ${sy + sh + 60}, ${sx + sw / 2} 370, ${sx + sw / 2} 396" stroke="#0D99FF" stroke-width="1.5" stroke-dasharray="4 4" fill="none"/>`;
+
+  // editor frame (piano roll)
+  const E = $('#ed'), EW = 806 - 52, EH = 398, rh = EH / 13;
+  PITCHES.forEach((p, i) => {
+    if (BLACK.has(p)) { const b = el('div', 'rowb', null, E); b.style.top = (i * rh) + 'px'; b.style.height = rh + 'px'; }
+    const r = el('div', 'row', null, E); r.style.top = (i * rh) + 'px';
+  });
+  const K = el('div', 'keys', null, E);
+  PITCHES.forEach((p, i) => { const k = el('div', 'key' + (BLACK.has(p) ? ' blk' : ''), BLACK.has(p) ? '' : p, K); k.style.top = (i * rh) + 'px'; k.style.height = rh + 'px'; });
+  for (let s = 1; s < 16; s++) { const c = el('div', 'col' + (s % 4 === 0 ? ' bar' : ''), null, E); c.style.left = (52 + s / 16 * EW) + 'px'; }
+  NOTES.forEach((n, i) => {
+    const e = el('div', 'nt', PITCHES[n.p], E);
+    e.style.left = (52 + n.step / 16 * EW + 2) + 'px'; e.style.width = (n.len / 16 * EW - 4) + 'px'; e.style.top = (n.p * rh + (rh - 22) / 2) + 'px';
+  });
+  // selected note A4 at step 0
+  const nx = 300 + 1 + 52 + 2, ny = 420 + 1 + 3 * rh + (rh - 22) / 2, nw = 2 / 16 * EW - 4;
+  const s2 = el('div', 'selbox', null, C); Object.assign(s2.style, { left: (nx - 2) + 'px', top: (ny - 2) + 'px', width: (nw + 4) + 'px', height: '26px', borderRadius: '7px' });
+  const chip = el('div', 'chip', '<b>A4</b><span>0¢</span><span>440.00 Hz</span><div class="cb">곡선 편집</div>', C);
+  chip.style.left = (nx - 4) + 'px'; chip.style.top = (ny + 32) + 'px';
+  $('#cv').innerHTML = `<line x1="0" y1="41" x2="258" y2="41" stroke="#383838" stroke-dasharray="3 3"/><path d="${curvePath(258, 82, .5, .25)}" fill="none" stroke="#B78CFF" stroke-width="2"/>`;
+</script>
+
+</body></html>

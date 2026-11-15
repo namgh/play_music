@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>v4 ④ 스텝 시퀀서</title>
+<link rel="stylesheet" href="base.css"><script src="lib.js"></script>
+<style>
+  .left{left:0;top:64px;width:240px;height:836px}
+  .pat{display:flex;gap:10px;align-items:center;padding:9px 10px;border-radius:10px;margin-top:6px;background:var(--alu);border:1px solid var(--rule)}
+  .pat.on{background:var(--ink);border-color:var(--ink);color:var(--body)}
+  .pat .g{width:52px;height:30px;border-radius:5px;background:var(--screen);position:relative;flex:none;overflow:hidden}
+  .pat .g i{position:absolute;width:2px;height:2px;border-radius:1px}
+  .pat b{font-size:13px;font-weight:600;display:block}
+  .pat span{font-size:11px;color:var(--ink-3)}
+  .pat.on span{color:var(--inv-2)}
+  .mode{left:252px;top:76px}
+  .meta{left:760px;top:80px;display:flex;gap:6px}
+  .rh{position:absolute;left:252px;width:200px;height:56px;border-radius:10px;background:var(--alu);border:1px solid var(--rule)}
+  .rh.sel{background:var(--ink);border-color:var(--ink);color:var(--body)}
+  .rh .sw{position:absolute;left:10px;top:11px;width:6px;height:34px;border-radius:3px}
+  .rh .nm{position:absolute;left:26px;top:10px;font-size:13px;font-weight:600}
+  .rh .as{position:absolute;left:26px;top:30px;font-size:11px;color:var(--ink-3)}
+  .rh.sel .as{color:var(--inv-2)}
+  .rh .bt{position:absolute;right:8px;top:17px;display:flex;gap:3px}
+  .rh .bt span{width:20px;height:20px;border-radius:5px;border:1px solid var(--rule);background:var(--body);font-size:9px;display:flex;align-items:center;justify-content:center;color:var(--ink-2)}
+  .rh.sel .bt span{background:var(--inv-3);border-color:var(--inv-3);color:var(--body)}
+  .grid{left:460px;top:112px;width:620px;height:540px}
+  .st{position:absolute;border-radius:6px;background:var(--screen-2);overflow:hidden}
+  .st i{position:absolute;left:0;right:0;bottom:0}
+  .st em{position:absolute;left:0;right:0;top:4px;text-align:center;font:700 11px var(--num);font-style:normal;color:var(--screen)}
+  .st.cur{outline:1.5px solid var(--oak)}
+  .col{position:absolute;top:24px;bottom:4px;border-radius:6px;background:rgba(255,255,255,.04)}
+  .lt{left:252px;top:666px;font-size:12px;color:var(--ink-2)}
+  .lt b{color:var(--ink);font-weight:600}
+  .lane{left:460px;top:692px;width:620px;height:196px}
+  .vb{position:absolute;border-radius:3px 3px 0 0}
+  .vv{position:absolute;font:700 12px var(--num);text-align:center;width:36px;color:var(--s-ink-2)}
+  .right{left:1092px;top:64px;width:348px;height:836px;padding:16px 18px 0 0}
+  .kns{display:flex;justify-content:space-between;margin-top:12px}
+</style></head>
+<body>
+<div class="pg" data-root id="root">
+  <div class="a left side" id="left"><div class="ttl">패턴</div><div class="sub">킥 · 스네어 트랙 · 리전 3</div></div>
+  <div class="a seg mode"><span>켜기</span><span class="on">세기</span><span>음정</span><span>게이트</span><span>확률</span><span>반복</span></div>
+  <div class="a meta"><span class="chip">16걸음</span><span class="chip">1/16</span><span class="chip">스윙 54%</span></div>
+  <div class="a screen grid" id="grid"></div>
+  <div class="a lt"><b>킥</b> · 걸음별 세기 — 막대를 끌어 바꿉니다</div>
+  <div class="a screen lane" id="lane"></div>
+  <div class="a right" id="right">
+    <div class="ttl">5번 걸음</div><div class="sub">킥 줄 · 2박 첫 16분</div>
+    <div class="kns" id="kns"></div>
+    <div class="ih"><b>걸음</b><span>이 칸에만 적용</span></div>
+    <div class="ir">음 조정<b>0 st</b></div>
+    <div class="ir">반복 치기<b>×2</b></div>
+    <div class="ir">묶기(다음 칸과)<em>끔</em></div>
+    <div class="ih"><b>줄</b><span>킥</span></div>
+    <div class="ir">소리<em>합성 킥 · C1</em></div>
+    <div class="ir">줄 길이<b>16</b></div>
+    <div class="ir">회전<b>0</b></div>
+    <div class="ir">재생 방향<em>앞으로</em></div>
+    <div class="ih"><b>패턴</b><span>기본 8비트</span></div>
+    <div class="ir">해상도<em>1/16</em></div>
+    <div class="ir">스윙<b>54 %</b></div>
+    <div class="ir">결과<em>일반 음표 리전으로 펼치기</em></div>
+  </div>
+</div>
+<script>
+  const root = $('#root');
+  topbar(root, ['editor'], '5 . 2 . 000', ['plan', '설계만']);
+  const PATS = [['기본 8비트', '드럼 6 · 베이스 1'], ['하프타임', '드럼 5'], ['네 박 킥', '드럼 4'], ['브레이크', '드럼 6'], ['셔플 16', '드럼 5 · 베이스 1']];
+  PATS.forEach(([n, d], i) => { const p = el('div', 'pat' + (i === 0 ? ' on' : ''), `<div class="g"></div><div><b>${n}</b><span>${d}</span></div>`, $('#left'));
+    const g = rng(i + 9); for (let r = 0; r < 4; r++) for (let s = 0; s < 16; s++) if (g() > .62) { const e = el('i', '', null, p.querySelector('.g'));
+      Object.assign(e.style, { left: (3 + s * 3) + 'px', top: (5 + r * 6) + 'px', width: '2px', height: '3px', background: C.t[[5, 1, 0, 2][r]] }); } });
+  el('div', 'btn', ICON.plus(14) + '지금 패턴 저장', $('#left')).style.marginTop = '12px';
+
+  // [이름, 할당, 색, 걸음 세기(0=꺼짐)]
+  const ROWS = [
+    ['킥', '합성 킥 · C1', 5, [112, 0, 0, 0, 112, 0, 0, 60, 0, 0, 110, 0, 96, 0, 0, 0]],
+    ['스네어', '합성 스네어 · D1', 1, [0, 0, 0, 0, 0, 0, 0, 0, 108, 0, 0, 0, 0, 0, 0, 40]],
+    ['닫힌 햇', '합성 햇 · F#1', 0, [80, 40, 72, 40, 80, 40, 72, 40, 80, 40, 72, 40, 80, 40, 72, 0]],
+    ['열린 햇', '합성 햇 · A#1', 0, [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 90]],
+    ['클랩', '합성 클랩 · D#1', 4, [0, 0, 0, 0, 96, 0, 0, 0, 0, 0, 0, 0, 96, 0, 0, 0]],
+    ['낮은 탐', '합성 탐 · A1', 3, [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 70, 80, 90]],
+    ['베이스 음', '베이스 · A1 기준', 1, [100, 0, 0, 90, 0, 0, 100, 0, 0, 0, 92, 0, 0, 84, 0, 0]],
+    ['필터 컷오프', '오토메이션 · 패드', 2, [20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 110, 90, 70, 50, 30]],
+  ];
+  const G = $('#grid'), X0 = 8, SW = (620 - 16) / 16, RT = 28, RHt = 64;
+  for (let s = 0; s < 16; s++) { const r = el('div', 'rul', String(s + 1), G); Object.assign(r.style, { left: (X0 + s * SW + SW / 2 - 4) + 'px', top: '7px' }); if (s % 4 === 0) r.style.color = C.sInk; }
+  const cur = el('div', 'col', null, G); Object.assign(cur.style, { left: (X0 + 4 * SW) + 'px', width: (SW - 2) + 'px' });
+  ROWS.forEach(([n, a, c, v], i) => {
+    const y = RT + i * RHt;
+    const h = el('div', 'rh' + (i === 0 ? ' sel' : ''), `<span class="sw" style="background:${C.t[c]}"></span><span class="nm">${n}</span><span class="as">${a}</span>
+      <span class="bt"><span>M</span><span>S</span></span>`, root); h.style.top = (112 + y + 4) + 'px';
+    v.forEach((vel, s) => { const st = el('div', 'st' + (i === 0 && s === 4 ? ' cur' : ''), null, G);
+      Object.assign(st.style, { left: (X0 + s * SW + 2) + 'px', top: (y + 6) + 'px', width: (SW - 6) + 'px', height: (RHt - 12) + 'px', background: s % 4 === 0 ? C.grid : C.screen2 });
+      if (vel) { const f = el('i', '', null, st); Object.assign(f.style, { height: (vel / 127 * 100) + '%', background: i === 7 ? rgba(C.t[c], .75) : C.t[c] }); }
+      if (i === 0 && s === 4) el('em', '', '80%', st); });
+  });
+  const L = $('#lane');
+  [[127, 16], [64, 96], [0, 176]].forEach(([v, y]) => { el('div', 'hl', null, L).style.top = y + 'px'; });
+  ROWS[0][3].forEach((vel, s) => { if (!vel) return; const x = X0 + s * SW + 4, hgt = vel / 127 * 160;
+    const b = el('div', 'vb', null, L); Object.assign(b.style, { left: x + 'px', width: (SW - 10) + 'px', top: (176 - hgt) + 'px', height: hgt + 'px', background: s === 4 ? C.acc : C.t[5] });
+    const t = el('div', 'vv', String(vel), L); Object.assign(t.style, { left: (x - 2) + 'px', top: (176 - hgt - 18) + 'px' }); if (s === 4) t.style.color = C.acc2; });
+  const K = $('#kns');
+  [[.88, '세기', '112'], [.5, '게이트', '50%'], [.8, '확률', '80%'], [.45, '늦추기', '+6 ms']].forEach(([v, l, val]) => K.insertAdjacentHTML('beforeend', knob(v, 54, l, val)));
+</script>
+<script src="extract4.js"></script>
+</body></html>

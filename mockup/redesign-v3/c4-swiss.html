@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>스위스</title>
+<script src="data.js"></script>
+<style>
+  :root{
+    --paper:#F7F7F5; --ink:#141414; --ink-2:#555555; --ink-3:#9A9A9A; --rule:#DADAD7; --rule-2:#C4C4C0; --red:#E2231A; --tint:#ECECE9;
+    --sans:"Helvetica Neue","Apple SD Gothic Neo",sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#fff;font-family:var(--sans);color:var(--ink)}
+  .pg{width:1440px;height:900px;position:relative;overflow:hidden;background:var(--paper)}
+  .a{position:absolute}
+
+  /* masthead */
+  .title{left:40px;top:30px;font-size:46px;font-weight:700;letter-spacing:-1.6px;line-height:1}
+  .sub{left:42px;top:88px;font-size:12px;color:var(--ink-3)}
+  .sub b{color:var(--ink-2);font-weight:500}
+  .facts{left:520px;top:30px;display:flex;gap:40px}
+  .facts div{font-size:11px;color:var(--ink-3)}
+  .facts b{display:block;font-size:30px;font-weight:300;color:var(--ink);letter-spacing:-.8px;margin-top:4px}
+  .tp{left:1012px;top:34px;display:flex;gap:8px}
+  .tb{width:52px;height:52px;border-radius:50%;border:1.5px solid var(--ink);display:flex;align-items:center;justify-content:center;color:var(--ink)}
+  .tb.on{background:var(--ink);color:var(--paper)}
+  .tb.rec{color:var(--red);border-color:var(--rule-2)}
+  .ex{left:1270px;top:34px;width:130px;height:52px;border-radius:26px;background:var(--red);color:#fff;font-size:14px;font-weight:500;display:flex;align-items:center;justify-content:center;gap:8px}
+  .rule{position:absolute;left:40px;right:40px;height:1.5px;background:var(--ink)}
+
+  /* roll */
+  .roll{left:40px;top:158px;width:1000px;height:480px}
+  .bar{position:absolute;top:-6px;font-size:64px;font-weight:200;color:var(--ink);letter-spacing:-2px;line-height:1}
+  .bars{left:40px;top:150px;width:1000px;height:70px}
+  .gr{position:absolute;left:0;right:0;height:1px;background:var(--rule)}
+  .gr.c{background:var(--rule-2)}
+  .kl{position:absolute;left:0;font-size:11px;color:var(--ink-3);transform:translateY(-50%)}
+  .vl{position:absolute;top:0;bottom:0;width:1px;background:var(--rule)}
+  .vl.b{background:var(--ink)}
+  .nt{position:absolute;height:20px;background:var(--ink)}
+  .nt.s{background:var(--red)}
+  .nl{position:absolute;font-size:11px;font-weight:500;color:var(--ink)}
+  .nl.s{color:var(--red)}
+
+  /* readout column */
+  .rd{left:1090px;top:150px;width:310px}
+  .rd .k{font-size:11px;color:var(--ink-3)}
+  .rd .big{font-size:150px;font-weight:700;letter-spacing:-8px;line-height:.8;margin:16px 0 0 -6px;color:var(--red)}
+  .rd .hz{display:flex;justify-content:space-between;align-items:baseline;margin-top:16px;border-top:1.5px solid var(--ink);padding-top:8px;padding-bottom:6px}
+  .rd .hz b{font-size:28px;font-weight:300;letter-spacing:-.6px}
+  .rd .hz span{font-size:12px;color:var(--ink-3)}
+  .ln{display:flex;justify-content:space-between;align-items:baseline;border-top:1px solid var(--rule-2);padding:8px 0 7px}
+  .ln span{font-size:13px;color:var(--ink-2)}
+  .ln b{font-size:22px;font-weight:300;letter-spacing:-.4px}
+  .ln b.red{color:var(--red);font-weight:500;font-size:15px;letter-spacing:0}
+  .cv{position:relative;height:70px;border-top:1px solid var(--rule-2)}
+  .cv small{position:absolute;left:0;top:10px;font-size:11px;color:var(--ink-3)}
+  .notice{margin-top:14px;font-size:11.5px;line-height:1.6;color:var(--ink-2);display:flex;gap:8px}
+  .notice svg{flex:none;margin-top:2px}
+
+  /* arrangement */
+  .arr{left:40px;top:688px;width:1360px;height:170px}
+  .arr .hd{position:absolute;left:0;top:0;right:0;display:flex;justify-content:space-between;font-size:11px;color:var(--ink-3)}
+  .lane{position:absolute;left:0;right:0;height:32px;border-top:1px solid var(--rule)}
+  .lane .nm{position:absolute;left:0;top:9px;font-size:13px;font-weight:500}
+  .lane .tn{position:absolute;left:84px;top:10px;font-size:11px;color:var(--ink-3)}
+  .lane .ms{position:absolute;left:170px;top:7px;display:flex;gap:4px}
+  .lane .ms i{font-style:normal;width:20px;height:18px;border:1px solid var(--rule-2);border-radius:3px;font-size:10px;color:var(--ink-3);display:flex;align-items:center;justify-content:center}
+  .cl{position:absolute;top:8px;height:16px;background:var(--tint);border-left:2px solid var(--ink)}
+  .cl.s{background:var(--red);border-color:var(--red)}
+  .tick{position:absolute;top:18px;font-size:10px;color:var(--ink-3)}
+  .add{position:absolute;left:0;font-size:12px;color:var(--ink-2);display:flex;align-items:center;gap:6px}
+</style></head>
+<body>
+<div class="pg" data-root>
+  <div class="a title">비 오는 새벽</div>
+  <div class="a sub"><b>RESONA</b> (이름 임시) — 신스 리드, 5–8 마디를 편집 중</div>
+  <div class="a facts"><div>템포<b>92</b></div><div>조성<b>A minor</b></div><div>박자<b>4/4</b></div><div>위치<b>5.1.00</b></div></div>
+  <div class="a tp"><div class="tb" id="b-stop"></div><div class="tb on" id="b-play"></div><div class="tb" id="b-loop"></div><div class="tb rec" id="b-rec"></div></div>
+  <div class="a ex" id="b-exp"></div>
+  <div class="rule" style="top:124px"></div>
+
+  <div class="a roll" id="roll"></div>
+
+  <div class="a rd">
+    <div class="k">선택한 음 — 1 / 9</div>
+    <div class="big">A4</div>
+    <div class="hz"><b>440.00 Hz</b><span>미세조정 0¢</span></div>
+    <div class="ln"><span>시작 글라이드</span><b>24¢</b></div>
+    <div class="ln"><span>흔들림</span><b>15¢</b></div>
+    <div class="ln"><span>포먼트 유지</span><b class="red">켜짐</b></div>
+    <div class="cv"><small>음정 곡선</small><svg id="cv" width="310" height="70" style="position:absolute;left:0;top:0"></svg></div>
+    <div class="notice"><span id="lock"></span><span>이 수정은 기기 안에서 바로 처리됩니다. AI를 다시 부르지 않으니 나머지 소리는 그대로예요.</span></div>
+  </div>
+
+  <div class="rule" style="top:668px;height:1.5px"></div>
+  <div class="a arr" id="arr">
+    <div class="hd"><span>편곡 — 16 마디</span><span>WAV 48kHz / 24bit · 무료</span></div>
+  </div>
+</div>
+<script>
+  ['stop', 'play', 'loop', 'rec'].forEach(k => $('#b-' + k).innerHTML = ICON[k]);
+  $('#b-exp').innerHTML = ICON.export + '내보내기'; $('#lock').innerHTML = ICON.lock;
+
+  // roll: bars 5–8 as huge numerals, semitone hairlines
+  const R = $('#roll'), X0 = 44, W = 956, T0 = 92, H = 380, rh = H / 12;
+  for (let b = 0; b < 4; b++) { const n = el('div', 'bar', String(5 + b), R); n.style.left = (X0 + b * W / 4 - 2) + 'px'; }
+  PITCHES.forEach((p, i) => {
+    const y = T0 + i * rh;
+    const g = el('div', 'gr' + (p.startsWith('C') ? ' c' : ''), null, R); g.style.top = y + 'px'; g.style.left = X0 + 'px';
+    if (!BLACK.has(p)) { const k = el('div', 'kl', p, R); k.style.top = y + 'px'; }
+  });
+  for (let s = 0; s <= 16; s++) { const v = el('div', 'vl' + (s % 4 === 0 ? ' b' : ''), null, R);
+    Object.assign(v.style, { left: (X0 + s / 16 * W) + 'px', top: (s % 4 === 0 ? 0 : T0) + 'px' }); }
+  NOTES.forEach((n, i) => {
+    const y = T0 + n.p * rh, x = X0 + n.step / 16 * W;
+    const e = el('div', 'nt' + (i === 0 ? ' s' : ''), null, R);
+    Object.assign(e.style, { left: (x + 3) + 'px', width: (n.len / 16 * W - 6) + 'px', top: (y - 10) + 'px' });
+    const l = el('div', 'nl' + (i === 0 ? ' s' : ''), PITCHES[n.p], R); Object.assign(l.style, { left: (x + 4) + 'px', top: (y - 27) + 'px' });
+  });
+  // pitch curve drawn over the selected note
+  const sv = el('div', '', `<svg width="${2 / 16 * W}" height="40"><path d="${curvePath(2 / 16 * W - 6, 40, .55, .35)}" fill="none" stroke="#E2231A" stroke-width="1.5"/></svg>`, R);
+  Object.assign(sv.style, { position: 'absolute', left: (X0 + 3) + 'px', top: (T0 + 3 * rh + 14) + 'px' });
+  $('#cv').innerHTML = `<line x1="0" y1="52" x2="310" y2="52" stroke="#C4C4C0" stroke-dasharray="2 3"/><path d="${curvePath(310, 64, .5, .3).replace(/ ([\d.]+)(?= |$)/g, (m, y) => ' ' + (+y + 10).toFixed(1))}" fill="none" stroke="#141414" stroke-width="1.5"/>`;
+
+  // arrangement
+  const A = $('#arr'), AX = 230, AW = 1360 - AX;
+  for (let b = 0; b < 16; b++) { const t = el('div', 'tick', String(b + 1), A); t.style.left = (AX + b * AW / 16) + 'px'; }
+  TRACKS.forEach((t, i) => {
+    const ln = el('div', 'lane', `<span class="nm">${t.name}</span><span class="tn">${t.tone}</span><div class="ms"><i>M</i><i>S</i></div>`, A);
+    ln.style.top = (36 + i * 32) + 'px';
+    t.clips.forEach(c => { const e = el('div', 'cl' + (c[2] ? ' s' : ''), null, ln);
+      Object.assign(e.style, { left: (AX + c[0] * AW / 16 + 1) + 'px', width: (c[1] * AW / 16 - 3) + 'px' }); });
+  });
+</script>
+
+</body></html>

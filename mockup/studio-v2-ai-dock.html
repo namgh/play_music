@@ -1,0 +1,2127 @@
+<meta charset="utf-8">
+<!--
+THESIS: One classic precision audio component, alone in absolute black — you tune a
+single note with a real detented dial, not a flat slider. Refuses the dark-DAW
+arrangement of weightless panels lit by neon accent glow.
+OWN-WORLD: Void black with a cool far nebula and sparse stars against one warm tungsten
+pool; brushed anodized faceplates, walnut cheeks, knurled knobs, slide pots, ivory VU
+meters with ballistic needles, backlit glass with silkscreened scales. Halos only on
+things that are actually lamps. Contemporary edge comes from large tight-tracked type in
+black space, never from glow.
+STORY: This is a serious instrument, not a toy generator — and the one note I touched is
+the only thing that moved.
+FIRST VIEWPORT: Work title large in the void; the unit floating below it, heat bleeding
+from its lit glass; transport deck with mechanical counter and paired VU meters; tape
+lanes mid; tuning module right, its cent dial the largest control on screen; keybed and
+lit step grid below.
+FORM: 1970s hi-fi component adrift in space. User-pinned brief; beats seed 7719e100.
+FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, and DESIGN.md
+-->
+<!--
+EXTENSION (2026-10-13): AI 생성 레이어의 채팅 도킹 패널 설계 탐색. 세계관은 그대로
+상속한다 — 새 패널은 .tune 과 같은 336px 도킹 열을 피아노롤 옆에 반복해 "두 개의
+덱" 구성을 완성한다. 신규 톤·색·타이포 없음. 아직 구현 전 설계 단계 — AI_GENERATION.md 참고.
+-->
+<title>RESONA — AI 생성 패널 시안</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=Archivo+Narrow:wght@500;600;700&display=swap" rel="stylesheet">
+
+<style>
+  :root{
+    color-scheme:dark;
+
+    /* bar */
+    --oak:#150F0A;
+    --oak-2:#1E160E;
+    --oak-3:#2A1E13;
+
+    /* metal */
+    --alu:#2B2A27;
+    --alu-2:#37352F;
+    --alu-3:#43413A;
+    --alu-hi:#5C594F;
+    --alu-edge:#0B0B09;
+    --walnut:#3E2C1B;
+    --walnut-2:#573D24;
+    --brass:#A88A4E;
+
+    /* ink */
+    --silk:#E4DECC;
+    --silk-2:#ABA292;
+    --silk-3:#7C7264;
+
+    /* light */
+    --tungsten:#FFB253;
+    --tungsten-2:#E2842A;
+    --tungsten-3:#8A4A12;
+    --whiskey:#C97A22;
+    --ivory:#E9DDBE;
+    --redzone:#B8352A;
+    --pilot:#7FB463;
+
+    /* track jacks — saturated enamel, not glow */
+    --j1:#C9762A; --j2:#5E86B4; --j3:#B8524A;
+    --j4:#7E9A5C; --j5:#A2739E; --j6:#4E9A93;
+
+    --sunk:inset 0 2px 4px rgba(0,0,0,.75);
+    --raise:inset 0 1px 0 rgba(255,255,255,.10), inset 0 -1px 0 rgba(0,0,0,.5);
+    --cast:0 2px 3px rgba(0,0,0,.55), 0 26px 50px -18px rgba(0,0,0,.9);
+
+    --brush:repeating-linear-gradient(90deg, rgba(255,255,255,.020) 0 1px, transparent 1px 3px);
+    --face:linear-gradient(180deg, rgba(255,255,255,.05), rgba(0,0,0,.05) 44%, rgba(0,0,0,.16)),
+           var(--brush),
+           linear-gradient(180deg, var(--alu-2), var(--alu));
+
+    --f:"Archivo","Apple SD Gothic Neo","Noto Sans KR",system-ui,sans-serif;
+    --fn:"Archivo Narrow","Archivo","Apple SD Gothic Neo","Noto Sans KR",system-ui,sans-serif;
+  }
+
+  *{box-sizing:border-box}
+
+  body{
+    margin:0;
+    font-family:var(--f);
+    font-size:14px; line-height:1.5;
+    color:var(--silk);
+    -webkit-font-smoothing:antialiased;
+    background:var(--oak);
+  }
+
+  /* ---------- the void ---------- */
+  .bar{
+    min-height:100vh;
+    padding:58px 22px 116px;
+    position:relative;
+    isolation:isolate;
+    background-color:#000;
+    background-image:
+      /* 텅스텐 — 기기 위에만 걸린 하나의 광원 */
+      radial-gradient(1020px 470px at 50% 31%, rgba(255,152,62,.13), transparent 68%),
+      /* 차가운 성운 — 아주 멀리, 따뜻함과 맞서는 쪽 */
+      radial-gradient(780px 570px at 13% 5%,  rgba(86,116,186,.14), transparent 70%),
+      radial-gradient(640px 540px at 91% 87%, rgba(120,84,170,.10), transparent 72%),
+      /* 별 — 주기가 다른 네 층을 겹쳐 규칙성을 지운다 */
+      radial-gradient(1.3px 1.3px at 21% 33%, rgba(232,240,255,.60), transparent 58%),
+      radial-gradient(1px   1px   at 74% 12%, rgba(232,240,255,.40), transparent 58%),
+      radial-gradient(1.6px 1.6px at 47% 79%, rgba(255,238,220,.34), transparent 58%),
+      radial-gradient(1px   1px   at 9%  62%, rgba(232,240,255,.28), transparent 58%);
+    background-repeat:no-repeat,no-repeat,no-repeat,repeat,repeat,repeat,repeat;
+    background-size:auto,auto,auto,347px 293px,521px 439px,691px 607px,829px 733px;
+    background-attachment:fixed;
+  }
+  /* 가장자리는 순수한 검정으로 떨어진다 */
+  .bar::before{
+    content:""; position:absolute; inset:0; z-index:-1; pointer-events:none;
+    background:radial-gradient(128% 96% at 50% 33%, transparent 34%, #000 88%);
+  }
+
+  /* ---------- title in the void ---------- */
+  .strip{max-width:1360px; margin:0 auto 30px; padding:0 4px}
+  .strip h1{
+    margin:0 0 12px;
+    font-size:clamp(30px, 5.2vw, 56px);
+    font-weight:700; line-height:.98; letter-spacing:-.035em;
+    color:#F2EDE3;
+  }
+  .strip .meta{display:flex; flex-wrap:wrap; align-items:center; gap:9px 13px}
+  .strip .meta .lb{color:var(--silk-3)}
+  .strip .meta .txt{font-size:13px; color:var(--silk-3)}
+  .strip .meta .sep{width:3px; height:3px; border-radius:50%; background:var(--silk-3); opacity:.6; flex:none}
+  .strip .prov{
+    font-family:var(--fn); font-size:9.5px; font-weight:600;
+    letter-spacing:.16em; text-transform:uppercase;
+    color:var(--tungsten-2); border:1px solid rgba(226,132,42,.4);
+    padding:3px 8px; border-radius:2px;
+  }
+
+  /* ---------- the unit ---------- */
+  .unit{
+    max-width:1360px; margin:0 auto;
+    border-radius:5px;
+    background:linear-gradient(180deg,var(--walnut-2),var(--walnut) 12%, #2C1E12);
+    padding:7px;                       /* walnut cheeks around the faceplate */
+    position:relative;
+    box-shadow:
+      0 0 0 1px rgba(148,170,212,.10),          /* 성운 쪽에서 닿는 차가운 반사 */
+      inset 0 1px 0 rgba(255,222,178,.15),      /* 위에서 오는 텅스텐 */
+      0 34px 74px -16px rgba(0,0,0,.95),        /* 따뜻한 광원 풀을 파먹는 그림자 */
+      0 96px 130px -64px #000;
+  }
+  /* 발광 유리에서 진공으로 새어나가는 열기 */
+  .unit::after{
+    content:""; position:absolute; left:4%; right:4%; top:100%; height:118px;
+    pointer-events:none;
+    background:radial-gradient(58% 100% at 50% 0%, rgba(255,146,54,.15), transparent 74%);
+    filter:blur(6px);
+  }
+  .plate{
+    border-radius:3px;
+    background:var(--face);
+    border:1px solid var(--alu-edge);
+    box-shadow:var(--raise);
+    overflow:hidden;
+  }
+
+  /* engraved hairline divider */
+  .rule{height:1px; background:linear-gradient(90deg,transparent,rgba(0,0,0,.62) 6%,rgba(0,0,0,.62) 94%,transparent);
+         box-shadow:0 1px 0 rgba(255,255,255,.055)}
+
+  /* ---------- silkscreen label ---------- */
+  .lb{
+    font-family:var(--fn); font-size:9.5px; font-weight:600;
+    letter-spacing:.19em; text-transform:uppercase; color:var(--silk-3);
+    display:block;
+  }
+  .num{font-variant-numeric:tabular-nums; letter-spacing:-.01em}
+
+  /* ---------- head rail ---------- */
+  .head{display:flex; align-items:center; gap:16px; padding:13px 16px}
+  .mark{display:flex; align-items:center; gap:10px; flex:none}
+  /* engraved wordmark */
+  .mark b{
+    font-family:var(--fn); font-size:17px; font-weight:700;
+    letter-spacing:.30em; text-transform:uppercase;
+    color:#CFC7B2;
+    text-shadow:0 1px 0 rgba(255,255,255,.09), 0 -1px 1px rgba(0,0,0,.75);
+  }
+  .lamp-bulb{
+    width:11px; height:11px; border-radius:50%; flex:none; position:relative;
+    background:radial-gradient(circle at 42% 36%, #3A2A1A, #171008 70%);
+    box-shadow:inset 0 1px 1px rgba(0,0,0,.9), 0 0 0 1px rgba(0,0,0,.6);
+    transition:background .5s ease-out;
+  }
+  .lamp-bulb::after{                   /* halo only because this IS a lamp */
+    content:""; position:absolute; inset:-9px; border-radius:50%;
+    background:radial-gradient(circle, rgba(255,178,83,.42), transparent 66%);
+    opacity:0; transition:opacity .55s ease-out; pointer-events:none;
+  }
+  .lamp-bulb.lit{background:radial-gradient(circle at 42% 36%, #FFE0AE, var(--tungsten) 48%, var(--tungsten-2) 76%, #6E3608)}
+  .lamp-bulb.lit::after{opacity:1}
+  .lamp-bulb.rec.lit{background:radial-gradient(circle at 42% 36%, #FFC7B4, #E4574A 48%, var(--redzone) 78%, #5A160F)}
+  .lamp-bulb.rec.lit::after{background:radial-gradient(circle, rgba(224,87,74,.44), transparent 66%)}
+
+  .slug{                               /* engraved project plate */
+    display:flex; align-items:baseline; gap:9px; padding:5px 11px;
+    border-radius:2px; background:linear-gradient(180deg,#242320,#2E2C27);
+    box-shadow:var(--sunk), 0 1px 0 rgba(255,255,255,.06);
+  }
+  .slug .pn{font-size:13px; font-weight:500; letter-spacing:.01em}
+  .slug .ps{font-family:var(--fn); font-size:9.5px; letter-spacing:.15em; text-transform:uppercase; color:var(--silk-3); transition:color .3s}
+  .slug .ps.dirty{color:var(--tungsten)}
+
+  .head-r{margin-left:auto; display:flex; align-items:center; gap:8px}
+
+  /* metal push button */
+  .mb{
+    font:inherit; color:var(--silk-2); cursor:pointer;
+    border:1px solid var(--alu-edge); border-radius:2px;
+    background:linear-gradient(180deg,var(--alu-3),var(--alu));
+    box-shadow:var(--raise), 0 1px 2px rgba(0,0,0,.5);
+    display:grid; place-items:center;
+    transition:color .14s, background .14s, transform .07s, box-shadow .1s;
+  }
+  .mb:hover:not([disabled]){color:var(--silk); background:linear-gradient(180deg,var(--alu-hi),var(--alu-2))}
+  .mb:active:not([disabled]){transform:translateY(1px); box-shadow:var(--sunk)}
+  .mb[disabled]{opacity:.34; cursor:default}
+  .mb.sq{width:32px; height:28px}
+  .mb.txt{
+    padding:8px 15px; font-family:var(--fn); font-size:11px; font-weight:600;
+    letter-spacing:.16em; text-transform:uppercase;
+  }
+  .mb.go{
+    color:#1A120A; border-color:#7A4A14;
+    background:linear-gradient(180deg,#F0A552,var(--tungsten-2));
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.42), 0 1px 2px rgba(0,0,0,.55);
+  }
+  .mb.go:hover{background:linear-gradient(180deg,#FFB868,#EC8F2E); color:#1A120A}
+
+  :focus-visible{outline:2px solid var(--tungsten); outline-offset:2px; border-radius:2px}
+
+  /* ---------- transport deck ---------- */
+  .deck{display:flex; align-items:center; gap:22px; flex-wrap:wrap; padding:15px 16px}
+
+  /* mechanical counter */
+  .counter{display:flex; align-items:flex-end; gap:11px}
+  .digits{display:flex; gap:2px}
+  .dg{
+    position:relative; width:23px; height:38px; border-radius:2px; overflow:hidden;
+    background:linear-gradient(180deg,#0E0B08,#191310 48%,#0A0806);
+    box-shadow:var(--sunk);
+    display:grid; place-items:center;
+    font-size:23px; font-weight:500; color:#FFCC8A;
+    font-variant-numeric:tabular-nums;
+    text-shadow:0 0 7px rgba(255,178,83,.4);
+  }
+  .dg.sep{width:9px; font-size:17px; color:var(--tungsten-3); background:none; box-shadow:none}
+  .dg::after{                          /* drum seam */
+    content:""; position:absolute; left:0; right:0; top:50%; height:1px;
+    background:rgba(0,0,0,.6); box-shadow:0 1px 0 rgba(255,190,120,.08);
+  }
+  .bb{font-family:var(--fn); font-size:11px; letter-spacing:.1em; color:var(--silk-3); padding-bottom:3px}
+
+  /* piano-key transport */
+  .keys-tp{display:flex; gap:3px}
+  .tk{
+    position:relative; width:46px; height:44px; cursor:pointer;
+    border:1px solid var(--alu-edge); border-radius:2px 2px 3px 3px;
+    background:linear-gradient(180deg,var(--alu-3) 0%, var(--alu-2) 62%, #201F1C 100%);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.13), inset 0 -3px 5px rgba(0,0,0,.45), 0 3px 0 #131210, 0 4px 5px rgba(0,0,0,.5);
+    display:grid; place-items:center; color:var(--silk-2);
+    transition:transform .07s, box-shadow .07s, color .14s;
+  }
+  .tk:hover{color:var(--silk)}
+  .tk:active,.tk.down{
+    transform:translateY(3px);
+    box-shadow:inset 0 2px 5px rgba(0,0,0,.7), 0 0 0 #131210;
+  }
+  .tk[aria-pressed="true"]{
+    transform:translateY(3px);
+    box-shadow:inset 0 2px 6px rgba(0,0,0,.75), 0 0 0 #131210;
+    color:var(--tungsten);
+  }
+  .tk.rec[aria-pressed="true"]{color:#E4574A}
+  .tk .cap{
+    position:absolute; bottom:4px; font-family:var(--fn); font-size:7.5px;
+    letter-spacing:.12em; color:var(--silk-3);
+  }
+  .tk svg{margin-bottom:6px}
+
+  /* engraved spec plates */
+  .specs{display:flex}
+  .spec{padding:1px 14px; border-left:1px solid rgba(0,0,0,.5); box-shadow:1px 0 0 rgba(255,255,255,.045) inset}
+  .spec:first-child{border-left:0; box-shadow:none; padding-left:0}
+  .spec .v{font-size:14px; font-weight:500; margin-top:3px}
+
+  /* VU meters */
+  .vus{margin-left:auto; display:flex; align-items:center; gap:12px}
+  .vu-pair{display:flex; gap:5px}
+  .vu{
+    width:118px; height:56px; border-radius:2px; position:relative; overflow:hidden;
+    background:linear-gradient(178deg,#F2E7C9,var(--ivory) 46%,#D2C39F);
+    box-shadow:var(--sunk), inset 0 -6px 10px rgba(120,90,40,.18);
+  }
+  .vu svg{display:block; width:100%; height:100%}
+  .vu .needle{transform-origin:59px 52px; transition:none}
+  .vu::after{                          /* glass cover reflection */
+    content:""; position:absolute; inset:0; pointer-events:none;
+    background:linear-gradient(112deg, rgba(255,255,255,.30) 0 16%, transparent 34% 100%);
+  }
+  .vu-lit{                             /* tungsten backlight behind the face */
+    position:absolute; inset:0; pointer-events:none; opacity:0;
+    background:radial-gradient(90% 130% at 50% 118%, rgba(255,150,50,.34), transparent 66%);
+    transition:opacity .5s ease-out;
+    mix-blend-mode:multiply;
+  }
+  .vu.lit .vu-lit{opacity:1}
+
+  .state{display:flex; flex-direction:column; gap:4px; align-items:flex-start}
+  .state .now{font-family:var(--fn); font-size:11px; font-weight:600; letter-spacing:.14em; text-transform:uppercase; color:var(--silk-2)}
+  .state .row{display:flex; align-items:center; gap:7px}
+
+  /* ---------- studio grid ---------- */
+  .studio{display:grid; grid-template-columns:minmax(0,1fr) 336px}
+  @media (max-width:1120px){ .studio{grid-template-columns:minmax(0,1fr)} }
+
+  .deckside{border-right:1px solid rgba(0,0,0,.55); box-shadow:inset -1px 0 0 rgba(255,255,255,.04); min-width:0; position:relative}
+  @media (max-width:1120px){ .deckside{border-right:0; border-bottom:1px solid rgba(0,0,0,.55)} }
+
+  /* bar ruler engraved on the faceplate */
+  .ruler{display:flex; height:26px; align-items:stretch; background:linear-gradient(180deg,#302E29,#282722)}
+  .ruler-pad{width:206px; flex:none; border-right:1px solid rgba(0,0,0,.5); display:flex; align-items:center; padding:0 13px}
+  .ruler-scale{position:relative; flex:1; min-width:0}
+  .ruler-scale span{
+    position:absolute; top:7px; font-family:var(--fn); font-size:9px; font-weight:600;
+    letter-spacing:.1em; color:var(--silk-3); padding-left:6px;
+    border-left:1px solid rgba(0,0,0,.55); height:13px; line-height:1;
+  }
+
+  /* ---------- tape lanes ---------- */
+  .lanes{position:relative}
+  .lane{display:flex; height:74px; border-bottom:1px solid rgba(0,0,0,.42)}
+  .lane:last-of-type{border-bottom:0}
+
+  .lane-head{
+    width:206px; flex:none; padding:8px 12px;
+    border-right:1px solid rgba(0,0,0,.5);
+    background:linear-gradient(180deg,#302E29,#272620);
+    box-shadow:inset -1px 0 0 rgba(255,255,255,.04);
+    display:flex; flex-direction:column; gap:6px; position:relative;
+  }
+  .lane-top{display:flex; align-items:center; gap:8px; min-width:0}
+  .jack{                               /* enamel jack — a real socket, not a chip */
+    width:12px; height:12px; border-radius:50%; flex:none;
+    box-shadow:inset 0 0 0 2px rgba(0,0,0,.55), inset 0 2px 3px rgba(0,0,0,.6), 0 1px 0 rgba(255,255,255,.10);
+  }
+  .lane-top b{
+    font-size:12.5px; font-weight:600; letter-spacing:.005em; flex:1; min-width:0;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  .lane-del{
+    width:19px; height:19px; border-radius:2px; flex:none; cursor:pointer;
+    border:0; background:none; color:var(--silk-3); display:grid; place-items:center;
+    opacity:0; pointer-events:none; transition:opacity .15s, color .15s;
+  }
+  .lane-head:hover .lane-del,.lane-del:focus-visible{opacity:1; pointer-events:auto}
+  .lane-del:hover{color:#E4574A}
+
+  .tone-plate{                         /* sunken engraved tone plate */
+    display:flex; align-items:center; gap:6px; cursor:pointer;
+    width:100%; height:21px; padding:0 8px; border-radius:2px; border:0;
+    background:linear-gradient(180deg,#211F1C,#292722);
+    box-shadow:var(--sunk);
+    font-family:var(--fn); font-size:10px; font-weight:600; letter-spacing:.11em;
+    text-transform:uppercase; color:var(--silk-2); text-align:left;
+    transition:color .15s, box-shadow .15s;
+  }
+  .tone-plate:hover{color:var(--tungsten)}
+  .tone-plate .tn{overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .tone-plate .car{margin-left:auto; opacity:.55; flex:none}
+  .tone-plate .mine{width:5px; height:5px; border-radius:50%; background:var(--tungsten); flex:none}
+
+  .lane-ctl{display:flex; align-items:center; gap:7px; margin-top:auto}
+  /* toggle switch */
+  .sw{
+    width:22px; height:19px; border-radius:2px; cursor:pointer; padding:0;
+    border:1px solid var(--alu-edge);
+    background:linear-gradient(180deg,var(--alu-3),var(--alu));
+    box-shadow:var(--raise);
+    font-family:var(--fn); font-size:9px; font-weight:700; letter-spacing:.06em;
+    color:var(--silk-3); display:grid; place-items:center;
+    transition:all .13s;
+  }
+  .sw:hover{color:var(--silk-2)}
+  .sw[aria-pressed="true"]{
+    color:#1A120A; border-color:#7A4A14;
+    background:linear-gradient(180deg,#F0A552,var(--tungsten-2));
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.4);
+  }
+  .sw.s[aria-pressed="true"]{border-color:#3C5C7A; background:linear-gradient(180deg,#7FA8D2,#4E7BA8); color:#0C1218}
+
+  /* rotary trim knob */
+  .knob{
+    position:relative; flex:none; border-radius:50%; cursor:ns-resize;
+    border:0; padding:0;
+    background:
+      conic-gradient(from -90deg, rgba(0,0,0,.42) 0deg 2deg, rgba(255,255,255,.10) 2deg 4.5deg) ,
+      radial-gradient(circle at 40% 34%, var(--alu-hi), var(--alu-2) 58%, #16150F);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.16), 0 2px 3px rgba(0,0,0,.6);
+  }
+  .knob::before{                        /* flat top cap */
+    content:""; position:absolute; inset:18%; border-radius:50%;
+    background:radial-gradient(circle at 38% 30%, #4B4841, #24231E 70%);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.14), 0 1px 2px rgba(0,0,0,.6);
+  }
+  .knob i{                              /* pointer line */
+    position:absolute; left:50%; top:9%; width:2px; height:34%;
+    margin-left:-1px; border-radius:1px;
+    background:linear-gradient(180deg,#FFCF92,#C0762A);
+    transform-origin:50% 118%;
+  }
+  .knob.k-sm{width:26px; height:26px}
+  .lane-ctl .knob{margin-left:auto}
+
+  .lane-meter{position:absolute; right:0; top:0; bottom:0; width:3px; background:rgba(0,0,0,.55); overflow:hidden}
+  /* 눈금 색은 위치에 고정되고 clip 이 채움을 드러낸다 — 레이아웃을 건드리지 않음 */
+  .lane-meter i{position:absolute; inset:0;
+    background:linear-gradient(180deg,var(--redzone) 0%,var(--tungsten) 32%,var(--pilot) 100%);
+    clip-path:inset(100% 0 0 0)}
+
+  /* the tape itself */
+  .tape{
+    position:relative; flex:1; min-width:0; cursor:copy;
+    background:
+      repeating-linear-gradient(90deg, rgba(255,255,255,.020) 0 1px, transparent 1px 6.25%),
+      linear-gradient(180deg, rgba(255,255,255,.035), transparent 22%, rgba(0,0,0,.3)),
+      linear-gradient(180deg,#241A12,#1B130D);
+  }
+  .tape.empty::after{
+    content:"클릭해서 구간 만들기"; position:absolute; inset:0;
+    display:grid; place-items:center; font-size:11.5px; color:var(--silk-3);
+    opacity:0; transition:opacity .18s; pointer-events:none;
+  }
+  .tape.empty:hover::after{opacity:.9}
+
+  .clip{
+    position:absolute; top:7px; bottom:7px; border-radius:2px; overflow:hidden;
+    border:1px solid; cursor:pointer;
+    box-shadow:0 1px 2px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.09);
+    transition:filter .15s, box-shadow .18s;
+  }
+  .clip:hover{filter:brightness(1.14)}
+  .clip canvas{display:block; width:100%; height:100%}
+  .clip .cn{
+    position:absolute; left:7px; top:5px; font-family:var(--fn); font-size:8px;
+    font-weight:600; letter-spacing:.14em; color:rgba(255,240,220,.72);
+    pointer-events:none; text-shadow:0 1px 2px rgba(0,0,0,.8);
+  }
+  .clip.sel{box-shadow:0 0 0 1.5px var(--tungsten), 0 2px 6px rgba(0,0,0,.6)}
+
+  /* tape head line */
+  .ph{position:absolute; top:0; bottom:0; width:1px; pointer-events:none; z-index:6;
+      background:linear-gradient(180deg,#FFE0B0,#FFB253)}
+  .ph::before{
+    content:""; position:absolute; top:-1px; left:-4px; width:9px; height:5px;
+    background:var(--tungsten); clip-path:polygon(0 0,100% 0,50% 100%);
+  }
+
+  /* add row */
+  .addrow{display:flex; align-items:center; height:44px; border-top:1px solid rgba(0,0,0,.5); box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}
+  .addrow-pad{width:206px; flex:none; border-right:1px solid rgba(0,0,0,.5); height:100%; display:flex; align-items:center; padding:0 12px}
+  .addrow-rest{flex:1; min-width:0; height:100%; background:linear-gradient(180deg,#1B130D,#150F0A)}
+
+  /* ---------- selector panel (popover) ---------- */
+  .sel{
+    position:absolute; z-index:40; width:274px; padding:6px;
+    border-radius:3px; border:1px solid var(--alu-edge);
+    background:linear-gradient(180deg,#37352F,#2A2924);
+    box-shadow:0 20px 44px -14px rgba(0,0,0,.95), var(--raise);
+    display:none; max-height:320px; overflow-y:auto;
+  }
+  .sel.on{display:block}
+  .sel .lb{padding:8px 9px 5px}
+  .sel-row{
+    display:flex; align-items:center; gap:9px; width:100%; text-align:left; cursor:pointer;
+    padding:8px 9px; border:0; border-radius:2px; background:none;
+    font:inherit; font-size:13px; color:var(--silk);
+    transition:background .12s;
+  }
+  .sel-row:hover{background:rgba(255,178,83,.11)}
+  .sel-row .jack{width:9px; height:9px}
+  .sel-row .car{margin-left:auto; color:var(--silk-3); flex:none}
+  .sel-row.cur{color:var(--tungsten)}
+  .sel-row.cur .car{color:var(--tungsten)}
+  .sel-back{
+    display:flex; align-items:center; gap:7px; width:100%; cursor:pointer;
+    padding:7px 9px; border:0; border-radius:2px; background:none; font:inherit;
+    font-size:12px; color:var(--silk-2); margin-bottom:2px; transition:background .12s;
+  }
+  .sel-back:hover{background:rgba(255,255,255,.05)}
+  .sel-back b{color:var(--silk); font-weight:600}
+  .sel-sep{height:1px; background:rgba(0,0,0,.5); box-shadow:0 1px 0 rgba(255,255,255,.05); margin:6px 5px}
+  .sel-add{
+    display:flex; align-items:center; gap:8px; width:100%; cursor:pointer;
+    padding:8px 9px; border:0; border-radius:2px; background:none; font:inherit;
+    font-size:12.5px; color:var(--tungsten); transition:background .12s;
+  }
+  .sel-add:hover{background:rgba(255,178,83,.12)}
+  .sel-form{display:none; padding:6px 5px 3px; flex-direction:column; gap:7px}
+  .sel-form.on{display:flex}
+  .sel-form input{
+    width:100%; padding:9px 10px; border-radius:2px; font:inherit; font-size:12.5px;
+    border:1px solid var(--alu-edge); color:var(--silk);
+    background:linear-gradient(180deg,#191713,#211F1A);
+    box-shadow:var(--sunk);
+  }
+  .sel-form input:focus{outline:none; border-color:var(--tungsten-2); color:#FFCC8A}
+  .sel-form .row{display:flex; gap:6px}
+  .sel-form p{margin:0; font-size:11.5px; color:var(--silk-3); line-height:1.55}
+  .sel-form .mb{flex:1}
+
+  /* ---------- tuning module (inspector) ---------- */
+  .tune{padding:16px; display:flex; flex-direction:column; gap:17px; min-width:0}
+  .blk{display:flex; flex-direction:column; gap:10px}
+  .blk-h{display:flex; align-items:baseline; justify-content:space-between; gap:8px}
+
+  /* backlit glass window */
+  .win{
+    position:relative; border-radius:2px; overflow:hidden;
+    background:
+      radial-gradient(120% 96% at 50% 122%, rgba(255,150,50,.20), transparent 62%),
+      linear-gradient(180deg,#120E0A,#0A0806);
+    box-shadow:var(--sunk), inset 0 -1px 0 rgba(255,190,110,.10);
+  }
+  .win::after{
+    content:""; position:absolute; inset:0; pointer-events:none;
+    background:linear-gradient(104deg, rgba(255,255,255,.10) 0 13%, transparent 30%);
+  }
+
+  .readout{display:flex; align-items:center; gap:12px; padding:13px 14px}
+  .rd-now{
+    font-size:30px; font-weight:600; letter-spacing:-.02em; min-width:64px;
+    color:#FFCF92; text-shadow:0 0 10px rgba(255,178,83,.34);
+  }
+  .rd-arrow{color:var(--tungsten-3); font-size:13px}
+  .rd-was{font-size:14px; color:var(--silk-3); text-decoration:line-through}
+  .rd-steps{margin-left:auto; display:flex; gap:5px}
+  .rd-steps .mb{width:30px; height:30px; font-size:17px; line-height:1; color:var(--silk-2)}
+
+  /* the hero control: cent dial with printed scale */
+  .dialbox{display:flex; align-items:center; gap:15px; padding:2px 0}
+  .dialwrap{position:relative; width:126px; height:92px; flex:none}
+  .dialwrap svg.scale{position:absolute; inset:0; width:100%; height:100%; overflow:visible}
+  .dial{
+    position:absolute; left:31px; top:14px; width:64px; height:64px; border-radius:50%;
+    cursor:ns-resize; border:0; padding:0;
+    background:
+      conic-gradient(from -90deg, rgba(0,0,0,.46) 0deg 1.6deg, rgba(255,255,255,.11) 1.6deg 3.6deg),
+      radial-gradient(circle at 38% 32%, var(--alu-hi), var(--alu-2) 56%, #14130E);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.18), 0 3px 6px rgba(0,0,0,.65), 0 1px 0 rgba(255,255,255,.06);
+    touch-action:none;
+  }
+  .dial::before{
+    content:""; position:absolute; inset:15%; border-radius:50%;
+    background:radial-gradient(circle at 36% 28%, #504C44, #23221D 72%);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.15), 0 1px 3px rgba(0,0,0,.7);
+  }
+  .dial i{
+    position:absolute; left:50%; top:7%; width:2.5px; height:33%;
+    margin-left:-1.25px; border-radius:2px;
+    background:linear-gradient(180deg,#FFDCA8,#C9791F);
+    transform-origin:50% 121%;
+  }
+  .dial-read{display:flex; flex-direction:column; gap:3px; min-width:0}
+  .dial-read .v{font-size:22px; font-weight:600; color:#FFCF92}
+  .dial-read .hz{font-size:12px; color:var(--silk-2)}
+
+  /* frequency window */
+  .freq{display:flex; align-items:center; gap:9px; padding:10px 13px}
+  .freq input{
+    flex:1; min-width:0; border:0; background:none; text-align:right; font:inherit;
+    font-size:16px; font-weight:500; color:#FFCF92; font-variant-numeric:tabular-nums;
+  }
+  .freq input:focus{outline:none; color:#FFE6BE}
+  .freq .u{font-family:var(--fn); font-size:10px; letter-spacing:.14em; color:var(--tungsten-3)}
+
+  /* scope */
+  .scope{position:relative}
+  .scope canvas{display:block; width:100%; height:104px}
+  .scope-foot{display:flex; align-items:center; gap:9px; padding:7px 11px; border-top:1px solid rgba(0,0,0,.55); box-shadow:inset 0 1px 0 rgba(255,255,255,.045)}
+  .scope-foot .mb{margin-left:auto; padding:5px 11px; font-family:var(--fn); font-size:10px; letter-spacing:.13em; text-transform:uppercase}
+
+  /* slide potentiometers */
+  .pot{display:flex; align-items:center; gap:11px}
+  .pot > .lb{min-width:66px}
+  .pot .v{font-size:11.5px; color:var(--silk-2); min-width:44px; text-align:right; font-variant-numeric:tabular-nums}
+  input[type=range]{
+    -webkit-appearance:none; appearance:none; flex:1; height:22px; background:none; cursor:pointer;
+  }
+  input[type=range]::-webkit-slider-runnable-track{
+    height:5px; border-radius:1px;
+    background:linear-gradient(180deg,#0D0A07,#221E19);
+    box-shadow:inset 0 1px 2px rgba(0,0,0,.85), 0 1px 0 rgba(255,255,255,.055);
+  }
+  input[type=range]::-moz-range-track{
+    height:5px; border-radius:1px; background:linear-gradient(180deg,#0D0A07,#221E19);
+    box-shadow:inset 0 1px 2px rgba(0,0,0,.85);
+  }
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none; width:15px; height:22px; margin-top:-8.5px; border-radius:2px;
+    background:linear-gradient(180deg,var(--alu-hi),var(--alu-2) 48%,#1A1914);
+    border:1px solid var(--alu-edge);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.28), inset 0 -1px 0 rgba(0,0,0,.5), 0 1px 3px rgba(0,0,0,.65);
+  }
+  input[type=range]::-moz-range-thumb{
+    width:15px; height:22px; border-radius:2px;
+    background:linear-gradient(180deg,var(--alu-hi),var(--alu-2) 48%,#1A1914);
+    border:1px solid var(--alu-edge);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.28), 0 1px 3px rgba(0,0,0,.65);
+  }
+
+  /* rocker switch row */
+  .rocker{
+    display:flex; align-items:center; gap:11px; width:100%; cursor:pointer;
+    padding:10px 12px; border-radius:2px; text-align:left; font:inherit;
+    border:1px solid var(--alu-edge);
+    background:linear-gradient(180deg,#312F2A,#282621);
+    box-shadow:var(--raise);
+    color:var(--silk); font-size:12.5px;
+  }
+  .rocker small{display:block; color:var(--silk-3); font-size:11px; margin-top:3px; line-height:1.5}
+  .rocker .rk{
+    margin-left:auto; flex:none; width:38px; height:21px; border-radius:2px; position:relative;
+    background:linear-gradient(180deg,#100D09,#1E1B16);
+    box-shadow:var(--sunk);
+  }
+  .rocker .rk i{
+    position:absolute; top:2px; left:2px; width:17px; height:17px; border-radius:1px;
+    background:linear-gradient(180deg,var(--alu-hi),var(--alu-2));
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.24), 0 1px 2px rgba(0,0,0,.6);
+    transition:transform .16s cubic-bezier(.3,.8,.3,1), background .16s;
+  }
+  .rocker[aria-pressed="true"] .rk i{
+    transform:translateX(17px);
+    background:linear-gradient(180deg,#F0A552,var(--tungsten-2));
+  }
+  .rocker .st{
+    position:absolute; left:0; right:0; top:50%; margin-top:-4px; text-align:center;
+    font-family:var(--fn); font-size:7.5px; font-weight:700; letter-spacing:.1em;
+    color:var(--silk-3); pointer-events:none;
+  }
+
+  /* engraved notice plate */
+  .notice{
+    display:flex; gap:10px; padding:11px 12px; border-radius:2px;
+    background:linear-gradient(180deg,#241F19,#2B251D);
+    box-shadow:var(--sunk), 0 1px 0 rgba(255,255,255,.05);
+    font-size:12px; line-height:1.55; color:var(--silk-2);
+  }
+  .notice svg{flex:none; color:var(--tungsten-2); margin-top:2px}
+  .notice b{color:var(--tungsten)}
+
+  .kv{display:flex; flex-direction:column; gap:7px}
+  .kv-r{display:flex; justify-content:space-between; gap:10px; font-size:12.5px; align-items:baseline}
+  .kv-r > span{color:var(--silk-2)}
+  .kv-r > b{font-weight:600; font-variant-numeric:tabular-nums}
+  .free{
+    font-family:var(--fn); font-size:9px; font-weight:700; letter-spacing:.14em;
+    text-transform:uppercase; color:var(--pilot);
+    border:1px solid rgba(127,180,99,.4); border-radius:2px; padding:2px 6px;
+  }
+
+  /* ---------- keybed + step grid ---------- */
+  .editor{border-top:1px solid rgba(0,0,0,.55); box-shadow:inset 0 1px 0 rgba(255,255,255,.045)}
+  .ed-bar{display:flex; align-items:center; gap:13px; flex-wrap:wrap; padding:11px 16px;
+          background:linear-gradient(180deg,#302E29,#282722)}
+  .ed-bar h2{margin:0; font-family:var(--fn); font-size:11px; font-weight:700; letter-spacing:.19em; text-transform:uppercase; color:var(--silk-2)}
+  .ed-hint{margin-left:auto; font-size:11.5px; color:var(--silk-3)}
+  .ed-hint kbd{
+    font-family:var(--fn); font-size:9.5px; font-weight:600; letter-spacing:.08em;
+    padding:3px 6px; border-radius:2px; color:var(--silk-2);
+    background:linear-gradient(180deg,var(--alu-3),var(--alu));
+    box-shadow:var(--raise), 0 1px 2px rgba(0,0,0,.5);
+  }
+
+  .roll{display:flex; height:238px; overflow:hidden}
+  .keybed{width:62px; flex:none; border-right:1px solid rgba(0,0,0,.6); background:#0E0B08}
+  .kb{
+    height:18px; display:flex; align-items:center; justify-content:flex-end;
+    padding-right:8px; font-family:var(--fn); font-size:8px; font-weight:600;
+    letter-spacing:.09em;
+    background:linear-gradient(90deg,#C9BFA6,#E4DAC0 62%,#F1E8D2);
+    color:#4A4237;
+    border-bottom:1px solid rgba(0,0,0,.28);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.4);
+  }
+  .kb.blk{
+    background:linear-gradient(90deg,#0C0A07,#1B1813 68%,#100E0A);
+    color:#6E6558; border-bottom:1px solid #000;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.07);
+  }
+
+  .grid{
+    position:relative; flex:1; min-width:0; overflow:hidden;
+    background:
+      radial-gradient(120% 130% at 50% 116%, rgba(255,150,50,.10), transparent 60%),
+      linear-gradient(180deg,#120E0A,#0A0806);
+    box-shadow:var(--sunk);
+  }
+  .g-rows,.g-cols{position:absolute; inset:0}
+  .g-cols{pointer-events:none}
+  .g-row{height:18px; border-bottom:1px solid rgba(255,220,180,.045)}
+  .g-row.blk{background:rgba(0,0,0,.34)}
+  .g-col{position:absolute; top:0; bottom:0; width:1px; background:rgba(255,220,180,.045)}
+  .g-col.bar{background:rgba(255,220,180,.13)}
+
+  /* lit step segment */
+  .note{
+    position:absolute; height:13px; margin-top:2.5px; border-radius:1px; cursor:grab;
+    touch-action:none; overflow:hidden; display:flex; align-items:center; padding-left:5px;
+    font-family:var(--fn); font-size:8px; font-weight:700; letter-spacing:.06em;
+    color:#2A1B08;
+    background:linear-gradient(180deg,#FFD79A,#E29337);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.5), 0 1px 2px rgba(0,0,0,.6);
+    transition:box-shadow .15s, background .15s, top .12s cubic-bezier(.3,.8,.3,1);
+  }
+  .note:hover{filter:brightness(1.09)}
+  .note.sel{
+    background:linear-gradient(180deg,#FFEAC6,#FFB253);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.65), 0 0 0 1.5px #FFCF92, 0 2px 5px rgba(0,0,0,.55);
+  }
+  .note.dragging{cursor:grabbing; z-index:8; transition:none}
+  .note.edited::after{
+    content:""; position:absolute; right:4px; top:50%; width:4px; height:4px;
+    margin-top:-2px; border-radius:50%; background:rgba(42,27,8,.62);
+  }
+
+  .hidden{display:none !important}
+
+  /* ---------- AI 생성 도킹 패널 (설계 탐색, EXTENSION 2026-10-13) ---------- */
+  /* .studio 와 같은 두 번째 덱 — 피아노롤 옆에 336px 열을 반복한다 */
+  .lower{display:grid; grid-template-columns:minmax(0,1fr) 336px}
+  .roll{border-right:1px solid rgba(0,0,0,.55); box-shadow:inset -1px 0 0 rgba(255,255,255,.04)}
+
+  .ai-dock{padding:16px; display:flex; flex-direction:column; gap:14px; min-width:0}
+
+  .chat{max-height:272px; overflow-y:auto; display:flex; flex-direction:column; gap:8px; padding:11px}
+  .chat::-webkit-scrollbar{width:8px}
+  .chat::-webkit-scrollbar-thumb{background:var(--alu-3); border-radius:4px}
+
+  .msg{max-width:88%; padding:8px 11px; border-radius:2px; font-size:12px; line-height:1.55}
+  .msg.user{
+    align-self:flex-end; color:var(--silk);
+    background:linear-gradient(180deg,#2E2117,#231A11);
+    box-shadow:var(--sunk), 0 1px 0 rgba(255,255,255,.05);
+  }
+  .msg.ai{
+    align-self:flex-start; color:#FFD9A0;
+    text-shadow:0 0 6px rgba(255,178,83,.22);
+    background:linear-gradient(180deg,#171109,#0E0B07);
+    box-shadow:var(--sunk);
+  }
+
+  .ai-form{display:flex; align-items:center; gap:8px; padding:6px 6px 6px 13px}
+  .ai-form input{
+    flex:1; min-width:0; border:0; background:none; font:inherit;
+    font-size:12.5px; color:var(--silk);
+  }
+  .ai-form input::placeholder{color:var(--silk-3)}
+  .ai-form input:focus{outline:none; color:#FFE6BE}
+  .ai-form .mb.sq{width:30px; height:30px}
+
+  /* 검색 결과 — 후보 프레이즈 카드 */
+  .cands{display:flex; flex-direction:column; gap:7px; padding:2px 0 4px}
+  .cand{
+    display:grid; grid-template-columns:auto 52px 1fr auto; align-items:center; gap:10px;
+    padding:9px 10px; border-radius:2px;
+    background:linear-gradient(180deg,#242320,#1E1C18);
+    box-shadow:var(--raise), 0 1px 2px rgba(0,0,0,.4);
+    transition:background .13s, box-shadow .13s;
+  }
+  .cand:hover{background:linear-gradient(180deg,#2B2925,#232119)}
+  .cand.picked{box-shadow:0 0 0 1.5px var(--tungsten), var(--raise)}
+  .cand .jack{width:9px; height:9px}
+  .cand-prev{height:22px; display:flex; align-items:flex-end; gap:2px}
+  .cand-prev span{
+    flex:1; min-width:2px; border-radius:1px; opacity:.85;
+    background:linear-gradient(180deg,#FFD79A,#E29337);
+  }
+  .cand-info{display:flex; flex-direction:column; gap:2px; min-width:0}
+  .cand-info b{font-size:12.5px; font-weight:600; color:var(--silk); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .cand-info span{font-size:10.5px; color:var(--silk-3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .cand-actions{display:flex; gap:6px; flex:none}
+  .cand-play{width:26px; height:26px}
+  .cand-play.playing{color:var(--tungsten); border-color:#7A4A14}
+  .cand-pick{padding:6px 10px; font-family:var(--fn); font-size:9.5px; letter-spacing:.13em; text-transform:uppercase}
+  .cand.picked .cand-pick{
+    color:#1A120A; border-color:#7A4A14;
+    background:linear-gradient(180deg,#F0A552,var(--tungsten-2));
+  }
+  .cands.done .cand:not(.picked){opacity:.4}
+  .cands.done .cand:not(.picked) .cand-play,
+  .cands.done .cand:not(.picked) .cand-pick{pointer-events:none}
+
+  /* ---------- responsive ---------- */
+  @media (max-width:760px){
+    .bar{padding:20px 12px 64px}
+    .head,.deck,.tune,.ai-dock{padding:12px}
+    .deck{gap:14px}
+    .vus{margin-left:0; width:100%}
+    .vu{width:100%; height:48px}
+    .lane-head,.ruler-pad,.addrow-pad{width:132px}
+    .keybed{width:48px}
+    .roll{height:200px}
+    .dialwrap{width:112px; height:86px}
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    *{transition-duration:.01ms !important; animation-duration:.01ms !important}
+  }
+</style>
+
+<div class="bar">
+
+  <div class="strip">
+    <h1>비 오는 새벽</h1>
+    <div class="meta">
+      <span class="lb">Phase 3 설계 탐색</span>
+      <i class="sep"></i>
+      <span class="txt">기본 화면은 그대로이고, 피아노롤 옆 AI 생성 패널만 탐색안입니다. 실제로 눌러볼 수 있습니다.</span>
+      <span class="prov">이름 임시</span>
+    </div>
+  </div>
+
+  <div class="unit">
+    <div class="plate">
+
+      <!-- ============ head rail ============ -->
+      <div class="head">
+        <div class="mark">
+          <span class="lamp-bulb" id="lamp-power" aria-hidden="true"></span>
+          <b>RESONA</b>
+        </div>
+
+        <div class="slug">
+          <span class="pn">비 오는 새벽</span>
+          <span class="ps" id="save-state">저장됨</span>
+        </div>
+
+        <div class="head-r">
+          <button class="mb sq" id="btn-undo" title="되돌리기 (⌘Z)" aria-label="되돌리기" disabled>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 7v6h6"/><path d="M3.5 13a9 9 0 1 0 2.3-9.3L3 7"/>
+            </svg>
+          </button>
+          <button class="mb sq" id="btn-redo" title="다시 실행 (⇧⌘Z)" aria-label="다시 실행" disabled>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 7v6h-6"/><path d="M20.5 13a9 9 0 1 1-2.3-9.3L21 7"/>
+            </svg>
+          </button>
+          <button class="mb txt go">내보내기</button>
+        </div>
+      </div>
+
+      <div class="rule"></div>
+
+      <!-- ============ transport deck ============ -->
+      <div class="deck">
+        <div class="counter">
+          <div class="digits" id="counter" role="timer" aria-label="재생 위치"></div>
+          <div class="bb num" id="barbeat">1.1.00</div>
+        </div>
+
+        <div class="keys-tp">
+          <button class="tk" id="btn-stop" aria-label="정지">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><rect x="1.5" y="1.5" width="9" height="9" rx="1"/></svg>
+            <span class="cap">STOP</span>
+          </button>
+          <button class="tk" id="btn-play" aria-label="재생" aria-pressed="false">
+            <svg width="13" height="13" viewBox="0 0 12 12" fill="currentColor"><path d="M2.6 1.4 10 6l-7.4 4.6z"/></svg>
+            <span class="cap">PLAY</span>
+          </button>
+          <button class="tk" id="btn-loop" aria-label="루프" aria-pressed="true">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M17 2l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>
+            </svg>
+            <span class="cap">LOOP</span>
+          </button>
+          <button class="tk rec" id="btn-rec" aria-label="녹음" aria-pressed="false">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><circle cx="6" cy="6" r="4.4"/></svg>
+            <span class="cap">REC</span>
+          </button>
+        </div>
+
+        <div class="specs">
+          <div class="spec"><span class="lb">BPM</span><div class="v num">92</div></div>
+          <div class="spec"><span class="lb">Key</span><div class="v">A minor</div></div>
+          <div class="spec"><span class="lb">박자</span><div class="v num">4/4</div></div>
+          <div class="spec"><span class="lb">해상도</span><div class="v num">48k / 24bit</div></div>
+        </div>
+
+        <div class="vus">
+          <div class="state">
+            <span class="now" id="state-now">정지됨</span>
+            <div class="row">
+              <span class="lamp-bulb" id="lamp-run" aria-hidden="true"></span>
+              <span class="lb" id="state-db">−∞ dB</span>
+            </div>
+          </div>
+          <div class="vu-pair" id="vu-pair" aria-hidden="true"></div>
+        </div>
+      </div>
+
+      <div class="rule"></div>
+
+      <!-- ============ studio ============ -->
+      <div class="studio">
+        <div class="deckside">
+
+          <div class="ruler">
+            <div class="ruler-pad"><span class="lb" id="track-count">트랙 4</span></div>
+            <div class="ruler-scale" id="ruler"></div>
+          </div>
+
+          <div class="lanes" id="lanes"></div>
+
+          <div class="addrow">
+            <div class="addrow-pad">
+              <button class="mb txt" id="add-btn" style="width:100%; padding:7px 8px" aria-expanded="false" aria-haspopup="menu">＋ 트랙 추가</button>
+            </div>
+            <div class="addrow-rest"></div>
+          </div>
+
+          <div class="sel" id="sel" role="menu" aria-label="악기 · 음색 선택"></div>
+        </div>
+
+        <!-- ============ tuning module ============ -->
+        <aside class="tune">
+
+          <div class="blk">
+            <div class="blk-h">
+              <span class="lb">선택한 음</span>
+              <span class="lb" id="src">신스 리드 · 5마디</span>
+            </div>
+
+            <div class="win">
+              <div class="readout">
+                <div class="rd-now num" id="rd-now">A4</div>
+                <span class="rd-arrow" id="rd-arrow">←</span>
+                <div class="rd-was num" id="rd-was">—</div>
+                <div class="rd-steps">
+                  <button class="mb" id="p-down" aria-label="반음 내림">−</button>
+                  <button class="mb" id="p-up" aria-label="반음 올림">＋</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="dialbox">
+              <div class="dialwrap">
+                <svg class="scale" viewBox="0 0 126 92" aria-hidden="true">
+                  <g id="dial-ticks"></g>
+                  <text x="8"   y="86" fill="#7C7264" font-family="Archivo Narrow, sans-serif" font-size="9" font-weight="600" letter-spacing=".1em">−50</text>
+                  <text x="57"  y="9"  fill="#ABA292" font-family="Archivo Narrow, sans-serif" font-size="9" font-weight="600" letter-spacing=".1em">0</text>
+                  <text x="103" y="86" fill="#7C7264" font-family="Archivo Narrow, sans-serif" font-size="9" font-weight="600" letter-spacing=".1em">+50</text>
+                </svg>
+                <div class="dial" id="dial" role="slider" tabindex="0"
+                     aria-label="센트 단위 미세조정" aria-valuemin="-50" aria-valuemax="50" aria-valuenow="0" aria-valuetext="0 센트">
+                  <i id="dial-ptr"></i>
+                </div>
+              </div>
+              <div class="dial-read">
+                <span class="lb">미세조정</span>
+                <div class="v num" id="cents-v">0 ¢</div>
+                <div class="hz num" id="cents-hz">440.00 Hz</div>
+              </div>
+            </div>
+
+            <div class="win freq">
+              <span class="lb" style="min-width:52px">주파수</span>
+              <input type="text" id="freq" inputmode="decimal" aria-label="주파수 직접 입력" value="440.00">
+              <span class="u">Hz</span>
+            </div>
+          </div>
+
+          <div class="blk">
+            <div class="blk-h">
+              <span class="lb">음정 곡선</span>
+              <span class="lb num" id="curve-note">A4 · 440.00 Hz</span>
+            </div>
+
+            <div class="win scope">
+              <canvas id="scope" aria-label="선택한 음의 시간에 따른 음정 변화"></canvas>
+              <div class="scope-foot">
+                <span class="lb">±50 ¢ 범위</span>
+                <button class="mb" id="flatten">곡선 다듬기</button>
+              </div>
+            </div>
+
+            <div class="pot">
+              <span class="lb">시작 글라이드</span>
+              <input type="range" id="glide" min="0" max="80" value="24" aria-label="시작 글라이드">
+              <span class="v num" id="glide-v">24 ¢</span>
+            </div>
+            <div class="pot">
+              <span class="lb">흔들림</span>
+              <input type="range" id="vib" min="0" max="40" value="15" aria-label="비브라토 깊이">
+              <span class="v num" id="vib-v">15 ¢</span>
+            </div>
+
+            <button class="rocker" id="formant" aria-pressed="true">
+              <div>포먼트 유지
+                <small>음정만 옮기고 목소리 질감은 그대로 둡니다</small>
+              </div>
+              <span class="rk"><i></i><span class="st" id="formant-st">ON</span></span>
+            </button>
+
+            <div class="notice">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+              </svg>
+              <div>이 수정은 <b>기기 안에서 바로 처리</b>됩니다. AI를 다시 부르지 않으니 나머지 소리는 그대로예요.</div>
+            </div>
+          </div>
+
+          <div class="blk">
+            <span class="lb">클립 정보</span>
+            <div class="kv">
+              <div class="kv-r"><span>구간</span><b class="num">5 – 8 마디</b></div>
+              <div class="kv-r"><span>음 개수</span><b class="num">9</b></div>
+              <div class="kv-r"><span>수정한 음</span><b class="num" id="kv-edited">0</b></div>
+              <div class="kv-r"><span>출처</span><b>직접 작성</b></div>
+            </div>
+          </div>
+
+          <div class="blk">
+            <span class="lb">내 음색</span>
+            <div class="kv">
+              <div class="kv-r"><span>등록한 음색</span><b class="num" id="kv-tones">0</b></div>
+            </div>
+            <p style="margin:0; font-size:12px; color:var(--silk-2); line-height:1.6">
+              트랙의 음색 이름을 눌러 바꾸거나, 내가 만든 음색을 등록해 다음 곡에서도 씁니다.
+            </p>
+          </div>
+
+          <div class="blk">
+            <span class="lb">내보내기</span>
+            <div class="kv">
+              <div class="kv-r"><span>WAV · 48kHz / 24bit</span><span class="free">무료</span></div>
+              <div class="kv-r"><span>스템 개별 내보내기</span><span class="free">무료</span></div>
+            </div>
+            <button class="mb txt" style="margin-top:3px">파일로 내보내기</button>
+          </div>
+        </aside>
+      </div>
+
+      <div class="rule"></div>
+
+      <!-- ============ keybed + step grid ============ -->
+      <div class="editor">
+        <div class="ed-bar">
+          <h2>음 편집기</h2>
+          <span class="lb" id="ed-src">신스 리드 · 5–8 마디</span>
+          <div class="ed-hint">음을 <kbd>드래그</kbd> 하거나 선택 후 <kbd>↑</kbd> <kbd>↓</kbd> 로 반음 이동</div>
+        </div>
+
+        <div class="lower">
+          <div class="roll">
+            <div class="keybed" id="keybed"></div>
+            <div class="grid" id="grid">
+              <div class="g-rows" id="g-rows"></div>
+              <div class="g-cols" id="g-cols"></div>
+              <div id="notes"></div>
+              <div class="ph hidden" id="ph-roll"></div>
+            </div>
+          </div>
+
+          <!-- ============ AI 생성 패널 (설계 탐색, EXTENSION) ============ -->
+          <aside class="ai-dock" aria-label="AI 생성">
+            <div class="blk-h">
+              <span class="lb">AI 생성</span>
+              <span class="lb" id="ai-ctx">신스 리드 · 5–8마디</span>
+            </div>
+
+            <div class="win chat" id="ai-chat"></div>
+
+            <form class="win ai-form" id="ai-form">
+              <input type="text" id="ai-prompt" autocomplete="off"
+                     placeholder="예: 기타 비슷한 느낌으로 4~8음" aria-label="AI에게 요청하기">
+              <button class="mb sq go" type="submit" aria-label="보내기">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M5 12h14"/><path d="M13 6l6 6-6 6"/>
+                </svg>
+              </button>
+            </form>
+
+            <div class="blk hidden" id="ai-result">
+              <span class="lb">방금 삽입한 프레이즈</span>
+              <div class="kv">
+                <div class="kv-r"><span>출처</span><b>AI 생성 · 라이브러리</b></div>
+                <div class="kv-r"><span>잠금</span><b>잠김 — AI가 다시 안 건드림</b></div>
+              </div>
+            </div>
+
+            <div class="notice">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+              </svg>
+              <div>후보를 <b>고른 뒤에만</b> 삽입됩니다. 선택하지 않은 다른 트랙·마디는 그대로예요.</div>
+            </div>
+          </aside>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  "use strict";
+  const $  = id => document.getElementById(id);
+  const el = (tag, cls, txt) => { const n = document.createElement(tag);
+    if (cls) n.className = cls; if (txt != null) n.textContent = txt; return n; };
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* ================= 저장 상태 ================= */
+  const saveState = $('save-state');
+  let saveTimer = 0;
+  function markDirty(){
+    saveState.textContent = '저장 중…';
+    saveState.classList.add('dirty');
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      saveState.textContent = '저장됨';
+      saveState.classList.remove('dirty');
+    }, 900);
+  }
+
+  /* ================= 기계식 카운터 ================= */
+  const counter = $('counter');
+  const DIGIT_SLOTS = [0,0,':',0,0,'.',0,0,0];
+  const digitEls = [];
+  DIGIT_SLOTS.forEach(s => {
+    if (typeof s === 'string'){ counter.appendChild(el('div','dg sep num',s)); }
+    else { const d = el('div','dg num','0'); counter.appendChild(d); digitEls.push(d); }
+  });
+  function setCounter(ms){
+    const s = Math.floor(ms/1000), m = Math.floor(s/60);
+    const txt = String(m).padStart(2,'0') + String(s%60).padStart(2,'0') +
+                String(Math.floor(ms%1000)).padStart(3,'0');
+    for (let i = 0; i < digitEls.length; i++){
+      if (digitEls[i].textContent !== txt[i]) digitEls[i].textContent = txt[i];
+    }
+  }
+
+  /* ================= VU 미터 ================= */
+  /* 실제 VU 탄도: 상승 ~300ms, 하강 더 느리게 */
+  const VU_MIN = -140, VU_MAX = 40;      // 바늘 회전 각도 범위
+  const vuPair = $('vu-pair');
+  const vus = ['L','R'].map(side => {
+    const box = el('div','vu');
+    box.innerHTML =
+      '<svg viewBox="0 0 118 56" aria-hidden="true">' +
+        '<path d="M14 47 A 52 52 0 0 1 104 47" fill="none" stroke="#4A4237" stroke-width="1"/>' +
+        '<path d="M78 21.5 A 52 52 0 0 1 104 47" fill="none" stroke="#B8352A" stroke-width="2.4"/>' +
+        '<g id="t' + side + '"></g>' +
+        '<text x="9" y="14" fill="#6B6252" font-family="Archivo Narrow, sans-serif" font-size="8" font-weight="700" letter-spacing=".14em">VU</text>' +
+        '<text x="101" y="14" fill="#6B6252" font-family="Archivo Narrow, sans-serif" font-size="8" font-weight="700" letter-spacing=".14em" text-anchor="end">' + side + '</text>' +
+        '<g class="needle"><line x1="59" y1="52" x2="59" y2="9" stroke="#221B10" stroke-width="1.4" stroke-linecap="round"/></g>' +
+        '<circle cx="59" cy="52" r="4" fill="#3A3226"/>' +
+      '</svg>' +
+      '<span class="vu-lit"></span>';
+    const ticks = box.querySelector('g[id^="t"]');
+    // 인쇄된 눈금: -20 … 0 … +3
+    const LABELS = [[-20,'20'],[-10,'10'],[-7,'7'],[-5,'5'],[-3,'3'],[0,'0'],[3,'+3']];
+    LABELS.forEach(([db,label]) => {
+      const frac = (db + 20) / 23;
+      const ang = (VU_MIN + (VU_MAX - VU_MIN) * frac) * Math.PI / 180;
+      const cx = 59, cy = 52, r1 = 40, r2 = 45;
+      const sx = cx + Math.sin(ang) * r1, sy = cy - Math.cos(ang) * r1;
+      const ex = cx + Math.sin(ang) * r2, ey = cy - Math.cos(ang) * r2;
+      const ln = document.createElementNS('http://www.w3.org/2000/svg','line');
+      ln.setAttribute('x1',sx.toFixed(1)); ln.setAttribute('y1',sy.toFixed(1));
+      ln.setAttribute('x2',ex.toFixed(1)); ln.setAttribute('y2',ey.toFixed(1));
+      ln.setAttribute('stroke', db >= 0 ? '#B8352A' : '#4A4237');
+      ln.setAttribute('stroke-width','1');
+      ticks.appendChild(ln);
+      const tx = document.createElementNS('http://www.w3.org/2000/svg','text');
+      const lx = cx + Math.sin(ang) * 33, ly = cy - Math.cos(ang) * 33;
+      tx.setAttribute('x',lx.toFixed(1)); tx.setAttribute('y',(ly+3).toFixed(1));
+      tx.setAttribute('text-anchor','middle');
+      tx.setAttribute('fill', db >= 0 ? '#B8352A' : '#5A5142');
+      tx.setAttribute('font-family','Archivo Narrow, sans-serif');
+      tx.setAttribute('font-size','7'); tx.setAttribute('font-weight','600');
+      tx.textContent = label;
+      ticks.appendChild(tx);
+    });
+    vuPair.appendChild(box);
+    return {box, needle:box.querySelector('.needle'), level:0};
+  });
+  function vuSet(i, target){
+    const v = vus[i];
+    const k = target > v.level ? (reduced ? 1 : .18) : (reduced ? 1 : .055);
+    v.level += (target - v.level) * k;
+    const ang = VU_MIN + (VU_MAX - VU_MIN) * clamp(v.level, 0, 1.08);
+    v.needle.setAttribute('transform', 'rotate(' + ang.toFixed(2) + ' 59 52)');
+    return v.level;
+  }
+  vuSet(0,0); vuSet(1,0);
+
+  /* ================= 램프 ================= */
+  const lampPower = $('lamp-power'), lampRun = $('lamp-run');
+  const stateNow = $('state-now'), stateDb = $('state-db');
+  requestAnimationFrame(() => lampPower.classList.add('lit'));   // 전원은 켜져 있다
+
+  /* ================= 파형 (테이프 산화막 밀도) ================= */
+  function mulberry(seed){
+    return function(){
+      seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+      let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+  }
+  let waves = [];
+  function drawWave(cv, seed, color, kind){
+    const dpr = Math.min(devicePixelRatio || 1, 2);
+    const w = cv.clientWidth, h = cv.clientHeight;
+    if (!w || !h) return;
+    cv.width = w * dpr; cv.height = h * dpr;
+    const g = cv.getContext('2d');
+    g.setTransform(dpr,0,0,dpr,0,0);
+    g.clearRect(0,0,w,h);
+    const rnd = mulberry(seed), mid = h/2, step = 2;
+    g.fillStyle = color;
+    let env = 0;
+    for (let x = 0; x < w; x += step){
+      const t = x / w;
+      let a;
+      if (kind === 'perc'){
+        const hit = (x % 26) < 3 ? 1 : 0;
+        env = hit ? 1 : Math.max(env * .86, .11);
+        a = env * (.55 + rnd() * .45);
+      } else if (kind === 'low'){
+        a = (.42 + .3 * Math.sin(t * 11)) * (.7 + rnd() * .3);
+      } else if (kind === 'voice'){
+        const ph = Math.sin(t * 7) * .5 + .5;
+        a = (.2 + ph * .7) * (.6 + rnd() * .4);
+      } else {
+        a = (.35 + .35 * Math.sin(t * 17 + 1)) * (.55 + rnd() * .45);
+      }
+      const bh = Math.max(1.3, a * (h * .80));
+      g.globalAlpha = .40 + a * .45;
+      g.fillRect(x, mid - bh/2, step - .7, bh);
+    }
+    g.globalAlpha = 1;
+  }
+  function registerWave(cv, seed, color, kind){
+    waves.push({cv,seed,color,kind});
+    drawWave(cv,seed,color,kind);
+  }
+  function redrawWaves(){
+    waves = waves.filter(w => w.cv.isConnected);
+    waves.forEach(w => drawWave(w.cv,w.seed,w.color,w.kind));
+  }
+  addEventListener('resize', redrawWaves);
+
+  /* ================= 악기 · 음색 ================= */
+  const TONES = {
+    '드럼':['어쿠스틱 킷','808 킷','909 킷','로파이 킷','재즈 브러시'],
+    '퍼커션':['콩가','셰이커','탬버린','핸드클랩'],
+    '베이스':['핑거 베이스','픽 베이스','신스 베이스','808 베이스','업라이트'],
+    '피아노':['그랜드','업라이트','로즈 일렉','로파이 피아노'],
+    '신스 리드':['사인 리드','사각파 리드','슈퍼소우','플럭'],
+    '신스 패드':['웜 패드','스트링 패드','앰비언트 패드'],
+    '일렉 기타':['클린','크런치','디스토션','퍼즈','트웽'],
+    '어쿠스틱 기타':['스틸 스트링','나일론','12현'],
+    '스트링':['바이올린 섹션','첼로','풀 오케스트라'],
+    '보컬':['드라이','리버브','더블링'],
+    '코러스':['하모니','애드립'],
+    '오디오 녹음':['원본']
+  };
+  const GROUPS = [
+    ['리듬',['드럼','퍼커션','베이스']],
+    ['코드 · 멜로디',['피아노','신스 리드','신스 패드','일렉 기타','어쿠스틱 기타','스트링']],
+    ['목소리 · 녹음',['보컬','코러스','오디오 녹음']]
+  ];
+  const KIND = {
+    '드럼':'perc','퍼커션':'perc','베이스':'low','피아노':'lead','신스 리드':'lead',
+    '신스 패드':'low','일렉 기타':'lead','어쿠스틱 기타':'lead','스트링':'low',
+    '보컬':'voice','코러스':'voice','오디오 녹음':'voice'
+  };
+  const myTones = {};
+  const kvTones = $('kv-tones');
+  const countMyTones = () => Object.values(myTones).reduce((n,a) => n + a.length, 0);
+
+  /* ================= 트랙 ================= */
+  const BARS = 16, HEAD_W = () => (innerWidth <= 760 ? 132 : 206);
+  const JACKS = ['--j1','--j2','--j3','--j4','--j5','--j6'];
+  const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+  let seq = 0;
+
+  const SEED_TRACKS = [
+    {name:'드럼',     tone:'로파이 킷',   jack:'--j1', vol:.72, clips:[[0,4,'DRUMS A'],[4,4,'DRUMS A'],[8,8,'DRUMS B']]},
+    {name:'베이스',   tone:'핑거 베이스', jack:'--j2', vol:.64, clips:[[0,8,'BASS'],[8,8,'BASS ALT']]},
+    {name:'신스 리드', tone:'플럭',       jack:'--j3', vol:.58, clips:[[4,4,'LEAD',true],[8,4,'LEAD']]},
+    {name:'보컬',     tone:'리버브',      jack:'--j4', vol:.80, clips:[[8,8,'VOX']]}
+  ];
+
+  const ruler = $('ruler');
+  for (let b = 0; b < BARS; b += 2){
+    const s = el('span','num', String(b + 1));
+    s.style.left = (b / BARS * 100) + '%';
+    ruler.appendChild(s);
+  }
+
+  const lanes = $('lanes'), trackCount = $('track-count');
+  const phLane = el('div','ph hidden');
+  lanes.appendChild(phLane);
+
+  const list = [];
+  const updateCount = () => { trackCount.textContent = '트랙 ' + list.length; };
+
+  function uniqueName(base){
+    const used = list.map(t => t.name);
+    if (!used.includes(base)) return base;
+    let n = 2;
+    while (used.includes(base + ' ' + n)) n++;
+    return base + ' ' + n;
+  }
+
+  function makeClip(t, start, len, label, selected){
+    const clip = el('div','clip' + (selected ? ' sel' : ''));
+    clip.style.left  = (start / BARS * 100) + '%';
+    clip.style.width = 'calc(' + (len / BARS * 100) + '% - 2px)';
+    clip.style.background =
+      'linear-gradient(180deg, color-mix(in srgb, var(' + t.jack + ') 30%, #1B130D), ' +
+      'color-mix(in srgb, var(' + t.jack + ') 15%, #150F0A))';
+    clip.style.borderColor = 'color-mix(in srgb, var(' + t.jack + ') 52%, transparent)';
+
+    const cv = document.createElement('canvas');
+    clip.appendChild(cv);
+    clip.appendChild(el('span','cn',label));
+    t.holder.appendChild(clip);
+    t.holder.classList.remove('empty');
+    t.taken.push([start,len]);
+
+    requestAnimationFrame(() => registerWave(cv, Math.floor(Math.random()*9e5), css(t.jack) || '#C9762A', t.kind));
+
+    clip.addEventListener('click', e => {
+      e.stopPropagation();
+      document.querySelectorAll('.clip.sel').forEach(c => c.classList.remove('sel'));
+      clip.classList.add('sel');
+      $('src').textContent = t.name + ' · ' + (start + 1) + '마디';
+      $('ed-src').textContent = t.name + ' · ' + (start + 1) + '–' + (start + len) + ' 마디';
+    });
+  }
+
+  /* 회전 노브 — 포인터 드래그 + 키보드 */
+  function wireKnob(knob, ptr, get, set, min, max, stepBig){
+    const paint = () => {
+      const frac = (get() - min) / (max - min);
+      ptr.style.transform = 'rotate(' + (-140 + frac * 280) + 'deg)';
+      knob.setAttribute('aria-valuenow', String(Math.round(get())));
+    };
+    knob.addEventListener('pointerdown', e => {
+      e.preventDefault();
+      knob.setPointerCapture(e.pointerId);
+      const y0 = e.clientY, v0 = get();
+      const move = ev => { set(clamp(v0 + (y0 - ev.clientY) * (max - min) / 160, min, max)); paint(); };
+      const up = () => {
+        knob.removeEventListener('pointermove', move);
+        knob.removeEventListener('pointerup', up);
+      };
+      knob.addEventListener('pointermove', move);
+      knob.addEventListener('pointerup', up);
+    });
+    knob.addEventListener('keydown', e => {
+      const d = e.key === 'ArrowUp' || e.key === 'ArrowRight' ? 1
+              : e.key === 'ArrowDown' || e.key === 'ArrowLeft' ? -1 : 0;
+      if (!d && e.key !== 'Home' && e.key !== 'End') return;
+      e.preventDefault();
+      if (e.key === 'Home') set(min);
+      else if (e.key === 'End') set(max);
+      else set(clamp(get() + d * (e.shiftKey ? stepBig : 1), min, max));
+      paint();
+    });
+    paint();
+    return paint;
+  }
+
+  function addTrack(spec){
+    const inst = spec.inst || spec.name;
+    const t = {
+      inst,
+      name: uniqueName(spec.name),
+      tone: spec.tone || (TONES[inst] ? TONES[inst][0] : '기본'),
+      jack: spec.jack || JACKS[seq % JACKS.length],
+      kind: spec.kind || KIND[inst] || 'lead',
+      vol: spec.vol != null ? Math.round(spec.vol * 100) : 70,
+      taken: []
+    };
+    seq++;
+
+    const lane = el('div','lane');
+    const head = el('div','lane-head');
+    head.innerHTML =
+      '<div class="lane-top">' +
+        '<i class="jack"></i><b></b>' +
+        '<button class="lane-del" aria-label="트랙 삭제" title="트랙 삭제">' +
+          '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>' +
+        '</button>' +
+      '</div>' +
+      '<button class="tone-plate" type="button" aria-haspopup="menu">' +
+        '<span class="mine hidden"></span><span class="tn"></span>' +
+        '<svg class="car" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg>' +
+      '</button>' +
+      '<div class="lane-ctl">' +
+        '<button class="sw" aria-pressed="false">M</button>' +
+        '<button class="sw s" aria-pressed="false">S</button>' +
+        '<button class="knob k-sm" role="slider" tabindex="0" aria-valuemin="0" aria-valuemax="100"><i></i></button>' +
+      '</div>' +
+      '<div class="lane-meter"><i></i></div>';
+
+    head.querySelector('.jack').style.background = 'var(' + t.jack + ')';
+    head.querySelector('.lane-top b').textContent = t.name;
+    head.querySelector('.sw').setAttribute('aria-label', t.name + ' 음소거');
+    head.querySelector('.sw.s').setAttribute('aria-label', t.name + ' 솔로');
+
+    const knob = head.querySelector('.knob');
+    knob.setAttribute('aria-label', t.name + ' 레벨');
+    wireKnob(knob, knob.querySelector('i'), () => t.vol, v => { t.vol = v; markDirty(); }, 0, 100, 10);
+
+    t.plate = head.querySelector('.tone-plate');
+    t.meter = head.querySelector('.lane-meter i');
+
+    head.querySelectorAll('.sw').forEach(b => b.addEventListener('click', () => {
+      b.setAttribute('aria-pressed', b.getAttribute('aria-pressed') === 'true' ? 'false' : 'true');
+    }));
+
+    head.querySelector('.lane-del').addEventListener('click', () => {
+      lane.remove();
+      const i = list.indexOf(t);
+      if (i > -1) list.splice(i,1);
+      updateCount(); redrawWaves(); markDirty();
+    });
+
+    t.plate.addEventListener('click', e => {
+      e.stopPropagation();
+      openTones(t.plate, t.inst, t.tone, tone => { t.tone = tone; paintTone(t); markDirty(); });
+    });
+
+    const holder = el('div','tape empty');
+    t.holder = holder;
+
+    lane.appendChild(head); lane.appendChild(holder);
+    lanes.insertBefore(lane, phLane);
+    list.push(t);
+
+    (spec.clips || []).forEach(([s,l,label,sel]) => makeClip(t,s,l,label,sel));
+
+    holder.addEventListener('click', e => {
+      if (e.target.closest('.clip')) return;
+      const r = holder.getBoundingClientRect();
+      const bar = clamp(Math.floor((e.clientX - r.left) / r.width * BARS / 4) * 4, 0, BARS - 4);
+      if (t.taken.some(([s,l]) => bar < s + l && bar + 4 > s)) return;
+      makeClip(t, bar, 4, t.inst.replace(/\s/g,'').slice(0,7).toUpperCase());
+      markDirty();
+    });
+
+    paintTone(t); updateCount();
+    return t;
+  }
+
+  function paintTone(t){
+    t.plate.querySelector('.tn').textContent = t.tone;
+    const mine = (myTones[t.inst] || []).includes(t.tone);
+    t.plate.querySelector('.mine').classList.toggle('hidden', !mine);
+    t.plate.setAttribute('aria-label', t.name + ' 음색: ' + t.tone);
+  }
+
+  SEED_TRACKS.forEach(addTrack);
+
+  /* ================= 선택 패널 ================= */
+  const sel = $('sel'), addBtn = $('add-btn'), host = sel.parentElement;
+  const CAR = '<svg class="car" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="m9 6 6 6-6 6"/></svg>';
+
+  function place(anchor, above){
+    const a = anchor.getBoundingClientRect(), r = host.getBoundingClientRect();
+    sel.style.left = Math.max(8, Math.min(a.left - r.left, r.width - 282)) + 'px';
+    if (above){ sel.style.bottom = (r.bottom - a.top + 6) + 'px'; sel.style.top = 'auto'; }
+    else { sel.style.top = (a.bottom - r.top + 6) + 'px'; sel.style.bottom = 'auto'; }
+  }
+  function closeSel(){ sel.classList.remove('on'); addBtn.setAttribute('aria-expanded','false'); }
+  document.addEventListener('click', e => { if (!sel.contains(e.target)) closeSel(); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSel(); });
+
+  function openInsts(){
+    sel.innerHTML = '';
+    GROUPS.forEach(([group, items]) => {
+      sel.appendChild(el('span','lb',group));
+      items.forEach(name => {
+        const b = el('button','sel-row'); b.type = 'button';
+        b.innerHTML = '<i class="jack"></i><span></span>' + CAR;
+        b.querySelector('span').textContent = name;
+        b.querySelector('.jack').style.background = 'var(' + JACKS[seq % JACKS.length] + ')';
+        b.addEventListener('click', () => {
+          openTones(addBtn, name, null, tone => {
+            const t = addTrack({name, inst:name, tone, clips:[]});
+            markDirty(); closeSel();
+            t.holder.parentElement.scrollIntoView({block:'nearest', behavior:'smooth'});
+          }, openInsts);
+        });
+        sel.appendChild(b);
+      });
+    });
+    place(addBtn, true);
+    sel.classList.add('on');
+    addBtn.setAttribute('aria-expanded','true');
+  }
+
+  function openTones(anchor, inst, current, onPick, onBack){
+    sel.innerHTML = '';
+    if (onBack){
+      const back = el('button','sel-back'); back.type = 'button';
+      back.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="m15 18-6-6 6-6"/></svg><b></b><span>음색 고르기</span>';
+      back.querySelector('b').textContent = inst;
+      back.addEventListener('click', e => { e.stopPropagation(); onBack(); });
+      sel.appendChild(back);
+      sel.appendChild(el('div','sel-sep'));
+    }
+
+    const row = (tone, isMine) => {
+      const b = el('button','sel-row' + (tone === current ? ' cur' : '')); b.type = 'button';
+      b.innerHTML = '<i class="jack"></i><span></span>' + (tone === current ? CAR : '');
+      b.querySelector('span').textContent = tone;
+      b.querySelector('.jack').style.background = isMine ? 'var(--tungsten)' : 'rgba(255,240,220,.16)';
+      b.addEventListener('click', e => { e.stopPropagation(); onPick(tone); closeSel(); });
+      return b;
+    };
+
+    const mine = myTones[inst] || [];
+    if (mine.length){
+      sel.appendChild(el('span','lb','내 음색'));
+      mine.forEach(t => sel.appendChild(row(t,true)));
+      sel.appendChild(el('div','sel-sep'));
+    }
+    sel.appendChild(el('span','lb','기본 음색'));
+    (TONES[inst] || ['기본']).forEach(t => sel.appendChild(row(t,false)));
+    sel.appendChild(el('div','sel-sep'));
+
+    const add = el('button','sel-add'); add.type = 'button';
+    add.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg><span>내 음색 등록</span>';
+    sel.appendChild(add);
+
+    const form = el('div','sel-form');
+    form.innerHTML =
+      '<input type="text" placeholder="음색 이름 (예: 내 스트랫 클린)" maxlength="24" aria-label="음색 이름">' +
+      '<p>지금 트랙 소리를 이 이름으로 저장합니다. 다른 곡에서도 그대로 불러 씁니다.</p>' +
+      '<div class="row"><button type="button" class="mb txt cancel">취소</button>' +
+      '<button type="button" class="mb txt go">저장</button></div>';
+    sel.appendChild(form);
+
+    const input = form.querySelector('input');
+    add.addEventListener('click', e => {
+      e.stopPropagation(); form.classList.add('on'); add.style.display = 'none'; input.focus();
+    });
+    form.querySelector('.cancel').addEventListener('click', e => {
+      e.stopPropagation(); form.classList.remove('on'); add.style.display = '';
+    });
+    const save = e => {
+      e.stopPropagation();
+      const v = input.value.trim();
+      if (!v){ input.focus(); return; }
+      (myTones[inst] || (myTones[inst] = [])).push(v);
+      kvTones.textContent = countMyTones();
+      onPick(v); closeSel();
+    };
+    form.querySelector('.go').addEventListener('click', save);
+    input.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Enter') save(e); });
+
+    place(anchor, anchor === addBtn);
+    sel.classList.add('on');
+  }
+  addBtn.addEventListener('click', e => {
+    e.stopPropagation();
+    sel.classList.contains('on') ? closeSel() : openInsts();
+  });
+
+  /* ================= 키베드 + 스텝 그리드 ================= */
+  const PITCHES = ['C5','B4','A#4','A4','G#4','G4','F#4','F4','E4','D#4','D4','C#4','C4'];
+  const BLACK = new Set(['A#4','G#4','F#4','D#4','C#4']);
+  const STEPS = 16, ROW_H = 18;
+  const midiOf = p => 72 - p;
+  const hzOf = (p,c) => 440 * Math.pow(2, (midiOf(p) - 69)/12 + c/1200);
+
+  const keybed = $('keybed'), gRows = $('g-rows'), gCols = $('g-cols'), notesEl = $('notes');
+  PITCHES.forEach(p => {
+    keybed.appendChild(el('div','kb' + (BLACK.has(p) ? ' blk' : ''), p));
+    gRows.appendChild(el('div','g-row' + (BLACK.has(p) ? ' blk' : '')));
+  });
+  for (let i = 1; i < STEPS; i++){
+    const c = el('div','g-col' + (i % 4 === 0 ? ' bar' : ''));
+    c.style.left = (i / STEPS * 100) + '%';
+    gCols.appendChild(c);
+  }
+
+  const NOTES = [
+    {step:0,len:2,p:3},  {step:2,len:1,p:0},  {step:3,len:1,p:1},
+    {step:4,len:2,p:3},  {step:6,len:2,p:8},  {step:8,len:2,p:5},
+    {step:10,len:1,p:7}, {step:11,len:1,p:8}, {step:12,len:4,p:10}
+  ];
+  const GLIDE_0 = 24, VIB_0 = 15, C_RANGE = 100;
+
+  let selNote = null;
+  const rdNow = $('rd-now'), rdWas = $('rd-was'), rdArrow = $('rd-arrow');
+  const centsV = $('cents-v'), centsHz = $('cents-hz'), freqEl = $('freq');
+  const scopeEl = $('scope'), curveNote = $('curve-note');
+  const glideEl = $('glide'), glideV = $('glide-v');
+  const vibEl = $('vib'), vibV = $('vib-v');
+  const kvEdited = $('kv-edited');
+  const dial = $('dial'), dialPtr = $('dial-ptr');
+
+  /* 다이얼 눈금 인쇄 */
+  (() => {
+    const g = $('dial-ticks');
+    for (let c = -50; c <= 50; c += 5){
+      const frac = (c + 50) / 100;
+      const ang = (-140 + frac * 280) * Math.PI / 180;
+      const cx = 63, cy = 46, major = c % 25 === 0;
+      const r1 = major ? 36 : 38, r2 = 42;
+      const ln = document.createElementNS('http://www.w3.org/2000/svg','line');
+      ln.setAttribute('x1',(cx + Math.sin(ang)*r1).toFixed(1));
+      ln.setAttribute('y1',(cy - Math.cos(ang)*r1).toFixed(1));
+      ln.setAttribute('x2',(cx + Math.sin(ang)*r2).toFixed(1));
+      ln.setAttribute('y2',(cy - Math.cos(ang)*r2).toFixed(1));
+      ln.setAttribute('stroke', major ? '#C9C0AB' : '#6B6252');
+      ln.setAttribute('stroke-width', major ? '1.6' : '1');
+      g.appendChild(ln);
+    }
+  })();
+
+  function curveAt(n,t){
+    return n.cents
+      - n.glide * Math.exp(-t * 7)
+      + n.vib * Math.sin(t * Math.PI * 2 * 4.5) * Math.min(1, t * 2.2);
+  }
+
+  function drawScope(){
+    const cv = scopeEl, dpr = Math.min(devicePixelRatio || 1, 2);
+    const w = cv.clientWidth, h = cv.clientHeight;
+    if (!w || !h) return;
+    cv.width = w * dpr; cv.height = h * dpr;
+    const g = cv.getContext('2d');
+    g.setTransform(dpr,0,0,dpr,0,0);
+    g.clearRect(0,0,w,h);
+
+    const pad = 8, y = c => h/2 - (c / C_RANGE) * (h/2 - pad);
+
+    /* 인쇄된 그래티큘 */
+    g.strokeStyle = 'rgba(255,220,180,.07)'; g.lineWidth = 1;
+    for (let i = 1; i < 8; i++){
+      const x = w / 8 * i;
+      g.beginPath(); g.moveTo(x,0); g.lineTo(x,h); g.stroke();
+    }
+    [-50,50].forEach(c => { g.beginPath(); g.moveTo(0,y(c)); g.lineTo(w,y(c)); g.stroke(); });
+
+    g.strokeStyle = 'rgba(255,220,180,.26)';
+    g.setLineDash([3,3]);
+    g.beginPath(); g.moveTo(0,y(0)); g.lineTo(w,y(0)); g.stroke();
+    g.setLineDash([]);
+
+    if (!selNote) return;
+    const n = selNote.data, pts = [];
+    for (let x = 0; x <= w; x += 1.5) pts.push([x, y(curveAt(n, x/w))]);
+
+    const grad = g.createLinearGradient(0,0,0,h);
+    grad.addColorStop(0,'rgba(255,178,83,.20)');
+    grad.addColorStop(1,'rgba(255,178,83,0)');
+    g.fillStyle = grad;
+    g.beginPath(); g.moveTo(0,y(0));
+    pts.forEach(([px,py]) => g.lineTo(px,py));
+    g.lineTo(w,y(0)); g.closePath(); g.fill();
+
+    g.strokeStyle = '#FFC576'; g.lineWidth = 1.7; g.lineJoin = 'round';
+    g.shadowColor = 'rgba(255,168,74,.6)'; g.shadowBlur = 7;
+    g.beginPath();
+    pts.forEach(([px,py],i) => i ? g.lineTo(px,py) : g.moveTo(px,py));
+    g.stroke(); g.shadowBlur = 0;
+
+    g.fillStyle = '#FFE0B0';
+    g.beginPath(); g.arc(1.6, y(curveAt(n,0)), 2.6, 0, Math.PI*2); g.fill();
+  }
+  addEventListener('resize', drawScope);
+
+  function put(elm,n){
+    elm.style.left  = (n.step / STEPS * 100) + '%';
+    elm.style.width = 'calc(' + (n.len / STEPS * 100) + '% - 2px)';
+    elm.style.top   = (n.p * ROW_H) + 'px';
+    elm.textContent = PITCHES[n.p];
+  }
+  function paintDial(cents){
+    dialPtr.style.transform = 'rotate(' + (-140 + (cents + 50) / 100 * 280) + 'deg)';
+    dial.setAttribute('aria-valuenow', String(cents));
+    dial.setAttribute('aria-valuetext', (cents > 0 ? '+' : '') + cents + ' 센트');
+  }
+  function refresh(){
+    if (!selNote) return;
+    const n = selNote.data;
+    rdNow.textContent = PITCHES[n.p];
+    const moved = n.p !== n.p0;
+    rdWas.textContent = PITCHES[n.p0];
+    rdWas.style.visibility  = moved ? 'visible' : 'hidden';
+    rdArrow.style.visibility = moved ? 'visible' : 'hidden';
+
+    paintDial(n.cents);
+    centsV.textContent = (n.cents > 0 ? '+' : '') + n.cents + ' ¢';
+
+    const hz = hzOf(n.p, n.cents);
+    centsHz.textContent = hz.toFixed(2) + ' Hz';
+    if (document.activeElement !== freqEl) freqEl.value = hz.toFixed(2);
+    curveNote.textContent = PITCHES[n.p] + ' · ' + hz.toFixed(2) + ' Hz';
+
+    glideEl.value = n.glide; glideV.textContent = n.glide + ' ¢';
+    vibEl.value   = n.vib;   vibV.textContent   = n.vib + ' ¢';
+    drawScope();
+  }
+  const isEdited = x => x.p !== x.p0 || x.cents !== 0 || x.glide !== GLIDE_0 || x.vib !== VIB_0;
+  function markEdited(n, elm){
+    elm.classList.toggle('edited', isEdited(n));
+    kvEdited.textContent = NOTES.filter(isEdited).length;
+  }
+  function selectNote(elm){
+    document.querySelectorAll('.note.sel').forEach(x => x.classList.remove('sel'));
+    elm.classList.add('sel');
+    selNote = elm;
+    refresh();
+  }
+
+  /* ================= 되돌리기 / 다시 실행 ================= */
+  const undoS = [], redoS = [];
+  const btnUndo = $('btn-undo'), btnRedo = $('btn-redo');
+  let pending = null;
+  const snap = n => ({n, p:n.p, cents:n.cents, glide:n.glide, vib:n.vib});
+  const same = (a,n) => a.p === n.p && a.cents === n.cents && a.glide === n.glide && a.vib === n.vib;
+
+  function applySnap(s){
+    const n = s.n;
+    n.p = s.p; n.cents = s.cents; n.glide = s.glide; n.vib = s.vib;
+    put(n.el,n);
+    n.el.style.transform = 'translateY(' + (-n.cents / 50 * 4) + 'px)';
+    markEdited(n,n.el); selectNote(n.el);
+  }
+  const updateHist = () => { btnUndo.disabled = !undoS.length; btnRedo.disabled = !redoS.length; };
+  const begin = () => { if (selNote && !pending) pending = snap(selNote.data); };
+  function commit(){
+    if (!pending) return;
+    const before = pending; pending = null;
+    if (same(before, before.n)) return;
+    undoS.push(before); redoS.length = 0;
+    updateHist(); markDirty();
+  }
+  function undo(){
+    if (!undoS.length) return;
+    const b = undoS.pop(); redoS.push(snap(b.n)); applySnap(b); updateHist(); markDirty();
+  }
+  function redo(){
+    if (!redoS.length) return;
+    const a = redoS.pop(); undoS.push(snap(a.n)); applySnap(a); updateHist(); markDirty();
+  }
+  btnUndo.addEventListener('click', undo);
+  btnRedo.addEventListener('click', redo);
+  addEventListener('keydown', e => {
+    if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== 'z') return;
+    e.preventDefault();
+    e.shiftKey ? redo() : undo();
+  });
+
+  /* ================= 음 ================= */
+  NOTES.forEach((n,i) => {
+    n.p0 = n.p; n.cents = 0; n.glide = GLIDE_0; n.vib = VIB_0;
+    const elm = el('div','note');
+    elm.tabIndex = 0; elm.setAttribute('role','button');
+    elm.setAttribute('aria-label', PITCHES[n.p] + ' 음. 위아래 화살표로 반음 이동');
+    elm.data = n; n.el = elm;
+    put(elm,n); notesEl.appendChild(elm);
+
+    elm.addEventListener('pointerdown', e => {
+      selectNote(elm); begin();
+      elm.setPointerCapture(e.pointerId);
+      elm.classList.add('dragging');
+      const y0 = e.clientY, p0 = n.p;
+      const move = ev => {
+        const np = clamp(p0 + Math.round((ev.clientY - y0) / ROW_H), 0, PITCHES.length - 1);
+        if (np !== n.p){ n.p = np; put(elm,n); markEdited(n,elm); refresh(); }
+      };
+      const up = () => {
+        elm.classList.remove('dragging');
+        elm.removeEventListener('pointermove', move);
+        elm.removeEventListener('pointerup', up);
+        commit();
+      };
+      elm.addEventListener('pointermove', move);
+      elm.addEventListener('pointerup', up);
+    });
+
+    elm.addEventListener('keydown', e => {
+      if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+      e.preventDefault();
+      selectNote(elm); begin();
+      n.p = clamp(n.p + (e.key === 'ArrowUp' ? -1 : 1), 0, PITCHES.length - 1);
+      put(elm,n); markEdited(n,elm); refresh(); commit();
+    });
+
+    if (i === 3) requestAnimationFrame(() => selectNote(elm));
+  });
+
+  function nudge(d){
+    if (!selNote) return;
+    begin();
+    const n = selNote.data;
+    n.p = clamp(n.p + d, 0, PITCHES.length - 1);
+    put(selNote,n); markEdited(n,selNote); refresh(); commit();
+  }
+  $('p-up').addEventListener('click', () => nudge(-1));
+  $('p-down').addEventListener('click', () => nudge(1));
+
+  /* ================= 센트 다이얼 ================= */
+  function setCents(v){
+    if (!selNote) return;
+    begin();
+    const n = selNote.data;
+    n.cents = Math.round(clamp(v, -50, 50));
+    selNote.style.transform = 'translateY(' + (-n.cents / 50 * 4) + 'px)';
+    markEdited(n, selNote);
+    refresh();
+  }
+  dial.addEventListener('pointerdown', e => {
+    if (!selNote) return;
+    e.preventDefault();
+    dial.setPointerCapture(e.pointerId);
+    dial.classList.add('turning');
+    const y0 = e.clientY, c0 = selNote.data.cents;
+    const move = ev => setCents(c0 + (y0 - ev.clientY) * 0.7);
+    const up = () => {
+      dial.classList.remove('turning');
+      dial.removeEventListener('pointermove', move);
+      dial.removeEventListener('pointerup', up);
+      commit();
+    };
+    dial.addEventListener('pointermove', move);
+    dial.addEventListener('pointerup', up);
+  });
+  dial.addEventListener('keydown', e => {
+    if (!selNote) return;
+    const d = e.key === 'ArrowUp' || e.key === 'ArrowRight' ? 1
+            : e.key === 'ArrowDown' || e.key === 'ArrowLeft' ? -1 : 0;
+    if (!d && e.key !== 'Home' && e.key !== 'End') return;
+    e.preventDefault();
+    if (e.key === 'Home') setCents(-50);
+    else if (e.key === 'End') setCents(50);
+    else setCents(selNote.data.cents + d * (e.shiftKey ? 10 : 1));
+    commit();
+  });
+  dial.addEventListener('wheel', e => {
+    if (!selNote) return;
+    e.preventDefault();
+    setCents(selNote.data.cents + (e.deltaY < 0 ? 1 : -1));
+    clearTimeout(dial._t); dial._t = setTimeout(commit, 260);
+  }, {passive:false});
+
+  /* ================= 주파수 직접 입력 ================= */
+  function applyHz(hz){
+    if (!selNote || !isFinite(hz) || hz <= 0) return;
+    begin();
+    const n = selNote.data;
+    const midi = 69 + 12 * Math.log2(hz / 440);
+    let nearest = Math.round(midi), p = 72 - nearest;
+    if (p < 0){ p = 0; nearest = 72; }
+    if (p > PITCHES.length - 1){ p = PITCHES.length - 1; nearest = 72 - p; }
+    n.p = p;
+    n.cents = clamp(Math.round((midi - nearest) * 100), -50, 50);
+    put(selNote,n);
+    selNote.style.transform = 'translateY(' + (-n.cents / 50 * 4) + 'px)';
+    markEdited(n,selNote); refresh(); commit();
+  }
+  freqEl.addEventListener('change', () => applyHz(parseFloat(freqEl.value)));
+  freqEl.addEventListener('keydown', e => { if (e.key === 'Enter'){ e.preventDefault(); freqEl.blur(); } });
+
+  /* ================= 슬라이드 포트 ================= */
+  [[glideEl,'glide'],[vibEl,'vib']].forEach(([s,key]) => {
+    s.addEventListener('pointerdown', begin);
+    s.addEventListener('keydown', begin);
+    s.addEventListener('change', commit);
+    s.addEventListener('input', () => {
+      if (!selNote) return;
+      begin();
+      selNote.data[key] = Number(s.value);
+      markEdited(selNote.data, selNote);
+      refresh();
+    });
+  });
+
+  $('flatten').addEventListener('click', () => {
+    if (!selNote) return;
+    begin();
+    const n = selNote.data, elm = selNote;
+    const g0 = n.glide, v0 = n.vib, t0 = performance.now();
+    (function step(t){
+      const k = reduced ? 1 : Math.min(1, (t - t0) / 420);
+      const e = 1 - Math.pow(1 - k, 3);
+      n.glide = Math.round(g0 + (0 - g0) * e);
+      n.vib   = Math.round(v0 + (5 - v0) * e);
+      markEdited(n, elm); refresh();
+      if (k < 1) requestAnimationFrame(step); else commit();
+    })(t0);
+  });
+
+  const formant = $('formant'), formantSt = $('formant-st');
+  formant.addEventListener('click', () => {
+    const on = formant.getAttribute('aria-pressed') !== 'true';
+    formant.setAttribute('aria-pressed', String(on));
+    formantSt.textContent = on ? 'ON' : 'OFF';
+  });
+
+  /* ================= 트랜스포트 ================= */
+  const BPM = 92, BEATS = BARS * 4, TOTAL = BEATS / BPM * 60 * 1000;
+  const btnPlay = $('btn-play'), btnStop = $('btn-stop'), btnLoop = $('btn-loop'), btnRec = $('btn-rec');
+  const bbEl = $('barbeat'), phRoll = $('ph-roll');
+  let playing = false, pos = 0, last = 0, raf = 0;
+
+  [btnLoop, btnRec].forEach(b => b.addEventListener('click', () => {
+    const on = b.getAttribute('aria-pressed') !== 'true';
+    b.setAttribute('aria-pressed', String(on));
+    if (b === btnRec) lampRun.classList.toggle('rec', on && playing);
+  }));
+
+  const mRnd = mulberry(31337);
+  const levels = [];
+  function meters(pct){
+    list.forEach((t,i) => {
+      if (!t.meter) return;
+      if (levels[i] == null) levels[i] = 0;
+      if (!playing){ levels[i] = 0; t.meter.style.clipPath = 'inset(100% 0 0 0)'; return; }
+      const busy = t.taken.some(([s,l]) => pct * BARS >= s && pct * BARS < s + l);
+      const base = t.kind === 'perc' ? .55 + mRnd() * .45
+                 : t.kind === 'low'  ? .45 + mRnd() * .2
+                 : .3 + mRnd() * .45;
+      const target = busy ? base * (t.vol / 100) * 1.35 : 0;
+      levels[i] += (target - levels[i]) * (target > levels[i] ? .55 : .12);
+      t.meter.style.clipPath = 'inset(' + (100 - Math.min(100, levels[i] * 100)).toFixed(1) + '% 0 0 0)';
+    });
+    const avg = levels.length ? clamp(levels.reduce((a,b) => a + b, 0) / levels.length * 1.6, 0, 1.1) : 0;
+    const l = vuSet(0, avg), r = vuSet(1, avg * .94);
+    const peak = Math.max(l, r);
+    stateDb.textContent = peak < .01 ? '−∞ dB'
+      : (20 * Math.log10(peak * .82)).toFixed(1) + ' dB';
+  }
+
+  function paint(){
+    const pct = pos / TOTAL;
+    setCounter(pos);
+    const beat = pct * BEATS;
+    bbEl.textContent = (Math.floor(beat/4) + 1) + '.' + (Math.floor(beat%4) + 1) + '.' +
+                       String(Math.floor(beat % 1 * 100)).padStart(2,'0');
+
+    const hw = HEAD_W();
+    phLane.style.left = (hw + pct * (lanes.clientWidth - hw)) + 'px';
+
+    const rs = 4 / BARS, re = 8 / BARS;
+    if (pct >= rs && pct < re){
+      phRoll.classList.remove('hidden');
+      phRoll.style.left = ((pct - rs) / (re - rs) * 100) + '%';
+    } else phRoll.classList.add('hidden');
+
+    meters(pct);
+  }
+
+  function tick(t){
+    if (!playing) return;
+    if (!last) last = t;
+    pos += t - last; last = t;
+    if (pos >= TOTAL){
+      if (btnLoop.getAttribute('aria-pressed') === 'true') pos = 0;
+      else { stop(); return; }
+    }
+    paint();
+    raf = requestAnimationFrame(tick);
+  }
+  function play(){
+    playing = true; last = 0;
+    btnPlay.setAttribute('aria-pressed','true');
+    phLane.classList.remove('hidden');
+    const rec = btnRec.getAttribute('aria-pressed') === 'true';
+    lampRun.classList.toggle('rec', rec);
+    lampRun.classList.add('lit');
+    vus.forEach(v => v.box.classList.add('lit'));
+    stateNow.textContent = rec ? '녹음 중' : '재생 중';
+    raf = requestAnimationFrame(tick);
+  }
+  function pause(){
+    playing = false; cancelAnimationFrame(raf);
+    btnPlay.setAttribute('aria-pressed','false');
+    lampRun.classList.remove('lit');
+    vus.forEach(v => v.box.classList.remove('lit'));
+    stateNow.textContent = '일시정지';
+    settle();
+  }
+  function stop(){
+    playing = false; cancelAnimationFrame(raf);
+    pos = 0; last = 0;
+    btnPlay.setAttribute('aria-pressed','false');
+    lampRun.classList.remove('lit');
+    vus.forEach(v => v.box.classList.remove('lit'));
+    stateNow.textContent = '정지됨';
+    phLane.classList.add('hidden');
+    phRoll.classList.add('hidden');
+    levels.fill(0);
+    paint(); settle();
+  }
+  /* 바늘이 천천히 0으로 되돌아온다 */
+  function settle(){
+    let n = 0;
+    (function fall(){
+      if (playing) return;
+      const l = vuSet(0,0), r = vuSet(1,0);
+      stateDb.textContent = '−∞ dB';
+      if ((l > .002 || r > .002) && n++ < 200) requestAnimationFrame(fall);
+    })();
+  }
+  btnPlay.addEventListener('click', () => playing ? pause() : play());
+  btnStop.addEventListener('click', stop);
+
+  addEventListener('resize', () => { if (!playing) paint(); });
+  paint();
+  drawScope();
+
+  /* ================= AI 생성 패널 (설계 탐색, EXTENSION) =================
+     v1(자체 곡 라이브러리 RAG)의 흐름만 시연한다 — 검색 → 후보 미리듣기 →
+     하나 선택 → 삽입. 실제 검색·오디오 재생 없이 흐름을 보여주는 목업이다.
+     AI_GENERATION.md 2절(프롬프트 처리)·1-1절(모델 선택) 참고. */
+  const aiChat   = $('ai-chat');
+  const aiForm   = $('ai-form');
+  const aiPrompt = $('ai-prompt');
+  const aiResult = $('ai-result');
+
+  const ICON_PLAY  = '<svg width="10" height="10" viewBox="0 0 12 12" fill="currentColor"><path d="M2.6 1.4 10 6l-7.4 4.6z"/></svg>';
+  const ICON_PAUSE = '<svg width="10" height="10" viewBox="0 0 12 12" fill="currentColor"><rect x="2" y="1.5" width="3" height="9" rx=".5"/><rect x="7" y="1.5" width="3" height="9" rx=".5"/></svg>';
+
+  const CAND_POOL = [
+    {name:'어센딩 트라이어드', tag:'신스 리드 · 플럭 · 6음', src:'"비 오는 새벽" 중',  jack:'--j3', shape:[32,52,74,58,88,66]},
+    {name:'콜앤리스폰스',     tag:'일렉 기타 · 클린 · 8음',  src:'"여름의 끝" 중',    jack:'--j2', shape:[40,66,40,70,46,80,50,90]},
+    {name:'리버스 멜로디',    tag:'어쿠스틱 피아노 · 4음',   src:'"창가에서" 중',     jack:'--j5', shape:[70,40,60,30]},
+  ];
+
+  function addMsg(role, text){
+    const m = el('div', 'msg ' + role, text);
+    aiChat.appendChild(m);
+    aiChat.scrollTop = aiChat.scrollHeight;
+    return m;
+  }
+
+  let playTimer = 0;
+  function togglePlay(btn){
+    const was = btn.classList.contains('playing');
+    document.querySelectorAll('.cand-play.playing').forEach(b => { b.classList.remove('playing'); b.innerHTML = ICON_PLAY; });
+    clearTimeout(playTimer);
+    if (was) return;
+    btn.classList.add('playing'); btn.innerHTML = ICON_PAUSE;
+    playTimer = setTimeout(() => { btn.classList.remove('playing'); btn.innerHTML = ICON_PLAY; }, 1800);
+  }
+
+  function pickCand(row, c, wrap, pickBtn){
+    if (wrap.classList.contains('done')) return;
+    wrap.classList.add('done');
+    row.classList.add('picked');
+    pickBtn.textContent = '삽입됨';
+    addMsg('ai', '삽입했어요 — ' + c.tag + ', 5–8마디. 다른 트랙·마디는 그대로예요.');
+    aiResult.classList.remove('hidden');
+    markDirty();
+  }
+
+  function renderCands(){
+    const wrap = el('div', 'cands');
+    wrap.setAttribute('role', 'list');
+    wrap.setAttribute('aria-label', '검색된 프레이즈');
+    CAND_POOL.forEach(c => {
+      const row = el('div', 'cand');
+      const jack = el('i', 'jack'); jack.style.background = 'var(' + c.jack + ')';
+      const prev = el('div', 'cand-prev'); prev.setAttribute('aria-hidden', 'true');
+      c.shape.forEach(h => { const s = el('span'); s.style.height = h + '%'; prev.appendChild(s); });
+      const info = el('div', 'cand-info');
+      info.appendChild(el('b', '', c.name));
+      info.appendChild(el('span', '', c.tag + ' · ' + c.src));
+      const actions = el('div', 'cand-actions');
+      const play = el('button', 'mb sq cand-play'); play.type = 'button'; play.setAttribute('aria-label', '미리듣기'); play.innerHTML = ICON_PLAY;
+      const pick = el('button', 'mb txt cand-pick', '삽입'); pick.type = 'button';
+      play.addEventListener('click', () => togglePlay(play));
+      pick.addEventListener('click', () => pickCand(row, c, wrap, pick));
+      actions.append(play, pick);
+      row.append(jack, prev, info, actions);
+      wrap.appendChild(row);
+    });
+    aiChat.appendChild(wrap);
+    aiChat.scrollTop = aiChat.scrollHeight;
+  }
+
+  aiForm.addEventListener('submit', e => {
+    e.preventDefault();
+    const v = aiPrompt.value.trim();
+    if (!v) return;
+    addMsg('user', v);
+    aiPrompt.value = '';
+    const loading = addMsg('ai', '라이브러리에서 비슷한 프레이즈를 찾는 중…');
+    setTimeout(() => {
+      loading.textContent = '비슷한 프레이즈 3개를 찾았어요. 미리듣고 골라주세요.';
+      renderCands();
+    }, 650);
+  });
+
+  // 입력 없이도 흐름이 보이도록 예시 한 번을 미리 채워 둔다
+  addMsg('user', '이 부분 기타 비슷한 느낌으로 4~8음 넣어줘');
+  addMsg('ai', '라이브러리에서 비슷한 프레이즈 3개를 찾았어요. 미리듣고 골라주세요.');
+  renderCands();
+})();
+</script>

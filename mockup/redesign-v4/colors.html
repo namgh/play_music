@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>색 편집기 · v4</title>
+<script src="lib.js"></script>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#E9E9E6;color:#151515;font-family:"Avenir Next","Apple SD Gothic Neo",sans-serif;display:grid;grid-template-columns:320px 1fr;height:100vh;overflow:hidden}
+  aside{background:#F7F7F5;border-right:1px solid #D4D4CF;overflow:auto;padding:20px 18px 40px}
+  h1{font-size:22px;font-weight:600;letter-spacing:-.3px}
+  .lead{font-size:12px;color:#6B6B66;margin-top:6px;line-height:1.6}
+  .themes{display:grid;grid-template-columns:1fr;gap:6px;margin-top:16px}
+  .themes button{height:44px;border-radius:10px;border:1px solid #D4D4CF;background:#fff;font:inherit;font-size:12px;text-align:left;padding:0 10px;cursor:pointer;display:flex;align-items:center;gap:8px}
+  .themes button.on{border:2px solid #151515}
+  .themes .sw{display:flex;flex:none}
+  .themes .sw i{width:12px;height:28px}
+  .themes .sw i:first-child{border-radius:4px 0 0 4px}.themes .sw i:last-child{border-radius:0 4px 4px 0}
+  .grp{margin-top:20px;font-size:11px;color:#6B6B66}
+  .row{display:flex;align-items:center;gap:10px;height:34px;border-bottom:1px solid #E4E4E0}
+  .row label{flex:1;font-size:13px}
+  .row code{font:12px Menlo,monospace;color:#6B6B66}
+  .row input[type=color]{width:34px;height:24px;border:1px solid #D4D4CF;border-radius:6px;background:none;padding:0;cursor:pointer}
+  .row.ch label{font-weight:600}
+  .acts{display:flex;gap:6px;margin-top:20px;flex-wrap:wrap}
+  .acts button{height:34px;border-radius:8px;border:1px solid #D4D4CF;background:#fff;font:inherit;font-size:12px;padding:0 12px;cursor:pointer}
+  .acts button.dark{background:#151515;color:#fff;border-color:#151515}
+  .msg{font-size:12px;color:#2C7A4B;margin-top:8px;min-height:18px}
+  main{overflow:auto;padding:18px 22px 40px}
+  .bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  .bar .strip{display:flex;border-radius:8px;overflow:hidden;height:30px;border:1px solid #D4D4CF}
+  .bar .strip i{width:30px}
+  .bar .seg{display:flex;gap:2px;background:#fff;border:1px solid #D4D4CF;border-radius:9px;padding:3px}
+  .bar .seg button{height:26px;border:0;border-radius:6px;background:none;font:inherit;font-size:12px;padding:0 10px;cursor:pointer}
+  .bar .seg button.on{background:#151515;color:#fff}
+  .grid{display:grid;grid-template-columns:repeat(var(--cols),1fr);gap:16px;margin-top:16px}
+  figure{background:#fff;border-radius:12px;overflow:hidden;border:1px solid #D4D4CF}
+  figure .fr{position:relative;width:100%;aspect-ratio:1440/900;overflow:hidden;background:#ddd}
+  figure iframe{position:absolute;left:0;top:0;width:1440px;height:900px;border:0;transform-origin:0 0;pointer-events:none}
+  figcaption{font-size:13px;padding:8px 12px;display:flex;justify-content:space-between;cursor:pointer}
+  figcaption span{color:#6B6B66;font-size:12px}
+</style></head>
+<body>
+<aside>
+  <h1>색 편집기</h1>
+  <p class="lead">묶음을 고른 뒤 아래 색을 바꾸면 오른쪽 9화면이 바로 바뀝니다. 바꾼 색은 이 브라우저에 기억됩니다.</p>
+  <div class="themes" id="themes"></div>
+  <div id="fields"></div>
+  <div class="acts">
+    <button class="dark" id="copy">색 값 복사</button>
+    <button id="reset">이 묶음 기본값으로</button>
+  </div>
+  <div class="msg" id="msg"></div>
+</aside>
+<main>
+  <div class="bar">
+    <div class="strip" id="strip"></div>
+    <div class="seg" id="cols"><button data-c="1">크게</button><button data-c="2" class="on">2열</button><button data-c="3">3열</button></div>
+  </div>
+  <div class="grid" id="grid"></div>
+</main>
+<script>
+  // 이 페이지 자체 스타일은 고정 — lib.js 가 :root 에 넣은 값은 미리보기 iframe 에서만 의미가 있다
+  const SCREENS = [['s1-start', '① 시작'], ['s2-main', '② 메인 편곡'], ['s3-note', '③ 음 편집기'], ['s4-step', '④ 스텝 시퀀서'], ['s5-auto', '⑤ 오토메이션'],
+    ['s6-string', '⑥ 악기 — 줄'], ['s7-smart', '⑦ 스마트 컨트롤'], ['s8-fx', '⑧ 이펙트'], ['s9-mixer', '⑨ 믹서']];
+  const GROUPS = [
+    ['강조', [['acc', '포인트 (재생 위치·선택)'], ['acc2', '포인트 — 검은 화면 위'], ['accInk', '포인트 위 글자'], ['cta', '내보내기 버튼'], ['ctaInk', '내보내기 글자']], 1],
+    ['몸체', [['body', '바탕'], ['alu', '패널'], ['alu2', '패널 진하게'], ['rule', '선']]],
+    ['글자', [['ink', '글자 · 선택 카드'], ['ink2', '보조 글자'], ['ink3', '흐린 글자'], ['inv2', '선택 카드 위 글자'], ['inv3', '선택 카드 위 버튼']]],
+    ['검은 화면', [['screen', '화면'], ['screen2', '화면 칸'], ['grid', '격자'], ['grid2', '격자 진하게'], ['sInk', '화면 글자'], ['sInk2', '화면 보조 글자'], ['sInk3', '화면 흐린 글자']]],
+    ['트랙 색', [['t1', '트랙 1'], ['t2', '트랙 2 · 베이스'], ['t3', '트랙 3'], ['t4', '트랙 4'], ['t5', '트랙 5'], ['t6', '트랙 6']]],
+    ['상태 · 건반', [['ok', '정상 · 미터'], ['rec', '녹음 · 경고'], ['keyw', '흰 건반'], ['keyb', '검은 건반']]],
+  ];
+  const ORDER = ['volt', 'acid', 'cobalt', 'signal', 'oak'];
+  const store = { get(k) { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch (e) { return null; } },
+                  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} } };
+  let theme = store.get('v4-theme') || 'volt', cols = 2;
+  let ov = store.get('v4-ov-' + theme) || {};
+  const base = () => { const b = THEMES[theme], o = { ...b }; b.t.forEach((v, i) => o['t' + (i + 1)] = v); return o; };
+  const cur = () => ({ ...base(), ...ov });
+
+  function renderThemes() {
+    const T = document.getElementById('themes'); T.innerHTML = '';
+    ORDER.forEach(k => { const t = THEMES[k], b = document.createElement('button'); b.className = k === theme ? 'on' : '';
+      b.innerHTML = `<span class="sw">${[t.body, t.screen, t.acc, t.cta, ...t.t.slice(0, 3)].map(c => `<i style="background:${c}"></i>`).join('')}</span>${t.name}`;
+      b.onclick = () => { theme = k; ov = store.get('v4-ov-' + theme) || {}; store.set('v4-theme', theme); renderAll(); }; T.appendChild(b); });
+  }
+  function renderFields() {
+    const F = document.getElementById('fields'), c = cur(); F.innerHTML = '';
+    GROUPS.forEach(([g, items]) => { const h = document.createElement('div'); h.className = 'grp'; h.textContent = g; F.appendChild(h);
+      items.forEach(([k, l]) => { const r = document.createElement('div'); r.className = 'row' + (ov[k] ? ' ch' : '');
+        r.innerHTML = `<label>${l}</label><code>${c[k].toUpperCase()}</code><input type="color" value="${c[k]}">`;
+        const inp = r.querySelector('input'); let tm;
+        inp.oninput = () => { r.querySelector('code').textContent = inp.value.toUpperCase(); clearTimeout(tm);
+          tm = setTimeout(() => { if (inp.value.toLowerCase() === base()[k].toLowerCase()) delete ov[k]; else ov[k] = inp.value;
+            store.set('v4-ov-' + theme, ov); r.className = 'row' + (ov[k] ? ' ch' : ''); renderStrip(); reload(); }, 250); };
+        F.appendChild(r); }); });
+  }
+  function renderStrip() { const c = cur();
+    document.getElementById('strip').innerHTML = ['body', 'alu', 'ink', 'screen', 'acc', 'cta', 't1', 't2', 't3', 't4', 't5', 't6'].map(k => `<i style="background:${c[k]}" title="${k}"></i>`).join(''); }
+  function url(p) { return `${p}.html?theme=${theme}${Object.keys(ov).length ? '&c=' + encodeURIComponent(JSON.stringify(ov)) : ''}`; }
+  function renderGrid() {
+    const G = document.getElementById('grid'); G.style.setProperty('--cols', cols); G.innerHTML = '';
+    SCREENS.forEach(([p, n]) => { const f = document.createElement('figure');
+      f.innerHTML = `<div class="fr"><iframe src="${url(p)}" loading="lazy" title="${n}"></iframe></div><figcaption>${n}<span>새 창으로 열기 ↗</span></figcaption>`;
+      f.querySelector('figcaption').onclick = () => window.open(url(p), '_blank'); G.appendChild(f); });
+    fit();
+  }
+  function reload() { document.querySelectorAll('#grid iframe').forEach((f, i) => f.src = url(SCREENS[i][0])); }
+  function fit() { document.querySelectorAll('#grid .fr').forEach(fr => fr.querySelector('iframe').style.transform = `scale(${fr.clientWidth / 1440})`); }
+  function renderAll() { renderThemes(); renderFields(); renderStrip(); renderGrid(); }
+  document.getElementById('cols').onclick = e => { const c = e.target.dataset.c; if (!c) return; cols = +c;
+    document.querySelectorAll('#cols button').forEach(b => b.classList.toggle('on', b.dataset.c === c)); renderGrid(); };
+  document.getElementById('reset').onclick = () => { ov = {}; store.set('v4-ov-' + theme, ov); renderAll(); };
+  document.getElementById('copy').onclick = () => { const txt = JSON.stringify({ theme, ...cur() }, null, 1);
+    const m = document.getElementById('msg');
+    (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(() => m.textContent = '복사했습니다 — 대화창에 붙여 주시면 그 색으로 맞춥니다',
+      () => m.textContent = '복사가 막혀 있습니다 — 바꾼 색 이름과 값을 말로 알려 주셔도 됩니다'); };
+  addEventListener('resize', fit);
+  renderAll();
+</script>
+</body></html>

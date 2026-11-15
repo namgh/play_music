@@ -1,0 +1,79 @@
+/* v4 "기기" — Polyend Loop 의 몸체(크림·알루미늄) + 검은 화면, 포인트는 오크 하나 */
+:root{
+  --body:#F3F1E6;      /* 크림 몸체 */
+  --alu:#E3E0D4;       /* 알루미늄 패널 */
+  --alu-2:#D6D2C4;
+  --rule:#CBC6B6;
+  --ink:#1D1B17; --ink-2:#57534A; --ink-3:#8A8577;
+  --screen:#18181A;    /* 기기 화면 */
+  --screen-2:#202022; --grid:#2B2B2E; --grid-2:#353539; --s-ink:#E9E6DC; --s-ink-2:#9C988C; --s-ink-3:#66635B;
+  --oak:#C8782E; --oak-2:#E7B271; --oak-ink:#7A4512;
+  --lime:#DCEF7C;
+  --t1:#8DB59A; --t2:#D9A066; --t3:#86A9C8; --t4:#C98A7A; --t5:#AC9FCB; --t6:#DCC979;
+  --sans:"Avenir Next","Apple SD Gothic Neo",sans-serif;
+  --disp:"Futura","Apple SD Gothic Neo",sans-serif;
+  --num:"DIN Condensed","Avenir Next Condensed",sans-serif;
+  --mono:"Menlo",monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#888;font-family:var(--sans);color:var(--ink)}
+.pg{width:1440px;height:900px;position:relative;overflow:hidden;background:var(--body)}
+.a{position:absolute}
+.ico{display:inline-flex;align-items:center;justify-content:center}
+.ico svg{display:block}
+
+/* 상단 몸체 바 */
+.top{left:0;top:0;width:1440px;height:64px;background:var(--body);border-bottom:1px solid var(--rule)}
+.brand{left:24px;top:20px;font:600 15px var(--disp);letter-spacing:.2px}
+.brand small{font:400 11px var(--sans);color:var(--ink-3)}
+.song{left:24px;top:38px;font-size:11px;color:var(--ink-3)}
+.keys{display:flex;gap:4px}
+.key{width:36px;height:32px;border-radius:7px;background:var(--alu);border:1px solid var(--rule);color:var(--ink-2)}
+.key.on{background:var(--ink);border-color:var(--ink);color:var(--body)}
+.tp{display:flex;gap:6px}
+.tb{width:36px;height:36px;border-radius:50%;border:1px solid var(--rule);background:var(--alu);color:var(--ink)}
+.tb.play{background:var(--ink);border-color:var(--ink);color:var(--body)}
+.tb.rec{color:var(--rec)}
+/* LCD: 몸체에 박힌 작은 검은 화면 */
+.lcd{height:44px;border-radius:9px;background:var(--screen);display:flex;align-items:center;padding:0 14px;gap:18px;color:var(--s-ink)}
+.lcd .pos{font:700 28px/1 var(--num);letter-spacing:.5px;color:var(--oak-2)}
+.lcd .f{display:flex;flex-direction:column;gap:3px}
+.lcd .f b{font:700 17px/1 var(--num);color:var(--s-ink);font-weight:700}
+.lcd .f span{font-size:9px;color:var(--s-ink-3)}
+.lcd .sep{width:1px;height:26px;background:var(--grid-2)}
+.export{height:36px;border-radius:18px;background:var(--lime);color:var(--cta-ink);font-size:13px;font-weight:600;display:flex;align-items:center;gap:8px;padding:0 16px}
+
+/* 검은 화면 판 */
+.screen{background:var(--screen);border-radius:12px;overflow:hidden}
+.lbl{font-size:11px;color:var(--ink-3)}
+.h{font:600 13px var(--sans)}
+.btn{height:28px;border-radius:7px;border:1px solid var(--rule);background:var(--alu);font-size:12px;display:inline-flex;align-items:center;padding:0 10px;gap:6px;color:var(--ink)}
+.chip{height:20px;border-radius:5px;padding:0 6px;font-size:10px;display:inline-flex;align-items:center;background:var(--alu);color:var(--ink-2)}
+
+/* 구현 상태 표시 */
+.status{height:22px;border-radius:11px;padding:0 9px 0 8px;font-size:11px;display:flex;align-items:center;gap:6px;background:var(--alu);border:1px solid var(--rule);color:var(--ink-2)}
+.status i{width:7px;height:7px;border-radius:50%;background:var(--ink-3)}
+.status.done i{background:var(--ok)}
+.status.part i{background:var(--oak)}
+/* 공통 패널 */
+.side{border-right:1px solid var(--rule);padding:16px 18px}
+.ttl{font:500 22px var(--disp);letter-spacing:-.3px}
+.sub{font-size:12px;color:var(--ink-3);margin-top:4px}
+.ih{display:flex;align-items:baseline;gap:8px;margin-top:18px}
+.ih b{font-size:13px;font-weight:600}
+.ih span{font-size:12px;color:var(--ink-3)}
+.ir{display:flex;justify-content:space-between;align-items:center;height:30px;border-bottom:1px solid var(--rule);font-size:12px;color:var(--ink-2)}
+.ir b{font:700 16px var(--num);color:var(--ink);font-weight:700}
+.ir em{font-style:normal;color:var(--ink)}
+.seg{display:flex;gap:2px;padding:3px;border-radius:9px;background:var(--alu);border:1px solid var(--rule)}
+.seg span{height:24px;border-radius:6px;padding:0 11px;font-size:12px;display:flex;align-items:center;color:var(--ink-2)}
+.seg span.on{background:var(--ink);color:var(--body)}
+.kn{display:flex;flex-direction:column;align-items:center}
+.kn b{font:700 16px var(--num);margin-top:2px}
+.kn span{font-size:11px;color:var(--ink-3);margin-top:1px;white-space:nowrap}
+.screen .kn b{color:var(--s-ink)}
+.screen .kn span{color:var(--s-ink-2)}
+.rul{position:absolute;font:700 13px var(--num);color:var(--s-ink-2)}
+.vl{position:absolute;width:1px;background:var(--grid)}
+.vl.b{background:var(--grid-2)}
+.hl{position:absolute;left:0;right:0;height:1px;background:var(--grid)}

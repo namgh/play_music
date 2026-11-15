@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>시안 v3 비교</title>
+<style>
+  body{margin:0;background:#E9E9E6;font-family:"Apple SD Gothic Neo",sans-serif;color:#1A1A1A}
+  header{padding:28px 32px 8px}
+  h1{margin:0;font-size:30px;letter-spacing:-.5px}
+  header p{margin:6px 0 0;color:#666;font-size:13px}
+  .bar{display:flex;gap:8px;padding:12px 32px}
+  .bar button{border:1px solid #BBB;background:#fff;border-radius:8px;padding:7px 14px;font:inherit;font-size:13px;cursor:pointer}
+  .bar button.on{background:#1A1A1A;color:#fff;border-color:#1A1A1A}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:24px;padding:12px 32px 40px}
+  .grid.one{grid-template-columns:1fr}
+  figure{margin:0;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.1)}
+  figure img{display:block;width:100%;cursor:zoom-in}
+  figcaption{padding:12px 16px;font-size:13px;line-height:1.6}
+  figcaption b{font-size:18px}
+  figcaption a{color:#2D68D8}
+  figcaption span{color:#777}
+</style></head>
+<body>
+<header>
+  <h1>시안 v3 — 네 방향 비교</h1>
+  <p>그림을 누르면 그 시안만 크게 봅니다. 아래 "실제 화면 열기"는 HTML 원본입니다.</p>
+</header>
+<div class="bar"><button class="on" data-v="all">4개 한눈에</button><button data-v="0">1 하드웨어</button><button data-v="1">2 캔버스</button><button data-v="2">3 트래커</button><button data-v="3">4 스위스</button></div>
+<div class="grid" id="g">
+  <figure><img src="c1-hardware.png"><figcaption><b>1 · 하드웨어</b> <span>라이트</span><br>기기 패널 + LCD + 색 노브 4개 + 건반. 참고: <a href="https://teenage.engineering/products/op-1">Teenage Engineering OP-1</a>, <a href="https://teenage.engineering/products/ep-133">EP-133</a> · <a href="c1-hardware.html">실제 화면 열기</a></figcaption></figure>
+  <figure><img src="c2-canvas.png"><figcaption><b>2 · 캔버스</b> <span>다크</span><br>무한 캔버스 + 떠 있는 패널, 클립 → 편집 프레임 연결. 참고: <a href="https://www.figma.com/blog/behind-our-redesign-ui3/">Figma UI3</a> · <a href="c2-canvas.html">실제 화면 열기</a></figcaption></figure>
+  <figure><img src="c3-tracker.png"><figcaption><b>3 · 트래커</b> <span>다크</span><br>시간이 아래로 흐르는 세로 편집기, 음 단위 숫자 입력. 참고: <a href="https://polyend.com/tracker-plus/">Polyend Tracker</a>, <a href="https://www.renoise.com/">Renoise</a> · <a href="c3-tracker.html">실제 화면 열기</a></figcaption></figure>
+  <figure><img src="c4-swiss.png"><figcaption><b>4 · 스위스 타이포</b> <span>라이트</span><br>음 편집기가 주인공, 큰 마디 숫자와 빨간 A4. 참고: 스위스 국제 타이포그래피 양식 · <a href="c4-swiss.html">실제 화면 열기</a></figcaption></figure>
+</div>
+<script>
+  const g = document.getElementById('g'), figs = [...g.children], btns = [...document.querySelectorAll('.bar button')];
+  function show(v) {
+    btns.forEach(b => b.classList.toggle('on', b.dataset.v === String(v)));
+    g.classList.toggle('one', v !== 'all');
+    figs.forEach((f, i) => f.style.display = v === 'all' || +v === i ? '' : 'none');
+  }
+  btns.forEach(b => b.onclick = () => show(b.dataset.v));
+  figs.forEach((f, i) => f.querySelector('img').onclick = () => show(g.classList.contains('one') ? 'all' : i));
+</script>
+</body></html>
