@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>v5 01 시작</title>
+<link rel="stylesheet" href="base.css"><script src="../redesign-v4/lib.js"></script><script src="shell.js"></script>
+<style>
+  .nav{left:0;top:52px;width:232px;height:848px;border-right:1px solid var(--line);padding:16px 12px}
+  .nav .li{font-weight:500}
+  .nav .grp{font-size:11px;font-weight:600;color:var(--tx3);margin:20px 10px 6px}
+  .main{left:232px;top:52px;width:840px;height:848px;padding:28px 32px}
+  .h1{font-size:28px;font-weight:700;letter-spacing:-.6px}
+  .h1s{font-size:13px;color:var(--tx3);margin-top:6px}
+  .tl{display:flex;align-items:center;gap:18px;padding:9px 12px;border-radius:12px;margin-top:2px}
+  .tl.on{background:var(--sub)}
+  .tl .th{width:176px;height:58px;border-radius:8px;background:var(--d0);position:relative;flex:none;overflow:hidden}
+  .tl .th i{position:absolute;height:4px;border-radius:1px}
+  .tl b{font-size:14px;font-weight:600;display:block}
+  .tl p{font-size:12px;color:var(--tx3);margin-top:3px}
+  .tl .tags{display:flex;gap:4px;margin-top:8px}
+  .tl .n{margin-left:auto;font-size:12px;color:var(--tx3)}
+  .side{left:1072px;top:52px;width:368px;height:848px;border-left:1px solid var(--line);padding:24px 20px}
+  .mk{position:absolute;left:20px;right:20px;bottom:20px;height:44px;border-radius:10px;background:var(--tx);color:#fff;font-size:14px;font-weight:600;display:flex;align-items:center;justify-content:center;gap:10px}
+  .mk kbd{font:500 11px var(--ui);color:#A1A1AA;border:1px solid #3F3F46;border-radius:4px;padding:1px 5px}
+</style></head>
+<body>
+<div class="pg" data-root id="root">
+  <div class="a nav" id="nav"></div>
+  <div class="a main" id="main"><div class="h1">새 곡</div><div class="h1s">틀을 고르고 오른쪽에서 곡 설정을 정합니다. 모든 소리는 이 기기에서 합성됩니다.</div></div>
+  <div class="a side" id="side">
+    <div class="ttl">곡 설정</div><div class="st">밴드 4트랙 · 만든 뒤에도 바꿀 수 있습니다</div>
+    <div class="sec">기본</div>
+    <div class="fd" style="height:48px"><small>이름</small><b>제목 없는 곡 3</b></div>
+    <div class="g3" style="margin-top:6px">
+      <div class="fd"><small>템포</small><b>92<em>BPM</em></b></div>
+      <div class="fd"><small>박자</small><b>4/4</b></div>
+      <div class="fd"><small>조성</small><b>A<em>minor</em></b></div>
+    </div>
+    <div class="sec">오디오</div>
+    <div class="g3">
+      <div class="fd"><small>샘플레이트</small><b>48<em>kHz</em></b></div>
+      <div class="fd"><small>비트 깊이</small><b>24<em>bit</em></b></div>
+      <div class="fd"><small>형식</small><b>스테레오</b></div>
+    </div>
+    <div class="sec">조율<span>음정 정확도 ±1센트</span></div>
+    <div class="g2">
+      <div class="fd"><small>기준 음 A4</small><b>440.00<em>Hz</em></b></div>
+      <div class="fd"><small>조율 방식</small><b>12평균율</b></div>
+    </div>
+    <div class="sec">저장 위치</div>
+    <div class="seg"><span class="on">이 기기 + 클라우드</span><span>이 기기만</span></div>
+    <div class="sec">시작할 트랙</div>
+    <div id="trk"></div>
+    <div class="mk">곡 만들기 <kbd>⏎</kbd></div>
+  </div>
+</div>
+<script>
+  const root = $('#root');
+  shell(root, { bare: true, song: '새 곡', saved: '저장 전' });
+  const N = $('#nav');
+  [['새 곡', 1], ['최근 곡'], ['데모 곡'], ['내 틀']].forEach(([n, on]) => el('div', 'li' + (on ? ' on' : ''), n, N));
+  el('div', 'grp', '가져오기', N);
+  [['MIDI 파일', '.mid'], ['MusicXML 악보', '.musicxml'], ['오디오 파일', '.wav .mp3'], ['다른 곡에서 트랙·설정', '']].forEach(([n, s]) => el('div', 'li', `${n}<span>${s}</span>`, N));
+  el('div', 'grp', '최근', N);
+  [['비 오는 새벽', '오늘'], ['여름 끝 골목', '어제'], ['밤 버스', '11월 2일']].forEach(([n, s]) => el('div', 'li', `<i style="background:var(--c3)"></i>${n}<span>${s}</span>`, N));
+
+  const M = $('#main');
+  const T = [['빈 곡', '트랙 없이 시작', [], []], ['밴드', '드럼 · 베이스 · 기타 · 건반', [0, 1, 2, 3], ['합성 드럼', '줄 ×2', '모달']],
+    ['비트', '드럼 · 베이스 · 신스 패드 · 스텝 시퀀서', [0, 1, 4], ['스텝 시퀀서', '신스']], ['피아노', '피아노 한 대 · 페달 레인', [3], ['모달']],
+    ['줄 실험실', '물리 모델 줄 하나 + 튜닝 도구', [2], ['줄']], ['Live Loops', '셀 격자로 즉흥 편곡', [0, 1, 4, 5], ['셀 격자']],
+    ['악보부터', '악보 편집기로 시작 · 4성부', [3, 3, 3, 3], ['악보']], ['영상 음악', '무비 트랙 + 장면 마커', [3, 4], ['영상']]];
+  T.forEach(([n, d, cols, tags], i) => {
+    const r = el('div', 'tl' + (i === 1 ? ' on' : ''), `<div class="th"></div><div><b>${n}</b><p>${d}</p><div class="tags">${tags.map(t => `<span class="chip">${t}</span>`).join('')}</div></div><span class="n">${cols.length ? cols.length + '트랙' : ''}</span>`, M);
+    if (i === 0) r.style.marginTop = '22px';
+    const th = r.querySelector('.th'), g = rng(i + 7);
+    cols.forEach((c, k) => { for (let x = 6; x < 176;) { const w = 10 + g() * 34; if (g() > .25) { const e = el('i', '', null, th);
+      Object.assign(e.style, { left: x + 'px', width: Math.min(w, 178 - x) + 'px', top: (8 + k * 13) + 'px', background: HEX[c] }); } x += w + 3; } });
+  });
+  [['드럼', '합성 드럼 키트', 0], ['베이스', '일렉 베이스 · 줄', 1], ['기타', '스틸 줄 기타 · 줄', 2], ['건반', '일렉 피아노 · 모달', 3]].forEach(([n, s, c]) =>
+    el('div', 'li', `<i style="background:${HEX[c]};border-radius:2px"></i>${n}<span>${s}</span>`, $('#trk')));
+</script>
+<script src="../redesign-v4/extract4.js"></script>
+</body></html>

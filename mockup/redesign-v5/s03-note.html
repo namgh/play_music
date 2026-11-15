@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>v5 03 음 편집기</title>
+<link rel="stylesheet" href="base.css"><script src="../redesign-v4/lib.js"></script><script src="shell.js"></script>
+<style>
+  .insp{left:56px;top:52px;width:280px;height:848px}
+  .big{font-size:44px;font-weight:700;letter-spacing:-1.4px;line-height:1;margin-top:14px}
+  .hz{font-size:13px;color:var(--tx2);margin-top:6px}
+  .meas{margin-top:12px;height:58px;border-radius:10px;background:var(--d0);color:var(--dt);display:flex;align-items:center;padding:0 12px;gap:12px}
+  .meas b{font-size:22px;font-weight:600;white-space:nowrap}
+  .meas span{font-size:11px;color:var(--dt3);line-height:1.4;white-space:nowrap}
+  .meas svg{margin-left:auto}
+  .ws{left:336px;top:52px;width:1104px;height:848px}
+  .key{position:absolute;left:0;width:56px;border-bottom:1px solid #D9D9DE;background:#FAFAFB}
+  .key.bk{background:#26262B;border-color:#1A1A1E;width:36px}
+  .kl{position:absolute;left:30px;font-size:9px;font-weight:600;color:#8C8C95}
+  .nt{position:absolute;border-radius:4px;background:rgba(242,169,126,.22);border:1px solid rgba(242,169,126,.8)}
+  .nt.sel{background:rgba(255,214,10,.2);border:1.5px solid var(--y)}
+  .nt span{position:absolute;left:7px;top:5px;font-size:11px;font-weight:600;color:#F2A97E}
+  .nt small{position:absolute;right:7px;top:6px;font-size:10px;color:var(--dt3)}
+  .hs{position:absolute;width:12px;height:12px;border-radius:50%;background:var(--d0);border:2px solid var(--y)}
+  .hs.on{background:var(--y)}
+  .hsl{position:absolute;font-size:10px;color:var(--dt2)}
+  .bub{position:absolute;height:30px;border-radius:8px;background:#26262B;color:var(--dt);font-size:12px;display:flex;align-items:center;gap:8px;padding:0 10px;white-space:nowrap;box-shadow:0 6px 16px rgba(0,0,0,.35)}
+  .bub b{font-size:15px;font-weight:600;color:var(--y)}
+</style></head>
+<body>
+<div class="pg" data-root id="root">
+  <div class="a insp" id="insp">
+    <div class="ttl"><i style="background:var(--c2)"></i>선택한 음<span style="margin-left:auto;font-size:12px;font-weight:400;color:var(--tx3)">1 / 6</span></div>
+    <div class="big">A1</div>
+    <div class="hz">54.91 Hz · 기준 55.00 · 미세 조정 −3 ¢</div>
+    <div class="meas"><div><b>+0.2 ¢</b></div><span>합성된 음정 측정<br>±1센트 안</span><svg id="gauge" width="92" height="40" style="flex:none"></svg></div>
+    <div class="sec">음</div>
+    <div class="g3"><div class="fd"><small>세기</small><b>96</b></div><div class="fd"><small>길이</small><b>1/2<em>박</em></b></div><div class="fd"><small>시작</small><b>1.3.000</b></div></div>
+    <div class="sec">음정 곡선<span>음 위 손잡이와 같음</span></div>
+    <div class="g2">
+      <div class="fd on"><small>시작 글라이드</small><b>+24<em>¢ · 40 ms</em></b></div>
+      <div class="fd"><small>끝 글라이드</small><b>0<em>¢</em></b></div>
+      <div class="fd"><small>흔들림 깊이</small><b>15<em>¢</em></b></div>
+      <div class="fd"><small>흔들림 속도 · 지연</small><b>5.2<em>Hz · 120 ms</em></b></div>
+    </div>
+    <div class="sec">연주</div>
+    <div class="g2">
+      <div class="fd"><small>이어 치기</small><b>80<em>ms · 앞 E2</em></b></div>
+      <div class="fd"><small>뜯는 위치</small><b>18<em>%</em></b></div>
+    </div>
+    <div class="row" style="margin-top:8px"><span class="lb" style="width:76px">아티큘레이션</span><span class="seg"><span class="on">보통</span><span>팜뮤트</span><span>하모닉스</span></span></div>
+    <div class="sec">퀀타이즈</div>
+    <div class="row"><span class="lb">타이밍</span><span class="chip">1/8</span><span class="tr"><i style="width:80%"></i><u style="left:calc(80% - 7px)"></u></span><b>80 %</b></div>
+    <div class="row"><span class="lb">음정</span><span class="chip">A minor</span><span class="tr"><i style="width:100%"></i><u style="left:calc(100% - 7px)"></u></span><b>100 %</b></div>
+    <div class="row"><span class="lb">스윙</span><span class="tr"><i style="width:50%"></i><u style="left:calc(50% - 7px)"></u></span><b>50 %</b></div>
+  </div>
+  <div class="a ws" id="ws"></div>
+</div>
+<script>
+  const root = $('#root');
+  shell(root, { rail: 'arrange', pos: '1.2.000', phase: ['part', '일부 구현'] });
+  // 측정 바늘
+  $('#gauge').innerHTML = (() => { let s = ''; for (let c = -50; c <= 50; c += 10) { const x = 6 + (c + 50) / 100 * 80; s += `<line x1="${x}" y1="${c % 50 === 0 ? 10 : 14}" x2="${x}" y2="22" stroke="#5F5F68" stroke-width="1.2"/>`; }
+    const x0 = 6 + 49 / 100 * 80, x1 = 6 + 51 / 100 * 80; return s + `<rect x="${x0}" y="6" width="${x1 - x0}" height="20" fill="rgba(134,211,164,.35)"/><line x1="${6 + 50.2 / 100 * 80}" y1="4" x2="${6 + 50.2 / 100 * 80}" y2="28" stroke="#FFD60A" stroke-width="2"/><text x="6" y="38" fill="#5F5F68" font-size="9" font-family="Inter">−50</text><text x="74" y="38" fill="#5F5F68" font-size="9" font-family="Inter">+50</text>`; })();
+
+  const W = $('#ws'), KX = 56, GX = 56, GW = 1104 - 56, EH = 36;
+  const eh = at(el('div', 'eh', null, W), 0, 0, 1104); eh.style.borderTop = '0';
+  [['피아노 롤', 1, 16], ['악보', 0, 100], ['이벤트 목록', 0, 152], ['스텝 편집기', 0, 244]].forEach(([n, on, x]) => at(el('div', 'tab' + (on ? ' on' : ''), n, eh), x, 0));
+  at(el('div', 'tab', '<span style="color:var(--dt)">베이스 1</span>&nbsp;· 1–2마디 확대 · 스냅 1/8 · 스케일 A minor 고정', eh), 350, 0);
+  ['pointer', 'pencil', 'scissors', 'magnet'].forEach((k, i) => at(el('b', 'tool ic' + (i === 0 ? ' on' : ''), ICON[k](15), eh), 960 + i * 30, 6));
+  const PN = ['E2', 'D#2', 'D2', 'C#2', 'C2', 'B1', 'A#1', 'A1', 'G#1', 'G1', 'F#1', 'F1', 'E1'];
+  const RT = 26, LANE = 210, GH = 848 - EH - LANE, RH = (GH - RT) / 13, S8 = (GW - 16) / 16, X0 = GX + 8, Y0 = EH;
+  at(el('div', 'hc', null, W), 0, Y0, 56, GH);
+  for (let s = 0; s <= 16; s++) { at(el('div', 'vl' + (s % 8 === 0 ? ' b' : ''), null, W), X0 + s * S8, Y0, null, GH);
+    if (s % 2 === 0 && s < 16) at(el('div', 'rul', `${1 + Math.floor(s / 8)}.${1 + (s % 8) / 2}`, W), X0 + s * S8 + 6, Y0 + 7); }
+  PN.forEach((p, i) => { const y = Y0 + RT + i * RH, bk = p.includes('#');
+    at(el('div', 'key' + (bk ? ' bk' : ''), null, W), 0, y, null, RH);
+    at(el('div', 'hl', null, W), GX, y, GW, bk ? RH : 1).style.background = bk ? 'rgba(255,255,255,.018)' : 'var(--dl)';
+    if (!bk) { const l = at(el('div', 'kl', p, W), 30, y + RH / 2 - 6); if (p === 'A1') l.style.color = '#0B0B0C'; } });
+  const yOf = p => Y0 + RT + PN.indexOf(p) * RH, cy = p => yOf(p) + RH / 2, c50 = RH / 2;
+  const N = [[0, 3, 'A1', 104], [3, 1, 'E2', 72], [4, 4, 'A1', 96], [8, 3, 'F1', 100], [11, 1, 'C2', 70], [12, 4, 'F1', 92]];
+  N.forEach(([s, l, p, v], i) => at(el('div', 'nt' + (i === 2 ? ' sel' : ''), `<span>${p}</span>${l > 1 ? `<small>${v}</small>` : ''}`, W), X0 + s * S8 + 2, yOf(p) + 5, l * S8 - 4, RH - 10));
+  const sx = X0 + 4 * S8, ex = X0 + 8 * S8;
+  let d = `M${sx} ${cy('A1') - c50 * .48} C ${sx + 18} ${cy('A1') - c50 * .3}, ${sx + 30} ${cy('A1') + 2}, ${sx + 46} ${cy('A1') + 1}`;
+  for (let x = sx + 46; x <= ex - 30; x += 4) d += ` L ${x} ${(cy('A1') + Math.sin((x - sx - 46) / 9) * c50 * .3 * Math.min(1, (x - sx - 46) / 60)).toFixed(1)}`;
+  d += ` L ${ex - 6} ${cy('A1')}`;
+  let dd = ''; [[0, 3, 'A1'], [8, 3, 'F1'], [12, 4, 'F1'], [3, 1, 'E2'], [11, 1, 'C2']].forEach(([s, l, p]) => { const a = X0 + s * S8 + 8, b = X0 + (s + l) * S8 - 8; dd += `M${a} ${cy(p) + 3} C ${a + 10} ${cy(p) - 1}, ${a + 20} ${cy(p)}, ${b} ${cy(p)} `; });
+  at(el('div', '', `<svg width="1104" height="848" fill="none"><path d="${dd}" stroke="#F2A97E" stroke-width="1.4" opacity=".8"/>
+    <path d="M${sx - 10} ${cy('E2') + 4} C ${sx - 4} ${cy('E2') + 60}, ${sx - 4} ${cy('A1') - c50 * .9}, ${sx} ${cy('A1') - c50 * .48}" stroke="#FFD60A" stroke-width="1.5" stroke-dasharray="3 4"/>
+    <path d="${d}" stroke="#FFE680" stroke-width="2"/><line x1="${sx}" y1="${cy('A1')}" x2="${ex}" y2="${cy('A1')}" stroke="#FFD60A" stroke-dasharray="2 4" opacity=".5"/></svg>`, W), 0, 0).style.position = 'absolute';
+  const ny = yOf('A1') + 5, nh = RH - 10;
+  [[sx + 2, ny, 1, '시작'], [(sx + ex) / 2, ny, 0, '흔들림'], [ex - 4, ny, 0, '끝'], [sx + 2, ny + nh, 0, '세기'], [(sx + ex) / 2, ny + nh, 0, '뜯는 위치'], [ex - 4, ny + nh, 0, '길이']]
+    .forEach(([x, y, on, t], i) => { at(el('div', 'hs' + (on ? ' on' : ''), null, W), x - 6, y - 6); const l = at(el('div', 'hsl', t, W), x - 12, i < 3 ? y - 22 : y + 10); if (on) l.style.color = 'var(--y)'; });
+  at(el('div', 'bub', '시작 글라이드 <b>+24 ¢</b> 40 ms', W), sx - 30, ny - 66);
+  at(el('div', 'ph', null, W), X0 + 2 * S8, Y0, null, GH);
+  // 아래 레인
+  const LY = Y0 + GH, lh = at(el('div', 'eh', null, W), 0, LY, 1104);
+  [['세기', 1, 16], ['음정 곡선', 0, 64], ['뜯는 위치', 0, 140], ['필터 컷오프', 0, 216], ['CC 1 모듈레이션', 0, 304]].forEach(([n, on, x]) => at(el('div', 'tab' + (on ? ' on' : ''), n, lh), x, 0));
+  at(el('div', 'tab', '+ 레인', lh), 420, 0);
+  const VY = LY + 36, VH = LANE - 36;
+  [[127, 14], [64, VH / 2], [0, VH - 14]].forEach(([v, y]) => { at(el('div', 'hl', null, W), GX, VY + y, GW); at(el('div', 'lb2', String(v), W), 18, VY + y - 7); });
+  N.forEach(([s, l, p, v], i) => { const x = X0 + s * S8 + 4, top = VY + (VH - 14) - v / 127 * (VH - 28);
+    at(el('div', 'nt', null, W), x + 3, top, 2, VY + VH - 14 - top).style.cssText += `;border:0;border-radius:1px;background:${i === 2 ? 'var(--y)' : '#F2A97E'}`;
+    at(el('div', 'nt', null, W), x, top - 4, 8, 8).style.cssText += `;border:0;border-radius:50%;background:${i === 2 ? 'var(--y)' : '#F2A97E'}`;
+    at(el('div', 'lb2', String(v), W), x + 12, top - 7).style.color = i === 2 ? 'var(--y)' : 'var(--dt2)'; });
+</script>
+<script src="../redesign-v4/extract4.js"></script>
+</body></html>

@@ -1,0 +1,110 @@
+/* v5 공통 — 화면 끝까지 붙는 작업 영역, 상자 대신 면과 1px 선, 버튼 규칙 하나,
+   글꼴 한 가족(Inter + Pretendard), 트랙색은 같은 밝기·채도로 맞춘 6색 */
+@import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css");
+@import url("https://rsms.me/inter/inter.css");
+:root{
+  --bg:#FFFFFF; --sub:#F5F5F6; --sub2:#EDEDEF; --line:#E8E8EB; --tx:#0B0B0C; --tx2:#55555D; --tx3:#8C8C95;
+  --d0:#0E0E10; --d1:#141417; --d2:#1C1C21; --dl:#202025; --dl2:#2C2C33; --dt:#EDEDF0; --dt2:#9C9CA5; --dt3:#5F5F68;
+  --y:#FFD60A; --ok:#86D3A4; --rec:#E5484D;
+  --c1:#86D3A4; --c2:#F2A97E; --c3:#82B4F0; --c4:#B9A2EE; --c5:#F0A3BE; --c6:#6FCFD6;
+  --ui:"Inter","Pretendard","Apple SD Gothic Neo",sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#888;font-family:var(--ui);color:var(--tx);font-feature-settings:"tnum" 1,"cv11" 1}
+.pg{width:1440px;height:900px;position:relative;overflow:hidden;background:var(--bg)}
+.a{position:absolute}
+.ic{display:flex;align-items:center;justify-content:center}
+
+/* 상단 바 */
+.top{left:0;top:0;width:1440px;height:52px;border-bottom:1px solid var(--line)}
+.wm{left:16px;top:17px;font-size:14px;font-weight:700;letter-spacing:.6px}
+.wm small{font-size:11px;font-weight:500;letter-spacing:0;color:var(--tx3)}
+.song{left:150px;top:10px;height:32px;border-radius:8px;padding:0 10px;display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600}
+.song i{width:6px;height:6px;border-radius:50%;background:var(--c1)}
+.song span{font-weight:400;color:var(--tx3);font-size:12px}
+.tp{left:478px;top:8px;height:36px;border-radius:10px;background:var(--sub);display:flex;align-items:center;padding:0 4px;gap:2px}
+.tp b{width:32px;height:28px;border-radius:7px;color:var(--tx2)}
+.tp b.play{width:28px;height:28px;border-radius:50%;background:var(--tx);color:#fff;margin:0 4px}
+.tp b.rec{color:var(--rec)}
+.tp b.on{background:var(--bg);color:var(--tx)}
+.lcd{left:664px;top:8px;height:36px;border-radius:10px;background:var(--d0);display:flex;align-items:center;padding:0 14px;gap:14px;color:var(--dt)}
+.lcd .pos{font-size:19px;font-weight:600;letter-spacing:-.2px;min-width:78px}
+.lcd .sep{width:1px;height:18px;background:var(--dl2)}
+.lcd .f{font-size:13px;font-weight:500}
+.lcd .f small{font-size:11px;color:var(--dt3);font-weight:400;margin-left:3px}
+.rt{left:1196px;top:10px;display:flex;align-items:center;gap:2px}
+.rt b{width:32px;height:32px;border-radius:8px;color:var(--tx2)}
+.rt .vs{width:1px;height:18px;background:var(--line);margin:0 8px}
+.ex{height:32px;border-radius:8px;background:var(--tx);color:#fff;font-size:13px;font-weight:600;display:flex;align-items:center;gap:7px;padding:0 13px}
+.phase{left:1012px;top:16px;height:20px;border-radius:10px;padding:0 8px;font-size:11px;font-weight:500;display:flex;align-items:center;gap:6px;background:var(--sub);color:var(--tx2)}
+.phase i{width:6px;height:6px;border-radius:50%;background:var(--tx3)}
+.phase.done i{background:var(--ok)}
+.phase.part i{background:var(--y)}
+
+/* 왼쪽 레일 */
+.rail{left:0;top:52px;width:56px;height:848px;border-right:1px solid var(--line)}
+.rail b{position:absolute;left:10px;width:36px;height:36px;border-radius:9px;color:var(--tx3)}
+.rail b.on{background:var(--sub2);color:var(--tx)}
+
+/* 밝은 패널(인스펙터) */
+.insp{border-right:1px solid var(--line);padding:18px 16px}
+.ttl{display:flex;align-items:center;gap:8px;font-size:15px;font-weight:600}
+.ttl i{width:10px;height:10px;border-radius:3px}
+.st{font-size:12px;color:var(--tx3);margin-top:4px}
+.sec{font-size:11px;font-weight:600;color:var(--tx3);margin:22px 0 8px;display:flex;justify-content:space-between}
+.sec span{font-weight:400}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px}
+.fd{height:44px;border-radius:8px;background:var(--sub);padding:6px 10px}
+.fd small{display:block;font-size:10.5px;color:var(--tx3);white-space:nowrap}
+.fd b{display:block;font-size:14px;font-weight:600;margin-top:2px;white-space:nowrap}
+.fd b em{font-style:normal;font-weight:400;font-size:11px;color:var(--tx3);margin-left:2px}
+.fd.on{background:var(--tx);color:#fff}
+.fd.on small,.fd.on b em{color:#A1A1AA}
+.li{height:32px;border-radius:8px;display:flex;align-items:center;gap:9px;padding:0 10px;font-size:13px}
+.li i{width:6px;height:6px;border-radius:50%;background:var(--c1);flex:none}
+.li span{margin-left:auto;font-size:11px;color:var(--tx3)}
+.li.on{background:var(--sub2)}
+.li.mute{color:var(--tx3)}
+.row{display:flex;align-items:center;gap:10px;height:30px;font-size:12px;color:var(--tx2)}
+.row .lb{width:56px;flex:none}
+.row .tr{flex:1;height:4px;border-radius:2px;background:var(--sub2);position:relative}
+.row .tr i{position:absolute;left:0;top:0;bottom:0;border-radius:2px;background:var(--tx)}
+.row .tr u{position:absolute;top:-5px;width:14px;height:14px;border-radius:50%;background:#fff;border:1.5px solid var(--tx);text-decoration:none}
+.row b{min-width:52px;text-align:right;font-weight:600;color:var(--tx)}
+.seg{display:inline-flex;gap:2px;padding:3px;border-radius:9px;background:var(--sub)}
+.seg span{height:26px;border-radius:6px;padding:0 10px;font-size:12px;font-weight:500;display:flex;align-items:center;color:var(--tx2)}
+.seg span.on{background:var(--bg);color:var(--tx);box-shadow:0 1px 2px rgba(0,0,0,.08)}
+.btn{height:32px;border-radius:8px;background:var(--sub);font-size:13px;font-weight:500;display:inline-flex;align-items:center;gap:7px;padding:0 12px;color:var(--tx)}
+.btn.pri{background:var(--tx);color:#fff}
+.chip{height:22px;border-radius:6px;padding:0 8px;font-size:11px;font-weight:500;display:inline-flex;align-items:center;background:var(--sub);color:var(--tx2)}
+.note{font-size:12px;line-height:1.6;color:var(--tx3)}
+
+/* 검은 작업 영역 */
+.ws{background:var(--d0);color:var(--dt)}
+.hc{position:absolute;background:var(--d1)}
+.rul{position:absolute;font-size:11px;font-weight:500;color:var(--dt3)}
+.vl{position:absolute;width:1px;background:var(--dl)}
+.vl.b{background:var(--dl2)}
+.hl{position:absolute;height:1px;background:var(--dl)}
+.lb2{position:absolute;font-size:11px;color:var(--dt3)}
+.ph{position:absolute;width:1.5px;background:var(--y)}
+.tri{position:absolute;width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:8px solid var(--y)}
+.eh{position:absolute;height:36px;background:var(--d1);border-top:1px solid var(--dl2)}
+.tab{position:absolute;top:0;height:36px;font-size:12px;font-weight:500;color:var(--dt3);display:flex;align-items:center}
+.tab.on{color:var(--dt);box-shadow:inset 0 -2px 0 var(--y)}
+.tool{position:absolute;top:6px;width:26px;height:24px;border-radius:6px;color:var(--dt3)}
+.tool.on{background:var(--dl2);color:var(--dt)}
+.dseg{display:inline-flex;gap:2px;padding:3px;border-radius:8px;background:var(--d2)}
+.dseg span{height:24px;border-radius:6px;padding:0 10px;font-size:12px;font-weight:500;display:flex;align-items:center;color:var(--dt3)}
+.dseg span.on{background:var(--dl2);color:var(--dt)}
+.dchip{height:22px;border-radius:6px;padding:0 8px;font-size:11px;font-weight:500;display:inline-flex;align-items:center;background:var(--d2);color:var(--dt2)}
+.dfd{border-radius:8px;background:var(--d2);padding:6px 10px}
+.dfd small{display:block;font-size:10.5px;color:var(--dt3)}
+.dfd b{display:block;font-size:14px;font-weight:600;margin-top:2px;color:var(--dt)}
+.dfd b em{font-style:normal;font-weight:400;font-size:11px;color:var(--dt3);margin-left:2px}
+.kn{display:flex;flex-direction:column;align-items:center}
+.kn b{font-size:13px;font-weight:600;margin-top:4px}
+.kn span{font-size:11px;color:var(--tx3);margin-top:1px;white-space:nowrap}
+.ws .kn b{color:var(--dt)}
+.ws .kn span{color:var(--dt3)}

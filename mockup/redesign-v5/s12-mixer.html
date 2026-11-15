@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>v5 12 믹서</title>
+<link rel="stylesheet" href="base.css"><script src="../redesign-v4/lib.js"></script><script src="shell.js"></script>
+<style>
+  .ws{left:56px;top:52px;width:1384px;height:848px}
+  .bar{position:absolute;left:16px;top:12px;display:flex;gap:10px;align-items:center}
+  .stp{position:absolute;top:56px;width:108px;height:780px;border-right:1px solid var(--dl)}
+  .stp.sel{background:var(--d1)}
+  .lbx{position:absolute;left:8px;font-size:9.5px;color:var(--dt3)}
+  .sl{position:absolute;left:8px;right:8px;height:20px;border-radius:5px;background:var(--d2);font-size:10.5px;color:var(--dt2);display:flex;align-items:center;justify-content:space-between;padding:0 6px;white-space:nowrap;overflow:hidden}
+  .sl.on{color:var(--dt)}
+  .sl.em{background:transparent;border:1px dashed var(--dl2);color:var(--dt3)}
+  .sl b{font-weight:600;color:var(--dt)}
+  .eqm{position:absolute;left:8px;right:8px;top:30px;height:28px;border-radius:5px;background:var(--d2)}
+  .fz{position:absolute;left:8px;right:8px;top:470px;height:240px}
+  .fz .rail{position:absolute;left:30px;top:6px;bottom:6px;width:3px;border-radius:2px;background:var(--dl2)}
+  .fz .cap{position:absolute;left:18px;width:28px;height:16px;border-radius:4px;background:#E6E6EA;box-shadow:0 2px 4px rgba(0,0,0,.4)}
+  .fz .cap i{position:absolute;left:4px;right:4px;top:7px;height:1.5px;background:#0E0E10}
+  .fz .sc{position:absolute;left:0;font-size:9px;color:var(--dt3)}
+  .fz .m{position:absolute;top:6px;bottom:6px;width:5px;border-radius:2px;background:var(--d2);overflow:hidden}
+  .fz .m i{position:absolute;left:0;right:0;bottom:0}
+  .dbs{position:absolute;left:8px;right:8px;top:446px;display:flex;justify-content:space-between;font-size:11px;font-weight:600}
+  .dbs span{color:var(--dt3);font-weight:500}
+  .msr{position:absolute;left:8px;right:8px;top:718px;display:flex;gap:3px}
+  .msr span{flex:1;height:22px;border-radius:5px;background:var(--d2);font-size:10px;font-weight:600;color:var(--dt3);display:flex;align-items:center;justify-content:center}
+  .msr span.on{background:var(--y);color:#0E0E10}
+  .nm{position:absolute;left:0;right:0;top:748px;height:32px;display:flex;align-items:center;gap:6px;padding:0 8px;font-size:11.5px;font-weight:600;color:var(--dt)}
+  .nm i{width:3px;height:16px;border-radius:2px;flex:none}
+  .loud{position:absolute;left:1172px;top:56px;width:212px;height:780px;padding:12px 14px;background:var(--d1)}
+  .loud .k{font-size:11px;color:var(--dt3)}
+  .loud .v{font-size:30px;font-weight:600;color:var(--dt);margin-top:4px;letter-spacing:-.6px}
+  .loud .v small{font-size:12px;font-weight:500;color:var(--dt3);margin-left:4px;letter-spacing:0}
+  .loud .r{display:flex;justify-content:space-between;font-size:12px;color:var(--dt3);margin-top:8px}
+  .loud .r b{color:var(--dt);font-weight:600}
+  .loud .ok{display:inline-flex;align-items:center;gap:6px;margin-top:12px;height:22px;border-radius:11px;padding:0 9px;background:rgba(134,211,164,.12);color:var(--c1);font-size:11px}
+</style></head>
+<body>
+<div class="pg" data-root id="root">
+  <div class="a ws" id="ws"></div>
+</div>
+<script>
+  const root = $('#root');
+  shell(root, { rail: 'mixer', phase: ['part', '일부 구현'] });
+  const W = $('#ws');
+  at(el('div', 'bar', `<span class="dseg"><span>한 채널</span><span>트랙</span><span class="on">전체</span></span>
+    <span class="dseg"><span class="on">오디오·악기</span><span class="on">Aux</span><span class="on">VCA</span><span class="on">출력</span><span>MIDI</span></span>
+    <span class="dchip">그룹 1 · 리듬 (킥·베이스) — 볼륨·뮤트 함께</span><span class="dchip">플러그인 지연 보정 · 전체</span>`, W), 16, 12);
+  const STR = [
+    ...SONG.tracks.map((t, i) => ({ n: t.name, c: HEX[i], set: t.inst.split(' · ')[0], ins: [['EQ', '컴프'], ['EQ', '컴프', '새추레이션'], ['EQ'], ['EQ', '코러스'], ['필터', '컴프'], ['EQ', '디에서']][i],
+      sends: [[['리버브', -18]], [['리버브', -12], ['딜레이', -20]], [['리버브', -9]], [['리버브', -6], ['딜레이', -16]], [['딜레이', -8]], [['리버브', -10]]][i], out: '출력 1-2', grp: i < 2 ? '1 리듬' : '', db: ['-3.0', '-6.0', '-8.5', '-5.0', '-10.0', '-12.0'][i],
+      pk: ['-4.1', '-7.3', '-11.0', '-6.2', '-14.5', '-∞'][i], pan: [0, 0, -.35, .2, 0, .3][i], m: [[.8, .78], [.72, .7], [.55, .5], [.6, .62], [.5, .52], [0, 0]][i], mute: i === 5, sel: t.sel })),
+    { n: '버스 1 · 리버브', c: '#9C9CA5', set: 'Aux', ins: ['컨볼루션 리버브'], sends: [], out: '출력 1-2', db: '-7.0', pk: '-15.8', pan: 0, m: [.36, .38] },
+    { n: '버스 2 · 딜레이', c: '#9C9CA5', set: 'Aux', ins: ['테이프 딜레이', 'EQ'], sends: [['리버브', -14]], out: '출력 1-2', db: '-9.0', pk: '-19.2', pan: 0, m: [.3, .28] },
+    { n: 'VCA 1 · 리듬', c: '#5F5F68', set: 'VCA', ins: [], sends: [], out: '킥 · 베이스', db: '0.0', pk: '', pan: null, m: null, vca: 1 },
+    { n: '출력 1-2', c: '#EDEDF0', set: '출력', ins: ['리미터', '라우드니스'], sends: [], out: '스테레오', db: '-1.0', pk: '-1.1', pan: 0, m: [.86, .84] },
+  ];
+  const scale = [[6, 0], [0, .16], [-6, .32], [-12, .46], [-24, .66], [-48, .9]];
+  const pos = db => { if (db === '-∞') return .96; db = +db; for (let k = 1; k < scale.length; k++) { const [d0, y0] = scale[k - 1], [d1, y1] = scale[k]; if (db >= d1) return y0 + (db - d0) / (d1 - d0) * (y1 - y0); } return .95; };
+  STR.forEach((s, i) => {
+    const x = 16 + i * 108, S = at(el('div', 'stp' + (s.sel ? ' sel' : ''), null, W), x, 56);
+    at(el('div', 'sl on', s.set, S), 8, 6);
+    const eq = el('div', 'eqm', null, S);
+    if (s.ins.includes('EQ')) eq.innerHTML = `<svg width="92" height="28" fill="none"><path d="M2 ${16 - (i % 3) * 2} C 20 ${14}, 30 ${18 + (i % 2) * 4}, 46 ${18} S 76 ${10 + (i % 3) * 2}, 90 ${12}" stroke="#FFD60A" stroke-width="1.5"/></svg>`;
+    at(el('div', 'lbx', '인서트', S), 8, 64);
+    for (let k = 0; k < 4; k++) { const n = s.ins[k]; at(el('div', 'sl' + (n ? ' on' : ' em'), n || (k === s.ins.length ? '+' : ''), S), 8, 78 + k * 23); if (!n && k > s.ins.length) S.lastChild.style.visibility = 'hidden'; }
+    at(el('div', 'lbx', '센드', S), 8, 172);
+    for (let k = 0; k < 2; k++) { const sd = s.sends[k]; at(el('div', 'sl' + (sd ? ' on' : ' em'), sd ? `${sd[0]}<b>${sd[1]}</b>` : (k === s.sends.length && !s.vca ? '+' : ''), S), 8, 186 + k * 23); if (!sd && (k > s.sends.length || s.vca)) S.lastChild.style.visibility = 'hidden'; }
+    at(el('div', 'lbx', '출력 · 그룹 · 오토메이션', S), 8, 240);
+    at(el('div', 'sl on', s.out, S), 8, 254);
+    at(el('div', 'sl' + (s.grp ? ' on' : ' em'), s.grp || '그룹 없음', S), 8, 277);
+    at(el('div', 'sl on', s.vca ? '—' : (i === 1 ? '<span style="color:var(--y)">터치</span>' : '읽기'), S), 8, 300);
+    if (s.pan !== null) { const p = at(el('div', '', knob5(.5 + s.pan / 2, 40, '팬', s.pan === 0 ? 'C' : (s.pan < 0 ? 'L' : 'R') + Math.round(Math.abs(s.pan) * 100), true), S), 24, 340); p.style.position = 'absolute'; }
+    const db = el('div', 'dbs', `${s.db}<span>${s.pk}</span>`, S);
+    const F = el('div', 'fz', '<span class="rail"></span>', S);
+    scale.forEach(([d, y]) => at(el('span', 'sc', (d > 0 ? '+' : '') + d, F), 0, 6 + y * 228 - 5));
+    at(el('span', 'cap', '<i></i>', F), 18, 6 + pos(s.db) * 228 - 8);
+    if (s.m) s.m.forEach((v, k) => { const m = at(el('span', 'm', `<i style="height:${v * 100}%;background:linear-gradient(to top,#86D3A4 0%,#86D3A4 72%,#FFD60A 90%,#E5484D 100%)"></i>`, F), 64 + k * 8, 6); m.style.bottom = '6px'; });
+    el('div', 'msr', s.vca ? '<span>M</span><span>S</span>' : `<span class="${s.mute ? 'on' : ''}">M</span><span>S</span><span>R</span><span>I</span>`, S);
+    el('div', 'nm', `<i style="background:${s.c}"></i>${s.n}`, S);
+  });
+  const L = el('div', 'loud', `<div class="k">출력 · 소리 크기 (통합)</div><div class="v">−14.2<small>LUFS</small></div>
+    <div class="r"><span>짧은 구간 3초</span><b>−12.8 LUFS</b></div><div class="r"><span>순간 400ms</span><b>−11.9 LUFS</b></div>
+    <div class="r"><span>트루 피크</span><b>−1.1 dBTP</b></div><div class="r"><span>음량 범위 LRA</span><b>6.4 LU</b></div><div class="r"><span>좌우 상관</span><b>+0.62</b></div>
+    <span class="ok">● 스트리밍 기준 −14 근처</span><div class="k" style="margin-top:22px">최근 30초</div><svg id="lg" width="184" height="80" style="margin-top:6px"></svg>
+    <div class="k" style="margin-top:18px">스테레오 위상</div><svg id="ph" width="184" height="120" style="margin-top:6px"></svg>`, W);
+  let d = ''; const g = rng(4); for (let k = 0; k <= 46; k++) { const v = -14 + Math.sin(k / 5) * 2.4 + (g() - .5) * 1.6; d += (k ? ' L ' : 'M ') + (k * 4) + ' ' + (70 - (v + 24) / 16 * 70).toFixed(1); }
+  $('#lg').innerHTML = `<line x1="0" y1="${70 - 10 / 16 * 70}" x2="184" y2="${70 - 10 / 16 * 70}" stroke="#86D3A4" stroke-dasharray="3 4"/><path d="${d}" stroke="#FFD60A" stroke-width="1.6" fill="none"/>`;
+  let dots = ''; const g2 = rng(9); for (let k = 0; k < 220; k++) { const a = (g2() - .5) * 1.2, r = g2() * 52; dots += `<circle cx="${92 + Math.sin(a) * r}" cy="${110 - Math.cos(a) * r}" r="1" fill="#82B4F0" opacity=".6"/>`; }
+  $('#ph').innerHTML = `<path d="M32 110 A 60 60 0 0 1 152 110" stroke="#2C2C33" fill="none"/><line x1="92" y1="110" x2="92" y2="48" stroke="#2C2C33"/>${dots}`;
+</script>
+<script src="../redesign-v4/extract4.js"></script>
+</body></html>

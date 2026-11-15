@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>v5 ② 메인</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+<link rel="stylesheet" href="https://rsms.me/inter/inter.css">
+<script src="../redesign-v4/lib.js"></script>
+<style>
+  /* v5: 화면 끝까지 붙는 작업 영역, 상자 대신 면과 1px 선, 글꼴 한 가족, 트랙색은 같은 밝기·채도로 맞춘 6색 */
+  :root{
+    --bg:#FFFFFF; --sub:#F5F5F6; --sub2:#EDEDEF; --line:#E8E8EB; --tx:#0B0B0C; --tx2:#55555D; --tx3:#8C8C95;
+    --d0:#0E0E10; --d1:#141417; --d2:#1C1C21; --dl:#202025; --dl2:#2C2C33; --dt:#EDEDF0; --dt2:#9C9CA5; --dt3:#5F5F68;
+    --y:#FFD60A;
+    --c1:#86D3A4; --c2:#F2A97E; --c3:#82B4F0; --c4:#B9A2EE; --c5:#F0A3BE; --c6:#6FCFD6;
+    --ui:"Inter","Pretendard","Apple SD Gothic Neo",sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#888;font-family:var(--ui);color:var(--tx);font-feature-settings:"tnum" 1,"cv11" 1}
+  .pg{width:1440px;height:900px;position:relative;overflow:hidden;background:var(--bg)}
+  .a{position:absolute}
+  .ic{display:flex;align-items:center;justify-content:center}
+  /* 상단 */
+  .top{left:0;top:0;width:1440px;height:52px;border-bottom:1px solid var(--line)}
+  .wm{left:16px;top:17px;font-size:14px;font-weight:700;letter-spacing:.6px}
+  .wm small{font-size:11px;font-weight:500;letter-spacing:0;color:var(--tx3)}
+  .song{left:150px;top:10px;height:32px;border-radius:8px;padding:0 10px;display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600}
+  .song i{width:6px;height:6px;border-radius:50%;background:var(--c1)}
+  .song span{font-weight:400;color:var(--tx3);font-size:12px}
+  .tp{left:478px;top:8px;height:36px;border-radius:10px;background:var(--sub);display:flex;align-items:center;padding:0 4px;gap:2px}
+  .tp b{width:32px;height:28px;border-radius:7px;color:var(--tx2)}
+  .tp b.play{width:28px;height:28px;border-radius:50%;background:var(--tx);color:#fff;margin:0 4px}
+  .tp b.rec{color:#E5484D}
+  .lcd{left:664px;top:8px;height:36px;border-radius:10px;background:var(--d0);display:flex;align-items:center;padding:0 14px;gap:14px;color:var(--dt)}
+  .lcd .pos{font-size:19px;font-weight:600;letter-spacing:-.2px;width:78px}
+  .lcd .sep{width:1px;height:18px;background:var(--dl2)}
+  .lcd .f{font-size:13px;font-weight:500}
+  .lcd .f small{font-size:11px;color:var(--dt3);font-weight:400;margin-left:3px}
+  .rt{left:1196px;top:10px;display:flex;align-items:center;gap:2px}
+  .rt b{width:32px;height:32px;border-radius:8px;color:var(--tx2)}
+  .rt .vs{width:1px;height:18px;background:var(--line);margin:0 8px}
+  .ex{height:32px;border-radius:8px;background:var(--tx);color:#fff;font-size:13px;font-weight:600;display:flex;align-items:center;gap:7px;padding:0 13px}
+  /* 왼쪽 레일 */
+  .rail{left:0;top:52px;width:56px;height:848px;border-right:1px solid var(--line)}
+  .rail b{position:absolute;left:10px;width:36px;height:36px;border-radius:9px;color:var(--tx3)}
+  .rail b.on{background:var(--sub2);color:var(--tx)}
+  /* 인스펙터 */
+  .insp{left:56px;top:52px;width:264px;height:848px;border-right:1px solid var(--line);padding:18px 16px}
+  .ttl{display:flex;align-items:center;gap:8px;font-size:15px;font-weight:600}
+  .ttl i{width:10px;height:10px;border-radius:3px}
+  .st{font-size:12px;color:var(--tx3);margin-top:4px}
+  .sec{font-size:11px;font-weight:600;color:var(--tx3);margin:22px 0 8px;display:flex;justify-content:space-between}
+  .sec span{font-weight:400}
+  .g2{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+  .fd{height:44px;border-radius:8px;background:var(--sub);padding:6px 10px}
+  .fd small{display:block;font-size:10.5px;color:var(--tx3)}
+  .fd b{display:block;font-size:14px;font-weight:600;margin-top:2px}
+  .fd b em{font-style:normal;font-weight:400;font-size:11px;color:var(--tx3);margin-left:2px}
+  .fx{height:32px;border-radius:8px;display:flex;align-items:center;gap:9px;padding:0 10px;font-size:13px}
+  .fx i{width:6px;height:6px;border-radius:50%;background:var(--c1)}
+  .fx span{margin-left:auto;font-size:11px;color:var(--tx3)}
+  .fx.add{color:var(--tx3)}
+  .ch{margin-top:6px}
+  .row{display:flex;align-items:center;gap:10px;height:30px;font-size:12px;color:var(--tx2)}
+  .row .lb{width:40px}
+  .row .tr{flex:1;height:4px;border-radius:2px;background:var(--sub2);position:relative}
+  .row .tr i{position:absolute;left:0;top:0;bottom:0;border-radius:2px;background:var(--tx)}
+  .row .tr u{position:absolute;top:-5px;width:14px;height:14px;border-radius:50%;background:#fff;border:1.5px solid var(--tx);text-decoration:none}
+  .row b{width:52px;text-align:right;font-weight:600;color:var(--tx)}
+  .met{height:6px;border-radius:3px;background:var(--sub2);position:relative;overflow:hidden;margin:2px 62px 0 50px}
+  .met i{position:absolute;left:0;top:0;bottom:0;background:var(--c1)}
+  .ms{display:flex;gap:6px;margin-top:12px}
+  .ms span{flex:1;height:30px;border-radius:8px;background:var(--sub);font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:center;color:var(--tx2)}
+  /* 작업 영역 */
+  .ws{left:320px;top:52px;width:1120px;height:848px;background:var(--d0)}
+  .hc{position:absolute;left:0;width:200px;background:var(--d1)}
+  .rul{position:absolute;font-size:11px;font-weight:500;color:var(--dt3)}
+  .vl{position:absolute;width:1px;background:var(--dl)}
+  .vl.b{background:var(--dl2)}
+  .hl{position:absolute;height:1px;background:var(--dl)}
+  .mk{position:absolute;font-size:11px;color:var(--dt2);padding-left:6px;border-left:1px solid var(--dl2)}
+  .cd{position:absolute;font-size:12px;font-weight:600;color:var(--dt)}
+  .lb2{position:absolute;left:14px;font-size:11px;color:var(--dt3)}
+  .th{position:absolute;left:0;width:200px;height:56px}
+  .th.sel{background:var(--d2)}
+  .th .cb{position:absolute;left:0;top:0;bottom:0;width:3px}
+  .th .nm{position:absolute;left:14px;top:11px;font-size:13px;font-weight:500;color:var(--dt)}
+  .th .in{position:absolute;left:14px;top:30px;font-size:11px;color:var(--dt3)}
+  .th .bt{position:absolute;right:30px;top:17px;display:flex;gap:3px}
+  .th .bt span{width:20px;height:20px;border-radius:5px;background:var(--d2);font-size:10px;font-weight:600;color:var(--dt3);display:flex;align-items:center;justify-content:center}
+  .th.sel .bt span{background:var(--dl2);color:var(--dt2)}
+  .th .vm{position:absolute;right:12px;top:14px;width:8px;height:28px;display:flex;gap:2px;align-items:flex-end}
+  .th .vm i{flex:1;border-radius:1px;background:var(--c1)}
+  .rg{position:absolute;border-radius:4px;overflow:hidden}
+  .rg .tl{position:absolute;left:0;right:0;top:0;height:16px;font-size:10px;font-weight:600;color:#0E0E10;padding-left:6px;line-height:16px}
+  .rg i{position:absolute;border-radius:1px}
+  .ph{position:absolute;width:1.5px;background:var(--y)}
+  .tri{position:absolute;width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:8px solid var(--y)}
+  .eh{position:absolute;left:0;width:1120px;height:36px;background:var(--d1);border-top:1px solid var(--dl2)}
+  .tab{position:absolute;top:0;height:36px;font-size:12px;font-weight:500;color:var(--dt3);display:flex;align-items:center}
+  .tab.on{color:var(--dt);box-shadow:inset 0 -2px 0 var(--y)}
+  .tool{position:absolute;top:6px;width:26px;height:24px;border-radius:6px;color:var(--dt3)}
+  .tool.on{background:var(--dl2);color:var(--dt)}
+  .key{position:absolute;left:144px;width:56px;border-bottom:1px solid #D9D9DE;background:#FAFAFB}
+  .key.bk{background:#26262B;border-color:#1A1A1E;width:36px}
+  .kl{position:absolute;left:178px;font-size:9px;font-weight:600;color:#8C8C95}
+  .nt{position:absolute;border-radius:3px}
+  .nt span{position:absolute;left:5px;top:2px;font-size:9.5px;font-weight:600;color:#0E0E10}
+  .sel-note{position:absolute;left:16px;color:var(--dt)}
+  .sel-note .big{font-size:40px;font-weight:600;letter-spacing:-1px;line-height:1}
+  .sel-note .hz{font-size:12px;color:var(--dt2);margin-top:6px}
+  .sel-note .ok{display:inline-flex;align-items:center;gap:6px;margin-top:10px;height:22px;border-radius:11px;padding:0 9px;background:rgba(134,211,164,.12);color:var(--c1);font-size:11px;font-weight:500}
+  .sel-note .ok i{width:5px;height:5px;border-radius:50%;background:var(--c1)}
+  .pr{display:flex;justify-content:space-between;font-size:11.5px;color:var(--dt3);margin-top:8px;width:112px}
+  .pr b{color:var(--dt);font-weight:500}
+</style></head>
+<body>
+<div class="pg" data-root id="root">
+  <div class="a top"></div>
+  <div class="a wm">RESONA <small>이름 임시</small></div>
+  <div class="a song"><i></i>비 오는 새벽 <span>저장됨</span><span id="sdn"></span></div>
+  <div class="a tp" id="tp"></div>
+  <div class="a lcd"><span class="pos">9.1.000</span><span class="sep"></span><span class="f">92<small>BPM</small></span><span class="f">A<small>minor</small></span><span class="f">4/4</span><span class="sep"></span><span class="f" style="color:var(--dt2)">440<small>Hz</small></span></div>
+  <div class="a rt" id="rt"></div>
+  <div class="a rail" id="rail"></div>
+
+  <div class="a insp">
+    <div class="ttl"><i style="background:var(--c2)"></i>베이스</div>
+    <div class="st">일렉 베이스 · 물리 모델 줄</div>
+    <div class="sec">리전<span>베이스 1 · 1–8마디</span></div>
+    <div class="g2">
+      <div class="fd"><small>전조</small><b>0<em>st</em></b></div>
+      <div class="fd"><small>퀀타이즈</small><b>1/16</b></div>
+      <div class="fd"><small>세기 오프셋</small><b>+0</b></div>
+      <div class="fd"><small>이어 치기</small><b>80<em>ms</em></b></div>
+    </div>
+    <div class="sec">줄<span>물리 값</span></div>
+    <div class="g2">
+      <div class="fd"><small>줄 길이</small><b>864<em>mm</em></b></div>
+      <div class="fd"><small>뜯는 위치</small><b>18<em>%</em></b></div>
+      <div class="fd"><small>울림</small><b>4.0<em>s</em></b></div>
+      <div class="fd"><small>미세 조정</small><b>0<em>¢</em></b></div>
+    </div>
+    <div class="sec">이펙트<span>위에서 아래로</span></div>
+    <div class="fx"><i></i>채널 EQ<span>3밴드</span></div>
+    <div class="fx"><i></i>컴프레서<span>−3.2 dB</span></div>
+    <div class="fx add">+ 이펙트 추가</div>
+    <div class="sec">채널</div>
+    <div class="ch">
+      <div class="row"><span class="lb">볼륨</span><span class="tr"><i style="width:68%"></i><u style="left:calc(68% - 7px)"></u></span><b>−6.0 dB</b></div>
+      <div class="met"><i style="width:58%"></i></div>
+      <div class="row"><span class="lb">팬</span><span class="tr"><u style="left:calc(50% - 7px)"></u></span><b>C</b></div>
+      <div class="row"><span class="lb">보내기</span><span class="tr"><i style="width:30%"></i><u style="left:calc(30% - 7px)"></u></span><b>−12 dB</b></div>
+    </div>
+    <div class="ms"><span>M</span><span>S</span><span>R</span></div>
+  </div>
+
+  <div class="a ws" id="ws"></div>
+</div>
+<script>
+  const sv2 = (d, s = 18) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+  $('#sdn').innerHTML = sv2('<path d="M6 9l6 6 6-6"/>', 14);
+  $('#tp').innerHTML = `<b class="ic">${sv2('<path d="M6 5v14"/><path d="M19 5l-9 7 9 7z"/>', 16)}</b><b class="ic play">${ICON.play(12)}</b>
+    <b class="ic rec">${ICON.rec(11)}</b><b class="ic">${ICON.loop(16)}</b><b class="ic">${sv2('<path d="M9 3h6l4 18H5z"/><path d="M12 15l5-8"/>', 16)}</b>`;
+  $('#rt').innerHTML = `<b class="ic">${ICON.undo(17)}</b><b class="ic">${ICON.redo(17)}</b><span class="vs"></span>
+    <b class="ic">${sv2('<circle cx="12" cy="12" r="8.5"/><circle cx="8.5" cy="10" r="1.2"/><circle cx="12" cy="7.5" r="1.2"/><circle cx="15.5" cy="10" r="1.2"/>', 17)}</b>
+    <span class="ex" style="margin-left:6px">${ICON.export(15)}내보내기</span>`;
+  const R = $('#rail');
+  [['M3 6h18M3 12h18M3 18h12', 1], ['M6 4v16M12 4v16M18 4v16', 0], ['M3 12c3-6 6 6 9 0s6 6 9 0', 0], ['M4 5h5v14H4zM11 5h4v14h-4zM17 6l3 .8-3.5 13.5-3-.8z', 0]]
+    .forEach(([d, on], i) => { const b = el('b', 'ic' + (on ? ' on' : ''), sv2(`<path d="${d}"/>`, 19), R); b.style.top = (14 + i * 44) + 'px'; });
+  const bt = el('b', 'ic', sv2('<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/>', 19), R); bt.style.top = '794px';
+
+  // 작업 영역
+  const W = $('#ws'), HX = 200, LW = 920, BW = LW / 16, RT = 28;
+  const COL = ['var(--c6)', 'var(--c2)', 'var(--c1)', 'var(--c3)', 'var(--c4)', 'var(--c5)'];
+  const HEX = ['#6FCFD6', '#F2A97E', '#86D3A4', '#82B4F0', '#B9A2EE', '#F0A3BE'];
+  const hc = el('div', 'hc', null, W); Object.assign(hc.style, { top: '0', height: '460px' });
+  el('div', 'lb2', '트랙 6', W).style.top = '8px';
+  for (let b = 0; b <= 16; b++) { const v = el('div', 'vl' + (b % 4 === 0 ? ' b' : ''), null, W); Object.assign(v.style, { left: (HX + b * BW) + 'px', top: '0', height: '460px' });
+    if (b < 16) { const r = el('div', 'rul', String(b + 1), W); Object.assign(r.style, { left: (HX + b * BW + 6) + 'px', top: '8px' }); }
+    for (let q = 1; q < 4 && b < 16; q++) { const t = el('div', 'vl', null, W); Object.assign(t.style, { left: (HX + b * BW + q * BW / 4) + 'px', top: '22px', height: '6px' }); } }
+  const hl0 = el('div', 'hl', null, W); Object.assign(hl0.style, { left: '0', width: '1120px', top: RT + 'px' });
+  el('div', 'lb2', '구간', W).style.top = '33px'; el('div', 'lb2', '코드', W).style.top = '55px';
+  SONG.sections.forEach(([b, n]) => { const m = el('div', 'mk', n, W); Object.assign(m.style, { left: (HX + b * BW) + 'px', top: '32px' }); });
+  SONG.chords.forEach(([b, c]) => { const m = el('div', 'cd', c, W); Object.assign(m.style, { left: (HX + b * BW + 6) + 'px', top: '53px' }); });
+  const T0 = 76, TH = 56;
+  SONG.tracks.forEach((t, i) => {
+    const y = T0 + i * TH, c = HEX[i];
+    const hl = el('div', 'hl', null, W); Object.assign(hl.style, { left: '0', width: '1120px', top: y + 'px' });
+    const h = el('div', 'th' + (t.sel ? ' sel' : ''), `<i class="cb" style="background:${c}"></i><span class="nm">${t.name}</span><span class="in">${t.inst}</span>
+      <span class="bt"><span>M</span><span>S</span></span><span class="vm"><i style="height:${[70, 85, 50, 60, 40, 0][i]}%"></i><i style="height:${[64, 80, 46, 58, 36, 0][i]}%"></i></span>`, W);
+    h.style.top = y + 'px';
+    const g = rng(i * 13 + 5);
+    t.clips.forEach(([b, len], ci) => {
+      const sel = t.sel && ci === 0, x = HX + b * BW + 1, w = len * BW - 2, H = TH - 6;
+      const r = el('div', 'rg', `<div class="tl">${t.name.split(' ')[0]} ${ci + 1}</div>`, W);
+      Object.assign(r.style, { left: x + 'px', top: (y + 3) + 'px', width: w + 'px', height: H + 'px', background: rgba(c, .16), outline: sel ? '1.5px solid #FFFFFF' : 'none', outlineOffset: '-1px' });
+      r.querySelector('.tl').style.background = c;
+      const IH = H - 22;
+      if (t.kind === 'drum') for (let s = 0; s < len * 8; s++) { if (g() < .35) continue; const hi = s % 4 === 0 ? IH : IH * (.3 + g() * .35);
+        const e = el('i', '', null, r); Object.assign(e.style, { left: (4 + s * (w - 8) / (len * 8)) + 'px', width: '1.5px', height: hi + 'px', top: (19 + IH - hi) + 'px', background: c }); }
+      else if (t.kind === 'sampler') for (let s = 0; s < (w - 8) / 2.5; s++) { const hi = 1 + Math.abs(Math.sin(s * .41) * Math.sin(s * .07)) * IH;
+        const e = el('i', '', null, r); Object.assign(e.style, { left: (4 + s * 2.5) + 'px', width: '1.5px', height: hi + 'px', top: (19 + (IH - hi) / 2) + 'px', background: c }); }
+      else { const n = t.kind === 'synth' ? 4 : len * (t.kind === 'modal' ? 2 : 4);
+        for (let s = 0; s < n; s++) { if (g() < .12) continue; const cw = (w - 8) / n;
+          for (let k = 0; k < (t.kind === 'modal' ? 3 : 1); k++) { const e = el('i', '', null, r);
+            Object.assign(e.style, { left: (4 + s * cw) + 'px', width: (cw * (t.kind === 'synth' ? .95 : .55 + g() * .35)) + 'px', height: '2px', top: (21 + (g() * .8 + k * .07) * IH) + 'px', background: c }); } } }
+    });
+  });
+  const hlE = el('div', 'hl', null, W); Object.assign(hlE.style, { left: '0', width: '1120px', top: (T0 + 6 * TH) + 'px' });
+  const PX = HX + 8 * BW;
+  const ph = el('div', 'ph', null, W); Object.assign(ph.style, { left: (PX - .75) + 'px', top: '0', height: '460px' });
+  const tri = el('div', 'tri', null, W); Object.assign(tri.style, { left: (PX - 6) + 'px', top: '0' });
+
+  // 아래 편집기
+  const EY = 460, eh = el('div', 'eh', null, W); eh.style.top = EY + 'px';
+  [['음 편집', 1, 16], ['스텝', 0, 84], ['오토메이션', 0, 128], ['악기', 0, 208]].forEach(([n, on, x]) => { const t = el('div', 'tab' + (on ? ' on' : ''), n, eh); t.style.left = x + 'px'; });
+  const ti = el('div', 'tab', '<span style="color:var(--dt)">베이스 1</span>&nbsp;· 1–8마디 · 스냅 1/16', eh); ti.style.left = '300px';
+  ['pointer', 'pencil', 'scissors'].forEach((k, i) => { const b = el('b', 'tool ic' + (i === 0 ? ' on' : ''), ICON[k](15), eh); b.style.left = (1010 + i * 30) + 'px'; });
+  const PN = ['E2', 'D#2', 'D2', 'C#2', 'C2', 'B1', 'A#1', 'A1', 'G#1', 'G1', 'F#1', 'F1', 'E1'];
+  const PY = EY + 36, RT2 = 22, VH = 74, RH = (900 - 52 - PY - RT2 - VH) / 13, EW = LW / 8;
+  const hc2 = el('div', 'hc', null, W); Object.assign(hc2.style, { top: (PY) + 'px', height: (848 - PY) + 'px', width: '144px' });
+  for (let b = 0; b <= 8; b++) { const v = el('div', 'vl' + (b % 4 === 0 ? ' b' : ''), null, W); Object.assign(v.style, { left: (HX + b * EW) + 'px', top: PY + 'px', height: (848 - PY) + 'px' });
+    if (b < 8) { const r = el('div', 'rul', String(b + 1), W); Object.assign(r.style, { left: (HX + b * EW + 6) + 'px', top: (PY + 5) + 'px' }); } }
+  PN.forEach((p, i) => { const y = PY + RT2 + i * RH, bk = p.includes('#');
+    const k = el('div', 'key' + (bk ? ' bk' : ''), null, W); Object.assign(k.style, { top: y + 'px', height: RH + 'px' });
+    if (bk) { const s = el('div', 'hl', null, W); Object.assign(s.style, { left: HX + 'px', width: LW + 'px', top: y + 'px', height: RH + 'px', background: 'rgba(255,255,255,.018)' }); }
+    else { const s = el('div', 'hl', null, W); Object.assign(s.style, { left: HX + 'px', width: LW + 'px', top: y + 'px' }); }
+    if (!bk && /^[EAC]/.test(p)) { const l = el('div', 'kl', p, W); l.style.top = (y + RH / 2 - 6) + 'px'; } });
+  const BL = [[0, 3, 'A1'], [3, 1, 'E2'], [4, 4, 'A1'], [8, 3, 'F1'], [11, 1, 'C2'], [12, 4, 'F1'], [16, 3, 'C2'], [19, 1, 'G1'], [20, 4, 'C2'],
+              [24, 3, 'G1'], [27, 1, 'D2'], [28, 2, 'G1'], [30, 2, 'B1'], [32, 3, 'A1'], [35, 1, 'E2'], [36, 4, 'A1'], [40, 3, 'F1'], [43, 1, 'C2'],
+              [44, 4, 'F1'], [48, 3, 'C2'], [51, 1, 'G1'], [52, 4, 'C2'], [56, 4, 'G1'], [60, 4, 'E1']];
+  const VY = 848 - VH;
+  const vh = el('div', 'hl', null, W); Object.assign(vh.style, { left: '0', width: '1120px', top: VY + 'px', background: 'var(--dl2)' });
+  el('div', 'lb2', '세기', W).style.top = (VY + 8) + 'px';
+  BL.forEach(([s, l, p], i) => { const r = PN.indexOf(p), x = HX + s * EW / 8 + 1, w = l * EW / 8 - 2, sel = i === 2;
+    const n = el('div', 'nt', w > 26 ? `<span>${p}</span>` : null, W);
+    Object.assign(n.style, { left: x + 'px', top: (PY + RT2 + r * RH + 1.5) + 'px', width: w + 'px', height: (RH - 3) + 'px', background: sel ? 'var(--y)' : '#F2A97E' });
+    const v = [104, 72, 96, 100, 70, 92][i % 6], vhgt = v / 127 * (VH - 18);
+    const st = el('div', 'nt', null, W); Object.assign(st.style, { left: x + 'px', top: (848 - vhgt - 4) + 'px', width: '2px', height: vhgt + 'px', background: sel ? 'var(--y)' : 'rgba(242,169,126,.7)' });
+    const kn = el('div', 'nt', null, W); Object.assign(kn.style, { left: (x - 2.5) + 'px', top: (848 - vhgt - 7) + 'px', width: '7px', height: '7px', borderRadius: '50%', background: sel ? 'var(--y)' : '#F2A97E' }); });
+  const ph2 = el('div', 'ph', null, W); Object.assign(ph2.style, { left: (HX + 8 * EW - 1.5) + 'px', top: PY + 'px', height: (848 - PY) + 'px' });
+  // 선택한 음 읽기 (건반 왼쪽 빈 칸)
+  const sn = el('div', 'sel-note', `<div class="big">A1</div><div class="hz">54.91 Hz · −3 ¢</div><div class="ok"><i></i>+0.2 ¢ 오차</div>
+    <div class="pr" style="margin-top:14px">시작 글라이드<b>24¢</b></div><div class="pr">흔들림<b>15¢</b></div><div class="pr">세기<b>96</b></div><div class="pr">이어 치기<b>80ms</b></div>`, W);
+  sn.style.top = (PY + 18) + 'px';
+</script>
+<script src="../redesign-v4/extract4.js"></script>
+</body></html>
