@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>v5 06 Live Loops</title>
+<link rel="stylesheet" href="base.css"><script src="../redesign-v4/lib.js"></script><script src="shell.js"></script>
+<style>
+  .ws{left:56px;top:52px;width:1384px;height:848px}
+  .rh{position:absolute;left:0;width:196px;height:76px}
+  .rh .cb{position:absolute;left:0;top:0;bottom:0;width:3px}
+  .rh .nm{position:absolute;left:14px;top:14px;font-size:13px;font-weight:500;color:var(--dt)}
+  .rh .as{position:absolute;left:14px;top:34px;font-size:11px;color:var(--dt3)}
+  .rh .bt{position:absolute;left:14px;top:50px;display:flex;gap:3px}
+  .rh .bt span{width:20px;height:18px;border-radius:5px;background:var(--d2);font-size:10px;font-weight:600;color:var(--dt3);display:flex;align-items:center;justify-content:center}
+  .sc{position:absolute;top:44px;height:30px;border-radius:7px;background:var(--d2);color:var(--dt2);font-size:12px;font-weight:500;display:flex;align-items:center;gap:8px;padding:0 10px}
+  .sc.on{background:var(--dl2);color:var(--dt)}
+  .cell{position:absolute;border-radius:9px;overflow:hidden}
+  .cell .nm{position:absolute;left:9px;top:7px;font-size:11px;font-weight:600;color:#0E0E10}
+  .cell .ln{position:absolute;left:9px;bottom:7px;font-size:10px;color:rgba(14,14,16,.7)}
+  .cell i{position:absolute;border-radius:1px}
+  .cell .pr{position:absolute;left:0;bottom:0;height:3px;background:#0E0E10;opacity:.5}
+  .cell.q{outline:1.5px dashed var(--y);outline-offset:2px}
+  .cell.empty{background:var(--d1);border:1px dashed var(--dl2)}
+  .cell.play{box-shadow:0 0 0 2px var(--y)}
+  .div{position:absolute;width:44px;border-radius:7px;background:var(--d2);display:flex;align-items:center;justify-content:center}
+  .fx{position:absolute;left:196px;top:600px;width:1188px;height:248px;background:var(--d1);border-top:1px solid var(--dl2)}
+  .fx .h{position:absolute;left:16px;top:12px;font-size:12px;font-weight:600;color:var(--dt)}
+  .pad{position:absolute;top:44px;width:250px;height:184px;border-radius:12px;background:var(--d0);border:1px solid var(--dl2)}
+  .pad .t{position:absolute;left:12px;top:10px;font-size:11px;font-weight:600;color:var(--dt2)}
+  .pad .dot{position:absolute;width:18px;height:18px;border-radius:50%;background:var(--y);box-shadow:0 0 0 6px rgba(255,214,10,.15)}
+  .pad .ax{position:absolute;font-size:10px;color:var(--dt3)}
+  .btns{position:absolute;left:840px;top:44px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;width:330px}
+  .btns span{height:56px;border-radius:10px;background:var(--d2);color:var(--dt2);font-size:12px;font-weight:500;display:flex;align-items:center;justify-content:center}
+  .btns span.on{background:var(--y);color:#0E0E10}
+</style></head>
+<body>
+<div class="pg" data-root id="root"><div class="a ws" id="ws"></div></div>
+<script>
+  const root = $('#root');
+  shell(root, { rail: 'loops', pos: '17.1.000', phase: ['plan', '설계만'], playing: true });
+  const W = $('#ws');
+  at(el('div', 'hc', null, W), 0, 0, 196, 600);
+  at(el('div', 'lb2', '장면 → 누르면 그 열 셀을 한꺼번에', W), 14, 52);
+  const SC = ['인트로', '벌스 A', '벌스 B', '코러스', '브레이크', '코러스 2', '아웃트로'];
+  const CX = 206, CW = 128, CH = 64, RY = 86;
+  SC.forEach((n, i) => at(el('div', 'sc' + (i === 3 ? ' on' : ''), `${i < 7 ? ICON.play(9) : ''}${n}`, W), CX + i * (CW + 8), 44, CW));
+  const G = [[1, 1, 1, 1, 0, 1, 1, 0], [0, 1, 1, 1, 1, 1, 1, 0], [0, 0, 1, 1, 0, 1, 0, 0], [1, 1, 1, 1, 1, 1, 1, 0], [0, 0, 0, 1, 1, 1, 1, 0], [0, 0, 0, 1, 0, 1, 0, 0]];
+  SONG.tracks.forEach((t, r) => { const y = RY + r * (CH + 18);
+    at(el('div', 'rh', `<i class="cb" style="background:${HEX[r]}"></i><span class="nm">${t.name}</span><span class="as">${t.inst}</span><span class="bt"><span>M</span><span>S</span><span>R</span></span>`, W), 0, y - 6);
+    G[r].forEach((on, c) => { const x = CX + c * (CW + 8);
+      if (!on) { if (c < 7) at(el('div', 'cell empty', null, W), x, y, CW, CH); return; }
+      const play = c === 3, q = c === 5 && r < 3;
+      const cl = at(el('div', 'cell' + (play ? ' play' : '') + (q ? ' q' : ''), `<span class="nm">${t.name.split(' ')[0]} ${SC[c]}</span><span class="ln">${[4, 8, 2, 4, 1, 8, 4][c]}마디${play ? ' · 재생 중' : q ? ' · 다음 마디부터' : ''}</span>`, W), x, y, CW, CH);
+      cl.style.background = play ? HEX[r] : rgba(HEX[r], .55);
+      const g = rng(r * 9 + c); for (let k = 0; k < 14; k++) if (g() > .35) at(el('i', '', null, cl), 10 + k * 8, 26 + g() * 16, 5, 2).style.background = 'rgba(14,14,16,.55)';
+      if (play) { const p = el('div', 'pr', null, cl); p.style.width = '62%'; } });
+    at(el('div', 'div', ICON.stop(10), W), CX + 7 * (CW + 8) + 8, y + 10, null, 44).style.color = r < 4 ? 'var(--y)' : 'var(--dt3)'; });
+  at(el('div', 'lb2', '셀 멈춤 · 트랙 영역으로', W), CX + 7 * (CW + 8) - 40, 18);
+  // Remix FX
+  const F = el('div', 'fx', '<span class="h">Remix FX — 실시간 이펙트 · 마스터에 걸림</span>', W);
+  [['필터 · 울림', '컷오프', '공진', .66, .3], ['리피터 · 게이트', '박 나누기', '섞기', .4, .62], ['다운샘플 · 비트크러셔', '샘플레이트', '비트', .2, .5]].forEach(([t, ax, ay, dx, dy], i) => {
+    const p = at(el('div', 'pad', `<span class="t">${t}</span><span class="ax" style="left:12px;bottom:8px">${ax} →</span><span class="ax" style="right:10px;top:10px">↑ ${ay}</span>`, F), 16 + i * 270, 44);
+    at(el('span', 'dot', null, p), dx * 230, (1 - dy) * 164); });
+  el('div', 'btns', '<span>뒤로 감기</span><span class="on">스크래치</span><span>테이프 정지</span><span>리버스</span><span>박자 반복 1/8</span><span>저역 끄기</span>', F);
+</script>
+<script src="../redesign-v4/extract4.js"></script>
+</body></html>

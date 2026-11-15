@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>v5 07 오토메이션</title>
+<link rel="stylesheet" href="base.css"><script src="../redesign-v4/lib.js"></script><script src="shell.js"></script>
+<style>
+  .insp{left:56px;top:52px;width:264px;height:848px}
+  .tree{margin-top:4px}
+  .tree .g{font-size:12px;font-weight:600;color:var(--tx2);margin:10px 0 2px}
+  .tree .p{height:26px;display:flex;align-items:center;gap:8px;padding:0 8px;border-radius:6px;font-size:12.5px}
+  .tree .p.on{background:var(--sub2);font-weight:600}
+  .tree .p i{width:6px;height:6px;border-radius:50%;background:var(--y);flex:none}
+  .tree .p span{margin-left:auto;font-size:11px;color:var(--tx3)}
+  .seg span{padding:0 7px;white-space:nowrap}
+  .shape{display:flex;gap:6px}
+  .shape span{flex:1;height:38px;border-radius:8px;background:var(--sub);display:flex;align-items:center;justify-content:center}
+  .shape span.on{background:var(--tx)}
+  .ws{left:320px;top:52px;width:1120px;height:848px}
+  .th{position:absolute;left:0;width:200px}
+  .th .cb{position:absolute;left:0;top:0;bottom:0;width:3px}
+  .th .nm{position:absolute;left:14px;top:10px;font-size:13px;font-weight:500;color:var(--dt)}
+  .th .in{position:absolute;left:14px;top:29px;font-size:11px;color:var(--dt3)}
+  .sub{position:absolute;left:0;width:200px;background:var(--d1)}
+  .sub.sel{background:var(--d2)}
+  .sub .p{position:absolute;left:24px;top:9px;font-size:12px;font-weight:500;color:var(--dt)}
+  .sub .m{position:absolute;left:24px;top:28px}
+  .sub .v{position:absolute;right:12px;top:9px;font-size:13px;font-weight:600;color:var(--dt)}
+  .rg{position:absolute;border-radius:4px;overflow:hidden}
+  .rg .tl{position:absolute;left:0;right:0;top:0;height:14px;font-size:10px;font-weight:600;color:#0E0E10;padding-left:6px;line-height:14px}
+  .rg i{position:absolute;border-radius:1px}
+  .bub{position:absolute;height:28px;border-radius:7px;background:#26262B;color:var(--dt);font-size:12px;display:flex;align-items:center;gap:8px;padding:0 10px;white-space:nowrap;box-shadow:0 6px 16px rgba(0,0,0,.35)}
+  .bub b{font-weight:600;color:var(--y)}
+</style></head>
+<body>
+<div class="pg" data-root id="root">
+  <div class="a insp">
+    <div class="ttl"><i style="background:var(--c2)"></i>오토메이션</div><div class="st">베이스 · 볼륨 · 점 2개 선택</div>
+    <div class="sec">모드</div>
+    <div class="seg" style="white-space:nowrap"><span>끔</span><span class="on">읽기</span><span>터치</span><span>래치</span><span>쓰기</span><span>트림</span></div>
+    <div class="sec">선택한 점</div>
+    <div class="g2"><div class="fd"><small>값</small><b>−6.0<em>dB</em></b></div><div class="fd"><small>위치</small><b>9.1.000</b></div></div>
+    <div class="sec">곡선 모양<span>앞 점 → 이 점</span></div>
+    <div class="shape" id="shape"></div>
+    <div class="sec">파라미터<span>모든 값이 대상</span></div>
+    <div class="tree" id="tree"></div>
+  </div>
+  <div class="a ws" id="ws"></div>
+</div>
+<script>
+  const root = $('#root');
+  shell(root, { rail: 'arrange', pos: '9.1.000', phase: ['part', '일부 구현'] });
+  [['M4 20 L20 4', 1], ['M4 20 C 12 20, 12 4, 20 4'], ['M4 20 C 4 8, 12 4, 20 4'], ['M4 20 L12 20 L12 4 L20 4']].forEach(([d, on]) =>
+    el('span', on ? 'on' : '', `<svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="${d}" stroke="${on ? '#fff' : '#0B0B0C'}" stroke-width="1.8" stroke-linecap="round"/></svg>`, $('#shape')));
+  const T = $('#tree');
+  [['채널', [['볼륨', '−6.0 dB', 1, 1], ['팬', 'C'], ['뮤트', '끔'], ['보내기 · 리버브', '−12 dB', 0, 1]]], ['악기 · 일렉 베이스', [['뜯는 위치', '18 %', 0, 1], ['감쇠', '0.060'], ['톤', '3.2 kHz']]],
+    ['이펙트 · 채널 EQ', [['저역', '+3.0 dB'], ['중역', '−4.0 dB']]], ['이펙트 · 컴프레서', [['스레숄드', '−18 dB'], ['레이시오', '3 : 1']]]].forEach(([g, ps]) => {
+    el('div', 'g', g, T); ps.forEach(([n, v, on, has]) => el('div', 'p' + (on ? ' on' : ''), `${has ? '<i></i>' : ''}${n}<span>${v}</span>`, T)); });
+  const W = $('#ws'), HX = 200, BW = 920 / 16;
+  at(el('div', 'hc', null, W), 0, 0, 200, 848);
+  for (let b = 0; b <= 16; b++) { at(el('div', 'vl' + (b % 4 === 0 ? ' b' : ''), null, W), HX + b * BW, 0, null, 848); if (b < 16) at(el('div', 'rul', String(b + 1), W), HX + b * BW + 6, 8); }
+  at(el('div', 'hl', null, W), 0, 28, 1120);
+  const L = [{ t: 0, h: 52 }, { t: 1, h: 52 }, { s: '볼륨', t: 1, h: 96, sel: 1, m: '읽기', v: '−6.0 dB' }, { s: '보내기 · 리버브', t: 1, h: 70, m: '터치', v: '−12 dB' },
+    { s: '덕킹 (원천: 킥)', t: 1, h: 60, m: '자동', v: '−8 dB', duck: 1 }, { s: '뜯는 위치', t: 1, h: 70, m: '읽기', v: '18 %' }, { t: 4, h: 52 }, { s: '필터 컷오프', t: 4, h: 96, m: '래치', v: '2.4 kHz' }, { t: 3, h: 52 }, { t: 2, h: 52 }];
+  let y = 28;
+  L.forEach((l, i) => { const c = HEX[l.t], tr = SONG.tracks[l.t];
+    at(el('div', 'hl', null, W), 0, y, 1120);
+    if (!l.s) { at(el('div', 'th', `<i class="cb" style="background:${c}"></i><span class="nm">${tr.name}</span><span class="in">${tr.inst}</span>`, W), 0, y, null, l.h);
+      const g = rng(i * 7 + 2); tr.clips.forEach(([b, len], ci) => { const r = at(el('div', 'rg', `<div class="tl">${tr.name.split(' ')[0]} ${ci + 1}</div>`, W), HX + b * BW + 1, y + 3, len * BW - 2, l.h - 6);
+        r.style.background = rgba(c, .16); r.querySelector('.tl').style.background = c;
+        for (let s = 0; s < len * 4; s++) if (g() > .3) at(el('i', '', null, r), 4 + s * (len * BW - 10) / (len * 4), 20 + g() * 22, tr.kind === 'drum' ? 1.5 : 9, tr.kind === 'drum' ? 12 : 2).style.background = c; });
+    } else {
+      at(el('div', 'sub' + (l.sel ? ' sel' : ''), `<span class="p">${l.s}</span><span class="m"><span class="dchip">${l.m}</span></span><span class="v">${l.v}</span>`, W), 0, y, null, l.h);
+      const top = 10, H = l.h - 20; let pts;
+      if (l.s === '볼륨') pts = [[0, .7], [4, .7], [7.5, .7], [8, .55], [12, .55], [14, .85], [16, .85]];
+      else if (l.duck) { pts = []; for (let q = 0; q < 64; q++) { const hit = [0, 4, 7, 10, 12].includes(q % 16); pts.push([q / 4, hit ? .25 : .95]); pts.push([q / 4 + .18, .95]); } }
+      else if (l.s.startsWith('보내기')) pts = [[0, .4], [8, .4], [8.5, .7], [12, .7], [12.5, .4], [16, .4]];
+      else if (l.s === '뜯는 위치') pts = [[0, .3], [8, .3], [12, .6], [16, .2]];
+      else pts = [[8, .2], [10, .8], [12, .5], [14, .9], [16, .4]];
+      const P = pts.map(([b, v]) => [HX + b * BW, y + top + (1 - v) * H]);
+      const line = P.map((p, k) => (k ? 'L' : 'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join(' ');
+      let dots = ''; if (!l.duck) P.forEach(([x, yy], k) => { const s = l.sel && (k === 3 || k === 4); dots += `<circle cx="${x}" cy="${yy}" r="${s ? 5 : 3.5}" fill="${s ? '#FFD60A' : '#0E0E10'}" stroke="${s ? '#FFD60A' : c}" stroke-width="2"/>`; });
+      at(el('div', '', `<svg width="1120" height="848" fill="none"><path d="${line} L ${P[P.length - 1][0]} ${y + top + H} L ${P[0][0]} ${y + top + H} Z" fill="${rgba(c, .12)}"/><path d="${line}" stroke="${c}" stroke-width="1.8"/>${dots}</svg>`, W), 0, 0).style.position = 'absolute';
+      if (l.sel) at(el('div', 'bub', '값 <b>−6.0 dB</b> 9.1.000 · 직선', W), HX + 8 * BW + 12, y + 4);
+    }
+    y += l.h; });
+  at(el('div', 'hl', null, W), 0, y, 1120);
+  at(el('div', 'ph', null, W), HX + 8 * BW, 0, null, 848);
+  at(el('div', 'tri', null, W), HX + 8 * BW - 6, 0);
+</script>
+<script src="../redesign-v4/extract4.js"></script>
+</body></html>
