@@ -1,0 +1,2398 @@
+# Logic Pro for Mac 13.0 사용 설명서 목차 (원문)
+
+출처: support.apple.com/guide/logicpro (2026-11-16 수집). `LOGIC_PARITY.md` 대조표의 근거. 자동 생성 — 손으로 고치지 않는다.
+
+
+## Welcome
+
+## What’s new in Logic Pro
+- What’s new in Logic Pro 13
+- What’s new in Logic Pro 12
+
+## Logic Pro basics
+- What is Logic Pro for Mac?
+- Logic Pro interface overview
+  - Main window interface
+  - Tracks area interface
+  - Browser interface
+  - Inspector interface
+  - Mixer interface
+  - Smart Controls interface
+  - Editors
+    - Audio Track Editor interface
+    - Piano Roll Editor interface
+    - Session Player Editor interface
+    - Score Editor interface
+    - Step Editor interface
+    - Audio File Editor interface
+  - Note Pads
+    - Project notes interface
+    - Track notes interface
+  - List Editors
+    - Event List interface
+    - Marker List interface
+    - Tempo List interface
+    - Signature List interface
+  - Project Files
+    - Project Audio Browser interface
+    - All Files Browser interface
+- Logic Pro project basics
+- Work with windows
+  - Open and close windows
+  - Move and resize windows
+  - Zoom windows
+  - Scale plug-in windows
+  - Move through display levels
+  - Control windows using Catch modes
+  - Control window relationships
+  - Control windows using screensets
+    - Create, recall, and switch screensets
+    - Protect, copy, rename, and delete screensets
+    - Import screensets
+    - Revert to saved screensets
+- Work with tools
+  - Tools overview
+  - Assign tools
+  - Common tools
+- Undo and redo edits
+- Download additional sound packs
+- Apple Creator Studio
+  - What is Apple Creator Studio?
+  - Subscribe to Apple Creator Studio
+  - Use intelligence features
+- How to get help
+
+## Connect external devices
+- Hardware connection overview
+- Connect audio devices
+  - Audio devices overview
+  - Connect a microphone
+  - Connect an electric instrument
+  - Connect an audio interface
+  - Connect speakers
+  - Configure a connected audio device
+  - Configure Apogee devices
+- Connect MIDI devices
+  - MIDI devices overview
+  - Connect a USB music keyboard
+  - Connect MIDI keyboards and modules
+  - About multichannel MIDI devices
+  - Stop local sound generation
+- Use virtual MIDI devices in Logic Pro
+  - Virtual MIDI devices overview in Logic Pro for Mac
+  - Record MIDI messages from another music app
+  - Send MIDI messages to another music app
+- Use an iPad as a second display
+
+## Find and use sounds in the Browser
+- Intro to the Browser
+- Overview of loops, one-shots, and patches
+  - Loops and one-shots overview
+  - Patches overview
+- Search for sounds in the Browser
+- Work with the results list
+- Add loops and one-shots to your project
+- Load patches into your project
+- Save and manage your sounds
+- Access and load plug-in presets in the Browser
+- Add your own locations to the Browser
+- Keyboard mapping for performance patches
+
+## Work with projects
+- Projects overview
+- Create projects
+- Open projects
+- Save projects
+- Delete projects
+- Play and navigate projects
+  - Play a project
+  - Set the playhead position
+  - Control playback with the transport buttons
+  - Use transport shortcut menus
+  - Use transport key commands
+  - Customize the control bar
+  - Change the Display mode in Logic Pro for Mac
+  - Monitor and reset MIDI events
+  - Use the cycle area
+  - Use the Chase Events function
+- Use Logic Remote to control Logic Pro projects
+- Set project properties
+  - Project properties overview
+  - Set the project tempo
+  - Set the project key signature
+  - Set the project time signature
+  - Set the project sample rate
+  - Set the project start and end points
+  - Set the project playback volume
+- Manage projects
+  - Project management overview
+  - Use project alternatives and backups
+  - Clean up projects
+  - Manage project assets
+  - Consolidate assets in a project
+  - Rename projects
+  - Copy and move projects
+  - Import data and settings from other projects
+- Preview projects in the Finder
+- Listen to an audio preview of a project
+- Close projects
+- View project information
+
+## Work with tracks
+- Tracks overview
+- Track basics
+  - Create tracks
+  - Create tracks using drag and drop
+  - Create tracks using existing channel strips
+  - Assign tracks to different channel strips
+  - Choose the default region type for software instrument tracks
+  - Select tracks
+  - Duplicate tracks
+  - Rename tracks
+  - Change track icons
+  - Change track colors
+  - Reorder tracks
+  - Zoom tracks
+  - Set the default patch for a track type in Logic Pro for Mac
+  - Replace or double drum sounds
+- Use track header controls
+  - Track header overview
+  - Mute tracks
+  - Solo tracks
+  - Set track volume levels
+  - Set track pan positions
+  - Make tracks ready for recording
+  - Use input monitoring
+  - Use track alternatives
+  - Turn off tracks
+  - Protect tracks
+  - Freeze tracks
+  - Hide tracks
+  - Delete tracks
+  - Edit multiple tracks
+- Work with track stacks
+  - Track stacks overview
+  - Create and edit track stacks
+  - Track stacks and the Browser
+  - Track stacks and the Mixer
+- Control timing with the groove track
+- Work with articulations
+  - Articulation editing overview
+  - Manage articulations in the Editors
+  - Manage articulations for software instruments
+  - Manage articulations with the Articulation Set Editor
+- Bounce tracks and regions in place
+  - Bounce in place overview
+  - Bounce a track in place
+  - Bounce all tracks in place
+  - Bounce regions in place
+- Use selection-based processing
+- Export tracks and regions
+  - Export tracks as a MainStage patch or set in Logic Pro for Mac
+  - Export tracks as audio files
+  - Export regions as audio files
+  - Move audio files used for audio regions
+  - Export MIDI regions
+- Edit track parameters
+
+## Use the intelligent assistant
+
+## Play software instruments
+- Play software instruments
+- Use the Play Surface
+  - Play Surface overview
+  - Use the keyboard Play Surface
+  - Use the Chord Strips
+  - Use the drum pads Play Surface
+  - Use the side controls
+- Use musical typing
+- Use the Touch Bar
+
+## Record your voice or a musical instrument
+- Overview
+- Record audio
+  - Before recording audio
+  - Record sound from a microphone or an electric instrument
+  - Record multiple audio takes
+  - Record to multiple audio tracks
+  - Punch in and out of audio recordings
+  - Replace audio recordings
+  - Delete audio recordings
+- Record software instruments
+  - Before recording software instruments
+  - Record software instruments
+  - Record additional software instrument takes
+  - Overdub software instrument recordings
+  - Spot erase software instrument recordings
+  - Use Note Repeat
+  - Replace software instrument recordings
+  - Record to multiple software instrument tracks
+  - Record multiple MIDI devices to multiple tracks
+  - Record software instruments and audio simultaneously
+  - Use step input recording techniques
+  - Record MIDI messages from another music app
+  - Route MIDI internally to software instrument tracks
+- Use the metronome
+- Advanced recording techniques
+  - Advanced recording commands
+  - Color takes while recording
+  - Mark takes while recording
+  - Use Flashback Capture
+    - Overview of Flashback Capture
+    - Capture your most recent MIDI performance
+    - Capture a recent audio performance
+- Comp your audio recordings
+  - Comping overview
+  - Preview take recordings
+  - Create, save, edit, and rename comps
+    - Create and save comps
+    - Edit comps
+    - Rename takes and comps
+    - Delete takes and comps
+  - Edit take regions
+    - Edit start and end points of take regions
+    - Cut take folders and take regions
+    - Move take folders and take regions
+  - Manage take folder contents
+    - Export takes and comps
+    - Move takes and comps
+    - Flatten and merge take folders
+    - Unpack take folders
+    - Pack regions into take folders
+
+## Import and manage project files
+- Import and manage project files in Logic Pro
+- Import and search for files
+  - Import media files
+  - Search for media files
+  - Media file search conditions
+- Bookmark folders in the All Files Browser
+- Use the Project Audio Browser
+  - Project Audio Browser overview
+  - Add and delete audio files in the Project Audio Browser
+  - Play audio regions in the Project Audio Browser
+  - Sort, group, and rename audio files
+  - Move, copy, and convert audio files
+  - Export and import audio region information
+- Import compressed audio files
+- Supported media and file formats
+  - Media and file formats overview
+  - GarageBand projects
+  - Final Cut Pro XML files
+  - Standard MIDI files
+  - AAF files
+
+## Arrange a project
+- Arranging overview
+- Work in the Tracks area
+  - Tracks area overview
+  - Position items using the ruler
+  - Position items using alignment guides
+  - Snap items to the grid
+  - Automatically zoom the Tracks area
+  - Quantize regions
+  - Control positioning with drag modes
+  - Scrub a project
+  - Scroll and zoom in the Tracks area
+  - Customize the toolbar
+- Arrange regions in the Tracks area
+  - Regions overview
+  - Select regions
+  - Select parts of regions
+  - Cut, copy, and paste regions
+  - Move regions
+  - Add or remove gaps
+  - Delay region playback
+  - Loop regions
+  - Repeat regions
+  - Resize regions
+  - Mute and solo regions
+  - Time stretch regions
+  - Reverse audio regions
+  - Split regions
+  - Demix MIDI regions
+  - Join regions
+  - Create regions in the Tracks area
+  - Change the gain of audio regions in the Tracks area
+  - Normalize audio regions in the Tracks area
+  - Create aliases of MIDI regions
+  - Convert repeated MIDI regions to loops
+  - Change the color of regions
+  - Convert a MIDI region into a pattern region in Logic Pro for Mac
+  - Replace a MIDI region with a Session Player region in Logic Pro for Mac
+  - Convert audio regions to samples for a sampler instrument
+  - Rename regions
+  - Delete regions
+- Work with chords
+  - Chords overview
+  - Add and delete chords
+  - Select chords
+  - Cut, copy, and paste chords
+  - Move and resize chords
+  - Loop chords on the Chord track
+  - Transpose chords
+  - Edit chords
+  - Work with chord groups
+  - Use chord progressions
+  - Change the chord rhythm
+  - Choose which chords a Session Player region follows
+  - Analyze the key signature of a range of chords
+  - Analyze the chords in audio or MIDI regions in Logic Pro for Mac
+- Create fades and crossfades on audio regions
+  - Create fades on audio regions
+  - Edit fades
+  - Create automatic crossfades
+  - Delete fades
+- Extract vocal and instrumental stems with Stem Splitter
+- Remove silent passages from audio files
+  - Remove silent passages
+  - Uses for Remove Silence
+- Work with folders
+  - Folders overview
+  - Pack and unpack folders
+  - Open and close folders
+  - Add and remove regions from folders
+- Create groove templates
+- Edit region parameters
+  - Use the Region inspector
+  - Audio region parameters
+  - MIDI region parameters
+  - MIDI quantization types
+  - Quantize parameter values
+  - Advanced quantization parameters
+
+## Edit audio regions in the Audio Track Editor
+- Overview
+- Select audio regions
+- Cut, copy, and paste audio regions
+- Move audio regions
+- Trim audio regions
+- Split and join audio regions
+- Snap edits to zero crossings
+- Delete audio regions
+- Use Flex Time and Pitch in the Logic Pro for Mac Audio Track Editor
+- Use automation in the Audio Track Editor
+
+## Edit MIDI regions in the Piano Roll Editor
+- Overview
+- Add and edit notes
+  - Add notes
+  - Select notes
+  - Snap items to the grid
+  - Move notes
+  - Copy notes
+  - Change the pitch of notes
+  - Resize notes
+  - Edit note velocity
+  - Quantize the timing of notes
+  - Quantize the pitch of notes
+  - Change note articulations
+  - Lock the position of events
+  - Mute notes
+  - Change note color
+  - View note labels
+  - Delete notes
+  - Time stretch notes
+- View multiple MIDI regions
+- Split chords
+- Automation/MIDI area in the Piano Roll Editor
+- Open other editors
+
+## Work with Session Players
+- Session Players overview
+- The Session Player Editor
+- Choose a Session Player type and style
+- Chords and Session Players
+- Choose Session Player presets
+- Edit a Session Player performance
+  - Edit a Session Player performance
+  - Edit a Keyboard Player performance
+  - Edit a Bass Player performance
+  - Edit a Synth Player performance
+    - Intro to Synth Player styles
+    - Change Synth Player LFO settings
+    - Edit a Synth Bass Player performance
+    - Edit a Synth Keyboard Player performance
+  - Edit a Drummer performance
+  - Create a custom pattern
+- Regenerate a Session Player performance
+- Follow rhythm of chords and other tracks
+- Work with Drummer multi-channel kits
+- Convert Session Player regions into MIDI or pattern regions
+
+## Edit the timing and pitch of audio
+- Flex Time and Pitch overview
+- Edit the timing of audio
+  - Flex Time algorithms and parameters
+  - Quantize Flex Time activated tracks
+  - Time stretch using flex markers
+  - Time stretch using marquee selections
+  - Flex tool time stretching
+  - Delete, reset, and move flex markers
+- Edit the pitch of audio
+  - Flex Pitch algorithm and parameters
+  - Edit pitch and timing with Flex Pitch
+  - Quickly edit audio pitch in the Tracks area
+  - Correct the timing of audio regions with Flex Pitch
+  - Quantize the pitch of audio regions
+  - Create MIDI from audio recordings
+  - Change the gain of notes in audio regions
+- Use Varispeed to alter the speed and pitch of audio
+
+## Advanced edit features
+- Logic Pro for Mac advanced editors overview
+- Event List
+  - Event List overview
+  - Event List display options
+    - View events and regions in the Event List
+    - Filter event types
+    - View events outside the display area
+    - Change the position and width of columns in the Event List
+  - Select and create events in the Event List
+    - Select events in the Event List
+    - Create events in the Event List
+  - Edit events in the Event List
+    - Edit events overview
+    - Change the position and length of events
+    - Protect the position of events
+    - Change event values
+    - Edit articulation IDs for note events
+    - Mute and delete regions and events
+  - Event Types
+    - Note events
+    - Control change events
+    - Pitch bend events
+    - Program change events
+    - Aftertouch events
+    - Poly aftertouch events
+    - SysEx events
+    - Meta events
+  - Event Float window
+- Step Editor
+  - Step Editor overview
+  - Create and edit steps in the Step Editor
+    - Change the grid and step display
+    - Create steps in the Step Editor
+    - Select steps in the Step Editor
+    - Delete steps in the Step Editor
+    - Restore deleted steps in the Step Editor
+    - Change step values in the Step Editor
+    - Move and copy steps in the Step Editor
+    - Protect the position of steps
+  - Lane parameters
+    - Lane parameters overview
+    - Create lanes
+    - Edit Lane parameters
+    - Use the Lane inspector
+  - Use Lane Sets
+- Audio File Editor
+  - Audio File Editor overview
+  - Audio File Editor interface
+    - Audio File Editor interface overview
+    - Change the waveform display
+    - Change the waveform amplitude scale
+    - Change the ruler display
+  - Play audio files in the Audio File Editor
+  - Navigate audio files in the Audio File Editor
+  - Make selections in the Audio File Editor
+    - Make basic selections
+    - Use transient markers to make selections
+    - Set project tempo with selected audio
+  - Edit and process audio in the Audio File Editor
+    - Audio File Editor edit commands
+    - Edit audio files with transient markers
+    - Use the Audio File Editor Pencil tool
+    - Trim or silence audio files
+    - Remove DC offset
+    - Set audio file levels
+    - Normalize audio files
+    - Fade audio files
+    - Reverse audio and invert phase
+    - Audio File Editor Loop commands
+    - Undo Audio File Editor edits
+    - Backup audio files
+  - Use an external sample editor
+- MIDI Transform window
+  - MIDI Transform window overview
+  - Use MIDI transform sets
+  - MIDI Transform window presets
+  - MIDI Transform window parameters
+    - MIDI Transform window parameters overview
+    - Set selection conditions
+    - Set operations parameters
+    - Use the MIDI Transform map
+    - Exchange parameter values
+  - MIDI Transform window examples
+
+## Mix a project
+- Mixing overview
+- Mixer channel strips
+  - Channel strip types
+  - Channel strip controls
+- Set channel strip volume and check levels
+  - Peak level display and signal clipping
+  - Set volume levels
+  - Check levels
+  - Set pre-fader metering in Logic Pro for Mac
+- Set channel strip input format
+- Set channel strip pan or balance positions
+- Mute and solo channel strips
+- Reorder channel strips in the Mixer
+- Work with plug-ins
+  - Plug-ins overview
+  - Add, remove, move, and copy plug-ins
+  - Search for plug-ins in the Mixer
+  - Insert a plug-in on a track using drag and drop
+  - Activate plug-ins on inactive channel strips
+  - Use the Channel EQ
+  - Work in the plug-in window
+  - Work with plug-in settings
+  - Work with plug-in latencies
+  - Work with Audio Units in Logic Pro for Mac
+  - Use MPE with software instruments
+  - Use the Plug-in Manager
+- Work with channel strip settings
+- Control channel strip signal flow in the Mixer
+  - Route audio via insert effects
+  - Route audio via send effects
+  - Adjust panning for sends independently
+  - Use aux channel strips
+    - Aux channel strips overview
+    - Create mix subgroups
+    - Send a mix to multiple destinations
+  - Use multi-output instruments
+  - Use output channel strips
+  - Define a channel strip’s stereo output
+  - Define a channel strip’s mono output
+  - Create tracks for signal flow channel strips
+- Work with Mixer groups
+  - Groups overview
+  - Group Settings window
+  - Create and delete groups in Logic Pro for Mac
+  - Edit group membership
+  - Automate groups
+  - Edit groups
+  - Use VCA groups
+- Surround panning
+- Binaural panning
+  - Binaural panning overview
+  - Use the Binaural Panner
+  - Work in the Binaural Panner window
+  - Use the Binaural Post-Processing plug-in
+- Work with MIDI channel strips
+  - MIDI channel strips overview
+  - Adjust elements of MIDI channel strips
+  - Save and restore MIDI channel strip settings
+- Customize the Mixer
+  - Change the Mixer view
+  - Navigate within the Mixer
+  - View channel strips linked to folder tracks
+  - Rename channel strips
+  - Show track notes in the Mixer
+  - View control surface bars
+  - Link control surfaces to the Mixer
+- Use the I/O Labels window
+- Undo and redo Mixer and plug-in adjustments
+
+## Automate mix and effects settings
+- Automation overview
+- Track automation vs. region automation
+- Show automation curves
+- Choose automation modes
+- Add automation to tracks
+  - Add automation points
+  - Record live automation
+- Adjust automation
+  - Adjust automation points on the automation track
+  - Adjust a range of automation points
+- Select, copy, move, and delete automation
+  - Select, copy, and move automation
+  - Delete automation
+- Snap automation to grid positions
+- Edit automation in the Automation Event List
+- Write automation with external controllers
+
+## Use Smart Controls
+- Smart Controls overview
+- Show Smart Controls for master effects
+- Choose a Smart Control layout
+- Automatic MIDI controller assignment
+- Map screen controls automatically
+- Map screen controls
+- Edit mapping parameters
+- Use parameter mapping graphs
+- Open the plug-in window for a screen control
+- Rename a screen control
+- Use articulation IDs to change articulations
+- Assign hardware controls to screen controls
+- Compare Smart Control edits with saved settings
+- Use the Arpeggiator
+- Automate screen control movements
+
+## Use Live Loops
+- Live Loops overview
+- Start and stop cells
+- Work with Live Loops cells
+- Record to cells
+  - Record to cells
+  - Record and edit takes in cells
+- Change loop settings for cells
+- How the Live Loops grid and Tracks area interact
+- Edit cells
+- Edit scenes
+- Work in the Cell Editor
+- Bounce cells
+- Record a Live Loops performance
+- Change Live Loops grid settings
+- Control Live Loops with other devices
+
+## Use Step Sequencer
+- Step Sequencer overview
+- Use Step Sequencer with Drum Machine Designer
+- Create Step Sequencer patterns
+  - Pattern creation basics
+  - Change the musical length of a pattern
+  - Use edit modes
+  - Randomize a pattern or row
+  - Pattern creation examples
+- Chords and pitch in Step Sequencer
+- Record Step Sequencer patterns live
+- Step record Step Sequencer patterns
+- Load and save patterns
+- Modify pattern playback
+- Select steps and rows
+- Edit steps
+- Edit rows
+- Step Sequencer inspector
+- Customize Step Sequencer
+
+## Edit global project settings
+- Global changes overview
+- Use the global tracks
+  - Global tracks overview
+  - Show and hide global tracks
+  - Resize and reorder global tracks
+- Work with markers
+  - Markers overview
+  - Add markers
+  - Edit markers
+  - Rename markers
+  - Navigate using markers
+  - Use marker sets
+  - Customize how markers appear
+  - Use marker information
+  - Delete markers
+- Build a project with arrangement markers
+  - Arrangement markers overview
+  - Add arrangement markers
+  - Edit arrangement markers
+- Work with time and key signatures
+  - Time and key signature overview
+  - Create time signature changes
+  - Create key signature changes
+  - Edit time and key signatures
+  - Delete signatures
+  - Use signature sets
+- Control transposition with the Pitch Source parameter
+- Work with tempo
+  - Tempo overview
+  - Create tempo changes with the Tempo track
+    - Tempo track overview
+    - Add and edit tempo points
+    - Move and copy tempo points
+    - Create tempo curves
+  - Use the Tempo List
+    - Tempo List overview
+    - Add tempo changes in the Tempo List
+    - Use tempo sets
+  - Use Smart Tempo
+    - Smart Tempo overview
+    - Use free tempo recording
+    - Choose the Project Tempo mode
+    - Choose the Smart Tempo setting
+    - Use Smart Tempo with multitrack audio
+    - Work in the Smart Tempo Editor
+    - Improve the tempo analysis using hints
+    - Correct tempo analysis results using beat markers
+    - Protect Smart Tempo edits by locking a range
+  - Match audio recordings to the project tempo
+  - Match the project tempo to an audio region
+  - Use audio file tempo information
+  - Sync audio to a video hit point
+  - Record tempo changes
+  - Use Tempo Operations
+    - Tempo Operations overview
+    - Create and edit tempo changes
+  - Use the Tempo Interpreter
+  - Use the tempo fader
+- Work with beat mapping
+  - Beat mapping overview
+  - On MIDI regions
+  - On audio regions
+  - Automatic beat mapping
+- Control project volume
+
+## Create a musical score
+- Overview
+- Work in the Score Editor
+  - Score Editor overview
+  - View music notation
+  - Import MusicXML files
+  - Position items graphically
+  - Move and copy items
+  - Resize notes and symbols
+  - Adjust display headroom
+  - Repeat events
+  - Insert items in multiple regions
+  - Edit multiple items
+  - Select multiple regions
+  - Hide regions
+- Add notes to a score
+- Add notes and symbols from the Part box
+  - Part box overview
+  - View score symbols
+  - Select score symbols
+  - Add notes and rests
+  - Add notes and symbols to multiple regions
+  - Add key and time signature changes
+  - Change the clef sign
+  - Add dynamic marks, slurs, and crescendi
+  - Change note heads
+  - Add symbols to notes
+  - Add trills, ornaments, and tremolo symbols
+  - Add sustain pedal markings
+  - Add chord symbols
+  - Add chord grids and tablature symbols
+  - Add bar lines, repeats, and coda signs
+  - Add page and line break symbols
+- Edit notes in the Score Editor
+  - Select notes
+  - Move and copy notes
+  - Change note pitch, duration, and velocity
+  - Change note articulations
+  - Quantize the timing of notes
+  - Edit note attributes
+    - Note attributes overview
+    - Change note heads
+    - Change note size and position
+    - Change how accidentals appear
+    - Change how beams appear
+    - Change voice and staff assignments
+    - Change the direction of ties
+    - Change note syncopation and interpretation
+    - Use independent notes
+    - Change note color
+    - Reset note attributes
+  - Restrict note input to the current key
+  - Control how ties are displayed
+  - Add and edit tuplets
+  - Override display quantization using tuplets
+  - Add grace notes and independent notes
+  - Delete notes
+- Use automation in the Score Editor
+- Add lyrics and text
+  - Lyrics and text overview
+  - Add lyrics to a score
+  - Add and edit text
+    - Add text to a score
+    - Edit text in a score
+    - Edit score text event parameters
+    - Use text styles
+  - Add automatic text
+  - Add global text
+- Work with chord grids
+  - Chord grids overview
+  - Instrument Editor
+  - Chord Grid Selector
+  - Chord Grid Editor
+  - Insert and edit chord grids
+  - Create custom chord grids in the Chord Grid Editor
+    - Create and edit chord grids
+    - Add and edit fingering dots
+    - Add and edit barres
+    - Mute strings in a chord grid
+  - Add and edit chord grid libraries
+  - Import and export chord grid libraries
+- Edit score region parameters
+  - Score region parameters overview
+  - Style
+  - Quantize
+  - Interpretation
+  - Syncopation
+  - No Overlap
+  - Max Dots
+  - Score
+  - Edit default parameters for new regions
+- Work with staff styles
+  - Staff styles overview
+  - Assign staff styles to tracks
+  - Staff Style window
+  - Create and duplicate staff styles
+  - Edit staff styles
+  - Edit staff, voice, and assign parameters
+  - Add and delete staffs or voices in the Staff Style window in Logic Pro for Mac
+  - Copy staffs or voices in the Staff Style window in Logic Pro for Mac
+  - Copy staff styles between projects
+  - Delete staff styles
+  - Assign notes to voices and staffs
+  - Display polyphonic parts on separate staffs
+  - Change the staff assignment of score symbols
+  - Beam notes across staffs
+  - Use mapped staff styles for drum notation
+  - Predefined staff styles
+- Create scores and parts using score sets
+  - Score sets overview
+  - Choose a score set
+  - Create and delete score sets
+  - Edit score set parameters
+  - Change the instruments in a score set
+  - Resize score sets
+  - Create layouts for a score and its parts
+  - Extract parts from a score
+  - Import score sets from other projects
+- Edit the score layout
+  - Score layout overview
+  - Edit line breaks
+  - Line and page breaks
+  - Edit local margins
+  - Use external symbol fonts
+- Share a score
+- Customize the Score Editor
+  - Choose a color mode
+  - Show folder contents
+  - Display global tracks
+  - Show instrument names
+  - Display duration bars
+  - Edit the length of duration bars
+  - Display guide lines
+
+## Share projects
+- Sharing overview
+- Bounce projects
+  - Bounce a project to an audio file
+  - Burn a project to a CD or DVD
+  - Set the bounce range
+  - Set bounce options
+    - Uncompressed bounce options
+    - MP3 bounce options
+    - M4A: AAC bounce options
+  - About dithering algorithms
+- Share songs to the Music app
+- Work with Voice Memos
+- Share songs using AirDrop
+- Share songs using Mail
+- Share a project to GarageBand for iOS
+- Share a project to Logic Pro for iPad
+- Export projects
+  - Export a project as an AAF file
+  - Export a project as a Final Cut Pro XML file
+  - Export a project as Spatial Audio
+  - Export a score as Music XML
+
+## Work in surround and Spatial Audio
+- Overview of surround and Spatial Audio
+- Creating surround and Spatial Audio projects
+  - Mixer components in surround and Spatial Audio projects
+  - Basic settings for surround and Spatial Audio projects
+    - Set the project surround format
+    - Change the order of surround level meters
+    - Surround settings
+  - Create surround projects
+    - Create a new surround project
+    - Set the channel strip input format
+    - Set the channel strip output format
+  - Create Spatial Audio with Dolby Atmos projects
+    - Set up for mixing in Spatial Audio with Dolby Atmos
+    - Create a Spatial Audio with Dolby Atmos project
+    - Create a Spatial Audio with Dolby Atmos project from a Dolby Atmos ADM BWF master file
+- Mixing in Spatial Audio with Dolby Atmos
+  - Overview of Spatial Audio with Dolby Atmos
+  - Spatial Audio with Dolby Atmos basics
+    - Bed tracks and object tracks
+    - Rendering a Spatial Audio with Dolby Atmos mix in Logic Pro for Mac
+- Surround Panner
+  - Surround Panner overview
+  - Surround Panner parameters
+- 3D Object Panner
+  - 3D Object Panner overview
+  - 3D Object Panner parameters
+- Multichannel effect plug-ins
+  - Plug-in formats overview
+  - Surround effects
+  - Multi mono effects
+  - Multi mono effects Configuration pane
+  - Adjust multi mono effects
+- Dolby Atmos plug-in
+  - Dolby Atmos plug-in overview
+  - Surround bed and 3D objects
+  - 3D Object Viewer
+  - Monitoring formats
+  - Binaural render modes
+  - Downmix and trim controls
+  - Dolby Atmos plug-in signal flow
+- Bounce and export surround and Spatial Audio with Dolby Atmos projects
+  - Overview of exporting and bouncing Spatial Audio and surround projects
+  - Bounce a surround project
+  - Bounce a Spatial Audio project to channel-based files
+  - Export a Spatial Audio project to a Dolby Atmos ADM BWF master file
+  - Export a Spatial Audio project to an MP4 file
+- Additional Spatial Audio and Dolby Atmos information
+  - Convert Spatial Audio and surround projects
+  - Apply Spatial Playback processing to QTA files
+  - Import object and bed tracks from Spatial Audio projects
+  - Surround formats in a Spatial Audio with Dolby Atmos mix
+  - Plug-ins for the surround master channel strip
+  - Spatial Audio with Dolby Atmos mixing workflows
+- Additional surround information
+  - Surround formats overview
+  - Surround format channel distribution
+  - Surround bounce file encoders
+  - Speaker placement
+  - Speaker timing and levels
+
+## Video and synchronization
+- Video and synchronization overview
+- Use movies in Logic Pro
+  - Add a movie to your project
+  - Use the Movie window
+  - About the Movie track
+  - Use movie scene markers
+  - Use movie audio tracks
+  - Create and edit soundtracks
+    - Soundtracks overview
+    - Work with absolute timecode
+- Logic Pro synchronization
+  - Synchronization overview
+  - External synchronization
+  - Ableton Link in Logic Pro for Mac
+  - MTC interpretation
+  - MIDI Machine Control
+  - Synchronization problems and solutions
+
+## Settings, project settings, and key commands
+- Logic Pro settings
+  - Logic Pro settings overview
+  - General settings
+    - Project Handling settings
+    - Editing settings
+    - Cycle settings
+    - Catch settings
+    - Notifications settings
+    - Accessibility settings
+    - Sound Library settings
+  - Audio settings
+    - Audio Devices settings
+    - General settings
+    - Sampler settings
+    - Editing settings
+    - Output settings
+    - Bounce Extensions settings
+    - Input settings
+    - File Editor settings
+  - Recording settings
+  - MIDI settings
+    - General settings
+    - Reset Messages settings
+    - Sync settings
+    - Inputs settings
+  - Score settings
+  - Movie settings
+  - Automation settings
+  - Control Surfaces settings
+    - General settings
+    - Help tags settings
+    - MIDI Controllers settings
+  - View settings
+    - General settings
+    - Tracks settings
+    - Mixer settings
+    - Editors settings
+  - My Info settings
+- Project settings
+  - Project settings overview
+  - General project settings
+  - Audio project settings
+    - General project settings
+    - Channel Strips project settings
+  - Recording project settings
+  - Smart Tempo project settings
+  - MIDI project settings
+    - General project settings
+    - Input Filter project settings
+    - Chase project settings
+    - Clip Length project settings
+  - Score project settings
+    - Global project settings
+    - Numbers & Names project settings
+    - Tablature project settings
+    - Chords & Grids project settings
+    - Clefs & Signatures project settings
+    - Layout project settings
+    - MIDI Meaning project settings
+    - Colors project settings
+  - Movie project settings
+  - Synchronization project settings
+    - General project settings
+    - Audio project settings
+    - MIDI project settings
+    - Unitor project settings
+  - Metronome project settings
+  - Tuning description and settings
+    - Tuning overview
+    - The comma and equal temperament
+    - Hermode Tuning
+    - Tuning project settings
+  - Assets project settings
+- Key commands
+  - Key commands overview
+  - Browse, import, and save key commands
+  - Assign key commands
+  - Copy and print key commands
+  - Key command tables
+    - Global Commands
+    - Global Control Surfaces Commands
+    - Various Windows
+    - Windows Showing Audio Files
+    - Main Window Tracks and Various Editors
+    - Various Editors
+    - Views Showing Time Ruler
+    - Views Showing Automation
+    - Main Window Tracks
+    - Live Loops Grid
+    - Mixer
+    - MIDI Environment
+    - Piano Roll
+    - Score Editor
+    - Event Editor
+    - Step Editor
+    - Step Sequencer
+    - Project Audio
+    - Audio File Editor
+    - Smart Tempo Editor
+    - Browser
+    - Sampler
+    - Drum Machine Designer
+    - Step Input Keyboard
+    - Smart Controls
+    - Tool Menu
+    - Control Surface Install Window
+- Pointer shortcuts
+  - Logic Pro projects
+  - Various windows
+  - Controller Assignments window
+  - Control bar
+  - Tracks area
+  - Global tracks
+  - Automation
+  - Live Loops grid
+  - Mixer
+  - MIDI Environment
+  - Piano Roll Editor
+  - Score Editor
+  - Event List
+  - Step Editor
+  - Step Sequencer
+  - Flex Time
+  - Audio File Editor
+  - Smart Tempo Editor
+  - Surround Panner
+  - Channel EQ
+  - Space Designer
+  - Sampler
+
+## Touch Bar shortcuts
+
+## Use Control Surfaces with Logic Pro
+- Use control surfaces
+  - Working with your control surface
+  - Connect control surfaces
+  - Add a control surface to Logic Pro for Mac
+  - Automatic assignment for USB MIDI controllers
+  - Grouping control surfaces
+  - Control surface inspector
+    - Control surface inspector overview
+    - Device parameters
+    - Special device parameters
+    - Control Surface Group parameters
+      - Control Surface Group parameters overview
+      - Control Surface Group display parameters
+      - Control Surface Group send and plug-in parameters
+      - Other parameters for Control Surface Groups
+  - Control Surfaces settings overview
+  - Modal dialog display
+  - Tips for using your control surface
+  - Supported control surfaces
+  - Software and firmware for Logic Pro for Mac
+- Assign hardware controllers
+  - Controller assignments overview
+  - Controller Assignments Easy view
+    - Controller Assignments Easy view
+    - Assign and delete controllers in Easy view
+  - Controller Assignments Expert view
+    - Controller Assignments Expert view
+    - Expert view parameters
+    - Assign and delete controllers in Expert view
+    - Zones and modes
+    - Control Name and Label fields
+    - Flip Group and Exclusive parameters
+    - Class pop-up menu parameters
+    - Expert view MIDI Input parameters
+    - OSC Message Paths
+    - Expert view Value parameters
+  - Set an assignment to pinned or focused
+  - Assign buttons to key commands
+
+## Work in the Environment
+- Environment overview
+- Common object parameters
+- Work with Environment layers
+  - Environment Layers overview
+  - Create, name, delete, and switch layers
+- Work with Environment objects
+  - Tools in the Environment
+  - Add and delete objects
+  - Move and copy objects
+  - Adjust the position and size of objects
+  - Use advanced selection commands
+- Create your MIDI signal path
+  - MIDI signal path overview
+  - Assign direct output connections
+  - Cable Environment objects
+  - Make multiple cable connections
+  - Cable objects in series and in parallel
+- Exchange Environments
+  - Exchanging Environments overview
+  - Import Environments
+  - Update and swap Environments
+  - Replace Environments
+- Customize the Environment
+- Environment objects reference
+  - Standard instrument objects
+    - Standard instrument objects overview
+    - Standard instrument parameters
+  - Multi-instrument objects
+    - Multi-instrument objects overview
+    - Multi-Instrument window
+    - Work with subchannels in the Environment
+  - Mapped instrument objects
+    - Mapped instrument objects overview
+    - Mapped Instrument window
+    - Custom bank selects
+  - Touch track objects
+    - Touch track objects overview
+    - Touch Tracks window
+  - Fader objects
+    - Fader objects overview
+    - Use fader objects
+    - Play back fader movements
+    - Work with object groups
+    - Fader styles
+    - Fader functions: MIDI events
+    - Fader functions: range, value as
+    - Fader functions: filter
+    - Vector fader
+    - Special faders overview
+    - Cable switchers
+    - Meta event faders
+    - SysEx faders
+    - Work with SysEx messages
+    - Special functions
+  - Alias objects
+    - Alias objects overview
+    - Alias parameters
+  - Ornament objects
+  - GM mixer objects
+    - GM mixer objects overview
+    - GM mixer parameters
+    - Work with GM mixer channel strips
+  - MMC record buttons
+  - Keyboard objects
+  - Monitor objects
+  - Macro objects
+    - Macro objects
+    - Define a macro’s input and output
+  - Arpeggiator objects
+    - Arpeggiator objects
+    - Arpeggiator parameters
+  - Transformer objects
+    - Transformer objects
+    - How the transformer object works
+    - Configure a transformer object
+    - Use meta events to control condition and operation values
+  - Delay line objects
+    - Delay line objects
+    - Delay line parameters
+  - Voice limiter objects
+    - Voice limiter objects
+    - Voice limiter parameters
+  - Channel splitter object
+  - Chord memorizer objects
+    - Chord memorizer objects
+    - Chord memorizer parameters
+    - Chord Memorizer window
+  - Physical input objects
+  - Physical input objects
+  - MIDI click objects
+  - Channel strip objects
+    - Channel strip objects
+    - Channel strip parameters
+    - Input channel strip
+    - Bus channel strip
+    - Preview channel strip
+
+## Logic Pro Effects
+- Effects overview
+  - Effects overview
+  - Add, remove, move, and copy plug-ins
+- Amps and pedals
+  - Amps and pedals overview
+  - Amp Designer
+    - Amp Designer overview
+    - Amp Designer models
+    - Amp Designer cabinets
+    - Build a custom combo
+    - Amplifier controls
+    - Equalizer overview
+    - Effects overview
+    - Reverb effect
+    - Tremolo and vibrato
+    - Microphone parameters
+  - Bass Amp Designer
+    - Bass Amp Designer overview
+    - Bass amplifier models
+    - Bass cabinet models
+    - Build a custom combo
+    - Signal flow
+    - Pre-amp signal flow
+    - Use the D.I. box
+    - Amplifier controls
+    - Bass Amp Designer effects overview
+    - EQ
+    - Compressor
+    - Graphic EQ
+    - Parametric EQ
+    - Microphone parameters
+  - Pedalboard
+    - Pedalboard overview
+    - Use the Pedal Browser
+    - Use import mode
+    - Use the Pedal area
+    - Use the Router
+    - Utility pedals
+    - Use Macro Controls
+  - Stompboxes
+    - Stompboxes overview
+    - Delay pedals
+    - Distortion pedals
+    - Dynamics pedals
+    - Filter pedals
+    - Modulation pedals
+    - Pitch pedals
+- Delay effects
+  - Delay effects overview
+  - Delay Designer
+    - Delay Designer overview
+    - Use the main display
+    - Use the Tap display
+    - Create taps
+    - Edit taps
+    - Edit in the Tap display
+    - Tap parameter bar
+    - Use sync mode
+    - Master parameters
+    - Work in surround
+  - Echo controls
+  - Sample Delay controls
+  - Stereo Delay controls
+  - Tape Delay controls
+- Distortion effects
+  - Distortion effects overview
+  - Bitcrusher controls
+  - ChromaGlow controls
+  - Clip Distortion controls
+  - Distortion effect controls
+  - Distortion II controls
+  - Overdrive controls
+  - Phase Distortion controls
+- Dynamics processors
+  - Dynamics processors overview
+  - Adaptive Limiter controls
+  - Compressor
+    - Compressor overview
+    - Compressor main parameters
+    - Compressor output parameters
+    - Compressor side chain parameters
+    - Use Compressor
+  - DeEsser 2 controls
+  - Enveloper controls
+  - Expander controls
+  - Limiter controls
+  - Multipressor
+    - Multipressor overview
+    - Multipressor display parameters
+    - Frequency band controls
+    - Output parameters
+    - Use Multipressor
+  - Noise Gate
+    - Noise Gate overview
+    - Use Noise Gate
+  - Surround Compressor
+    - Surround Compressor overview
+    - Link parameters
+    - Main parameters
+    - LFE parameters
+- Equalizers
+  - Equalizers overview
+  - Channel EQ
+    - Channel EQ overview
+    - Channel EQ parameters
+    - Use Channel EQ shortcut menus
+    - Channel EQ extended parameters
+    - Channel EQ use tips
+    - Use the Channel EQ Analyzer
+  - Linear Phase EQ
+    - Linear Phase EQ overview
+    - Linear Phase EQ parameters
+    - Use Linear Phase EQ shortcut menus
+    - Linear Phase EQ extended parameters
+    - Linear Phase EQ use tips
+    - Use the Linear Phase EQ Analyzer
+  - Match EQ
+    - Match EQ overview
+    - Match EQ parameters
+    - Use Match EQ
+    - Edit the filter curve
+  - Single Band EQ controls
+  - Vintage EQ Collection
+    - Vintage EQ collection overview
+    - Vintage Console EQ controls
+    - Vintage Graphic EQ controls
+    - Vintage Tube EQ controls
+- Filter effects
+  - Filter effects overview
+  - AutoFilter
+    - AutoFilter overview
+    - Filter controls
+    - Envelope controls
+    - Distortion controls
+    - LFO controls
+    - Output controls
+  - EVOC 20 Filterbank
+    - EVOC 20 Filterbank overview
+    - Formant Filter controls
+    - Modulation controls
+    - Output controls
+  - EVOC 20 TrackOscillator
+    - EVOC 20 TrackOscillator overview
+    - Vocoder overview
+    - EVOC 20 TrackOscillator interface
+    - Analysis In controls
+    - U/V detection controls
+    - Synthesis In controls
+    - Tracking oscillator controls
+    - Tracking oscillator pitch controls
+    - Formant filter controls
+    - Modulation controls
+    - Output controls
+    - Extended parameters
+  - Fuzz-Wah
+    - Fuzz-Wah overview
+    - Auto Wah controls
+    - Compressor controls
+    - Fuzz parameters
+  - Spectral Gate
+    - Spectral Gate overview
+    - Use Spectral Gate
+- Imaging processors
+  - Imaging processors overview
+  - Binaural Post-Processing controls
+  - Spatial Audio Monitoring
+  - Direction Mixer
+    - Direction Mixer
+    - Stereo miking techniques
+  - Stereo Spread controls
+- Mastering Assistant
+  - Mastering Assistant overview
+  - Add Mastering Assistant to a project
+  - Mastering Assistant parameters
+- Metering tools
+  - Metering tools overview
+  - BPM Counter
+  - Correlation Meter
+  - Level Meter
+  - Loudness Meter
+  - MultiMeter
+    - MultiMeter overview
+    - Analyzer parameters
+    - Goniometer parameters
+    - Level and Loudness Meters
+    - Correlation Meter
+    - Peak parameters
+  - Surround MultiMeter
+    - Surround MultiMeter overview
+    - Analyzer mode
+    - Goniometer mode
+    - Balance mode
+    - Loudness and Level Meters
+  - Use Tuner utility and plug-in
+- MIDI plug-ins
+  - Use MIDI plug-ins
+  - Arpeggiator MIDI plug-in
+    - Arpeggiator overview
+    - Arpeggiator control parameters
+    - Note order parameters overview
+    - Note order variations
+    - Note order inversions
+    - Arpeggiator pattern parameters overview
+    - Use Live mode
+    - Use Grid mode
+    - Arpeggiator options parameters
+    - Arpeggiator keyboard parameters
+    - Use keyboard parameters
+    - Assign controllers
+  - Chord Trigger
+    - Chord Trigger overview
+    - Use Chord Trigger
+  - Modifier controls
+  - Modulator
+    - Modulator overview
+    - LFO controls
+    - Envelope controls
+  - Note Repeater controls
+  - Randomizer controls
+  - Scripter
+    - Use Scripter
+    - Use the Script Editor
+    - Scripter API overview
+    - MIDI processing functions overview
+    - HandleMIDI function
+    - ProcessMIDI function
+    - GetParameter function
+    - SetParameter function
+    - ParameterChanged function
+    - Reset function
+    - JavaScript objects overview
+    - Use the JavaScript Event object
+    - Use the JavaScript TimingInfo object
+    - Use the Trace object
+    - Use the MIDI event beatPos property
+    - Use the JavaScript MIDI object
+    - Create Scripter controls
+  - Transposer controls
+  - Velocity Processor
+    - Velocity Processor overview
+    - Compress/Expand mode
+    - Value/Range mode
+    - Add/Scale mode
+  - Record MIDI to Track
+- Modulation effects
+  - Modulation effects overview
+  - Chorus controls
+  - Ensemble controls
+  - Flanger controls
+  - Microphaser controls
+  - Modulation Delay controls
+  - Phaser controls
+  - Ringshifter
+    - Ringshifter overview
+    - Ringshifter interface overview
+    - Set the mode
+    - Oscillator parameters
+    - Delay parameters
+    - Use envelope follower
+    - Use LFO modulation
+    - Output parameters
+  - Rotor Cabinet effect
+    - Rotor Cabinet effect overview
+    - Motor parameters
+    - Microphone types
+    - Mic processing controls
+  - Scanner Vibrato controls
+  - Spreader controls
+  - Tremolo controls
+- Multi effects
+  - Multi-effects overview
+  - Beat Breaker
+    - Beat Breaker overview
+    - Main Editor
+    - Create a pattern
+    - Edit modes
+    - Time mode
+    - Repeat mode
+    - Cutoff mode
+    - Resonance mode
+    - Volume mode
+    - Pan mode
+    - Work with slices
+    - Randomization overview
+    - Use the Randomize button
+    - Randomize multiple edit modes
+    - Configure randomization settings
+    - Work with patterns
+    - Beat Breaker tips
+  - Phat FX
+    - Phat FX overview
+    - Phat FX processors
+    - Phat FX modulators
+    - Global controls
+    - Filter types
+  - Remix FX
+  - Step FX
+    - Step FX overview
+    - Step FX processors
+    - Step modulator global controls
+    - Step modulator playback controls
+    - Step modulator display controls
+    - Global controls
+    - Filter types
+- Pitch effects
+  - Pitch effects overview
+  - Pitch Correction effect
+    - Pitch Correction overview
+    - Pitch Correction parameters
+    - Quantization grid
+    - Exclude notes from Pitch Correction
+    - Use reference tuning
+  - Pitch Shifter
+    - Pitch Shifter overview
+    - Use Pitch Shifter
+  - Vocal Transformer
+    - Vocal Transformer overview
+    - Vocal Transformer parameters
+    - Use Vocal Transformer
+- Reverb effects
+  - Reverb effects overview
+  - ChromaVerb
+    - ChromaVerb overview
+    - Main display and Damping EQ
+    - Main view controls
+    - Output EQ
+    - Details view controls
+    - Room types
+  - EnVerb controls
+  - Quantec Room Simulator
+    - Quantec Room Simulator overview
+    - Quantec Room Simulator: QRS controls
+    - Quantec Room Simulator: YardStick controls
+    - Quantec Room Simulator: Surround Sound
+  - SilverVerb controls
+- Space Designer convolution reverb
+  - Space Designer overview
+  - Space Designer interface
+  - Use impulse responses
+  - Space Designer envelopes and EQ
+    - Envelopes and EQ overview
+    - Display mode bar
+    - Edit envelopes
+    - Volume envelope controls
+    - Filter and filter envelope controls
+    - Density envelope controls
+    - Output EQ controls
+  - Space Designer global parameters
+    - Global parameters overview
+    - Use global controls
+    - Use output controls
+- Specialized effects
+  - Specialized effects overview
+  - Exciter controls
+  - SubBass
+    - SubBass overview
+    - Controls
+    - Use tips
+- Utilities and tools
+  - Utilities and tools overview
+  - Auto Sampler
+    - Auto Sampler overview
+    - Auto Sampler interface
+    - Auto Sampler controls
+    - Create a sampler instrument
+    - Work with Auto Sampled instruments
+  - Down Mixer controls
+  - Gain controls
+  - Use I/O utility
+  - Multichannel Gain controls
+  - Test Oscillator
+- Legacy effects
+  - Legacy effects overview
+  - AVerb controls
+  - Bass Amp controls
+  - DeEsser controls
+  - Denoiser
+    - Denoiser overview
+    - Smoothing parameters
+  - Ducker controls
+  - EQ
+    - DJ EQ controls
+    - Fat EQ controls
+    - Single-Band EQ controls
+    - Silver EQ controls
+  - GoldVerb
+    - GoldVerb overview
+    - Early reflections controls
+    - Reverb parameters
+  - Grooveshifter controls
+  - Guitar Amp Pro
+    - Guitar Amp Pro overview
+    - Amplifier models
+    - Cabinet models
+    - EQ controls
+    - Amplifier controls
+    - Effects
+    - Mic parameters
+  - PlatinumVerb
+    - PlatinumVerb overview
+    - Early reflections controls
+    - Reverb parameters
+    - Output parameters
+  - Silver Compressor controls
+  - Silver Gate controls
+  - Speech Enhancer controls
+
+## Logic Pro Instruments
+- Instruments overview
+  - Instruments introduction
+  - Add, remove, move, and copy plug-ins
+  - Use multi-output instruments
+- Alchemy
+  - Alchemy overview
+  - Alchemy interface overview
+  - Alchemy Name bar
+  - Alchemy file locations
+  - Alchemy Preset browser
+    - Preset browser overview
+    - Browser parameters
+  - Alchemy sound sources
+    - Alchemy source overview
+    - Source master controls
+    - Import browser
+    - Source subpage controls
+    - Source filter controls
+    - Source filter use tips
+    - Source elements overview
+    - Additive element controls
+    - Additive element effects
+    - Spectral element controls
+    - Spectral element effects
+    - Pitch correction controls
+    - Formant filter controls
+    - Granular element controls
+    - Sampler element controls
+    - VA element controls
+    - Wide unison mode
+    - Source modulations
+    - Morph controls
+  - Alchemy source editors
+    - Alchemy source edit window overview
+    - Inspector global controls
+    - Inspector group controls
+    - Inspector zone controls
+    - Keymap editor
+    - Zone waveform editor
+    - Additive edit window overview
+    - Partial bar display
+    - Partial envelope controls
+    - Spectral edit window
+  - Alchemy main filters
+    - Main filter controls
+    - Filter types
+  - Alchemy master voice section
+  - Alchemy modulation section
+    - Alchemy modulation overview
+    - Modulation rack controls
+    - LFO controls
+    - AHDSR envelope controls
+    - Multiple segment envelope controls
+    - Sequencer
+    - Envelope follower parameters
+    - ModMap parameters
+    - MIDI control modulators
+    - Note property modulators
+    - Perform control modulators
+  - Alchemy Perform section
+    - Performance controls overview
+    - Transform Pad
+    - Performance control knobs
+    - XY pad controls
+    - Performance control envelopes
+  - Alchemy arpeggiator
+    - Alchemy arpeggiator overview
+    - Basic arpeggiator controls
+    - Arpeggiator sequencer controls
+    - Arpeggiator menu commands
+    - Use the arpeggiator
+  - Alchemy effects section
+    - Alchemy effects overview
+    - Dynamic and utility effects
+    - Filter effects
+    - Modulation effects
+    - Reverb effects
+  - Alchemy Extended parameters
+  - Alchemy tutorials
+    - Alchemy tutorial introduction
+    - Basic synthesis tweaks
+    - Create sounds from scratch
+    - Elemental morphs overview
+    - Morph use and tips
+    - Morph drum beats
+    - Morph melodic sounds
+    - Manipulate loops
+- Drum Kit Designer
+  - Drum Kit Designer overview
+  - Edit pane
+  - Use Drum Kit Designer
+  - Extended parameters
+  - Drum Kit Designer mappings
+- Drum Machine Designer
+  - Drum Machine Designer overview
+  - Drum Machine Designer interface
+  - Kit controls
+  - Pad controls
+    - Pad controls bar
+    - Use pad controls
+- Drum Synth
+  - Drum Synth overview
+  - Drum Synth Kicks
+  - Drum Synth Snares and Claps
+  - Drum Synth Percussion
+  - Drum Synth Hats and Cymbals
+- ES1
+  - ES1 overview
+  - ES1 oscillator parameters
+    - Oscillator parameters
+    - Oscillator waveforms
+    - Use the sub-oscillator
+  - Global parameters
+  - ES1 filter parameters
+    - Filter parameters
+    - Overdrive the filter
+  - Amplifier parameters
+  - ES1 envelope parameters
+    - Envelope parameters
+    - Filter cutoff envelope modulation
+    - Amplifier envelope modulation
+  - ES1 modulation
+    - ES1 modulation overview
+    - Use the router
+    - Use the LFO
+    - Use the modulation envelope
+  - MIDI controller assignments
+- ES2
+  - ES2 overview
+  - ES2 interface overview
+  - ES2 sound sources
+    - Oscillator parameters overview
+    - Basic oscillator waveforms
+    - Use pulse width modulation
+    - Use frequency modulation
+    - Use ring modulation
+    - Use Digiwaves
+    - Use the noise generator
+    - Detune analog oscillators
+    - Stretch tuning
+    - Balance oscillator levels
+    - Set oscillator start points
+    - Synchronize oscillators
+  - ES2 global parameters
+    - Global parameters overview
+    - Set the keyboard mode
+    - Use the unison and voices controls
+    - Set the glide time
+    - Set the pitch bend range
+  - ES2 filter parameters
+    - ES2 filter overview
+    - Filter configuration
+    - Crossfade between filters
+    - Filter 1 modes
+    - Filter 2 slopes
+    - ES2 filter cutoff and resonance
+      - Filter cutoff and resonance overview
+      - Force the filters to self-oscillate
+    - Overdrive the filters
+    - Modulate the Filter 2 Frequency
+  - ES2 amplifier parameters
+    - Use the dynamic stage
+    - Enhance sounds with the Sine Level control
+  - ES2 modulation
+    - ES2 modulation overview
+    - ES2 modulation router
+      - Use the modulation router
+      - Control modulation intensity
+    - ES2 LFOs
+      - LFO overview
+      - LFO waveforms
+    - Use the LFOs
+    - ES2 envelopes
+      - Envelopes overview
+      - Envelope 1 controls
+      - Envelope 2 and 3 controls
+      - Use Envelope 2 and 3 sustain controls
+    - Use the Vector Envelope
+    - Vector Envelope points, times, and loops
+      - Use Vector Envelope points
+      - Use Vector Envelope solo and sustain points
+      - Set up Vector Envelope loops
+      - Vector Envelope release behavior
+      - Vector Envelope point transition shapes
+      - Set Vector Envelope times
+      - Use Vector Envelope time scaling
+    - Use the Vector Envelope shortcut menu
+    - Use the Planar Pad
+    - ES2 modulation target reference
+      - Oscillator modulation targets
+      - Filter modulation targets
+      - Other modulation targets
+      - Scaled modulation targets
+    - Modulation source reference
+    - Via modulation source reference
+  - ES2 integrated effects processor controls
+  - ES2 macro controls and controller assignments
+    - Macros and controllers overview
+    - Use macro controls
+    - Assign MIDI controllers
+  - Use ES2 in Surround mode
+  - Extended parameters
+  - Create random ES2 sound variations
+    - Use randomization parameters
+    - Restrict randomization
+  - ES2 tutorials
+    - Create ES2 sounds from scratch
+      - ES2 sound design from scratch overview
+      - Create fat sounds
+      - Create bass sounds
+      - Create FM sounds
+      - Create PWM sounds
+      - Create ring modulated sounds
+      - Create oscillator sync sounds
+      - Vector synthesis techniques
+    - Create ES2 sounds with templates
+      - Design sounds with templates
+      - Slapped StratENV setting
+      - Wheelrocker setting
+      - Crescendo Brass setting
+      - MW-Pad-Creator setting
+      - Wheelsyncer setting
+- EFM1
+  - EFM1 overview
+  - EFM1 modulator and carrier parameters
+    - Modulator and carrier overview
+    - Set the tuning ratio
+    - Choose a modulator waveform
+  - Modulation parameters
+  - Global parameters
+  - Output parameters
+  - Create random sounds
+  - Extended parameters
+  - Assign MIDI controllers
+- ES E
+  - ES E overview
+  - Oscillator parameters
+  - LFO parameters
+  - Filter parameters
+  - Envelope parameters
+  - Output parameters
+  - Extended parameters
+- ES M
+  - ES M overview
+  - Oscillator parameters
+  - Filter and filter envelope controls
+  - Level envelope and output controls
+  - Extended parameters
+- ES P
+  - ES P overview
+  - Oscillator parameters
+  - LFO parameters
+  - Filter parameters
+  - Envelope and level controls
+  - Integrated effects processor
+  - Extended parameters
+- EVOC 20 PolySynth
+  - EVOC 20 PS and vocoding
+    - EVOC 20 PS overview
+    - Vocoder basics
+  - EVOC 20 PS interface
+  - Analysis controls
+  - (U/V) detection parameters
+  - EVOC 20 PS synthesis parameters
+    - Synthesis parameters overview
+    - EVOC 20 PS oscillator parameters
+      - Oscillators overview
+      - Oscillator dual mode parameters
+      - Oscillator FM mode parameters
+      - Noise generator parameters
+    - Tuning and pitch controls
+    - Filter parameters
+    - Envelope parameters
+    - Global parameters
+  - Formant filter controls
+  - Modulation parameters
+  - Output parameters
+  - EVOC 20 PS performance tips
+    - Level and frequency tips
+    - Tips to avoid sonic artifacts
+    - Tips to enhance speech intelligibility
+  - Vocoder history
+  - EVOC 20 block diagram
+- Quick Sampler
+  - Quick Sampler overview
+  - Add audio to Quick Sampler
+  - Quick Sampler modes
+    - Choose a mode
+    - Classic mode
+    - One Shot mode
+    - Slice mode
+    - Recorder mode
+  - Quick Sampler waveform display
+  - Use Flex in Quick Sampler
+  - Quick Sampler modulators
+    - Mod Matrix pane
+    - LFO controls
+  - Quick Sampler Pitch controls
+  - Quick Sampler Filter controls
+  - Quick Sampler filter types
+  - Quick Sampler Amp controls
+  - Quick Sampler extended parameters
+- Retro Synth
+  - Retro Synth overview
+  - Analog oscillator controls
+  - Sync oscillator controls
+  - Retro Synth Table oscillator controls
+    - Table oscillator parameters
+    - Use the Wavetable menu
+  - FM oscillator controls
+  - Filter controls
+  - Filter types
+  - Amp and effect controls
+  - Retro Synth modulation controls
+    - Use Retro Synth modulation
+    - Glide and Autobend modulation
+    - LFO and Vibrato modulation
+    - Envelopes
+  - Global and controller settings
+  - Extended parameters
+- Sample Alchemy
+  - Sample Alchemy overview
+  - Interface overview
+  - Add source material
+  - Edit mode
+  - Play modes
+  - Source overview
+  - Synthesis modes
+  - Granular controls
+  - Additive effects
+  - Additive effect controls
+  - Spectral effect
+  - Spectral effect controls
+  - Filter module
+  - Lowpass, bandpass, and highpass filters
+  - Comb PM filter
+  - Downsampler filter
+  - FM filter
+  - Envelope generators
+  - Mod Matrix
+  - Modulation routing
+  - Motion mode
+  - Trim mode
+  - More menu
+- Sampler
+  - Sampler overview
+  - Load and save instruments in Sampler
+  - Sampler Synthesizer parameters
+    - Synth pane
+    - Synth Details
+    - Use Unison, Mode, and Polyphony parameters
+    - Crossfade between filters
+    - Filter types
+  - Sampler Modulation
+    - Sampler Modulation overview
+    - Sampler Mod Matrix pane
+      - Use the Mod Matrix
+      - Use Sampler via sources
+    - Sampler LFOs
+      - LFO overview
+      - LFO waveforms
+      - Use the LFO ramp generator
+      - Set the LFO rate
+    - Use Sampler envelopes
+    - Sampler modulation reference
+      - Modulation targets
+      - Modulation sources
+      - Modulation Via sources
+  - Sampler Edit panes
+    - Sampler Mapping and Zone pane overview
+    - Use the Key Mapping Editor
+    - Use Group view
+    - Make advanced group selections
+    - Fade between sample groups
+    - Use Zone view
+    - Use Mapping pane menu commands
+    - Use the Zone pane
+    - Synchronize audio with Flex
+    - Edit in the Audio File Editor
+  - Create instruments, zones, and groups
+    - Sampler instruments overview
+    - Create instruments
+    - Quickly create an instrument
+    - Create Sampler instruments from Logic Pro for Mac audio regions
+    - Create zones with drag and drop
+    - Create zones with menu commands
+    - Create groups
+  - Edit Sampler zones and groups
+    - Edit zones and groups overview
+    - Select a zone or group
+    - Graphically edit zones and groups
+    - Use zone and group output labels
+    - Use key labels
+  - Sampler articulation handling
+  - Manage sampler instruments
+    - Instrument management
+    - Storage locations
+    - Add SoundFont2, DLS, and Gigasampler files
+  - Sampler memory management
+  - Sampler extended parameters
+- Sculpture
+  - Sculpture overview
+  - Sculpture interface
+  - Sculpture string parameters
+    - String overview
+    - Hide, Keyscale, and Release view
+    - Basic Material Pad controls
+    - Material Pad Keyscale or Release view
+    - String parameter sliders
+  - Sculpture objects parameters
+    - Objects overview
+    - Excite table (objects 1 and 2)
+    - Disturb and damp table (objects 2 and 3)
+  - Sculpture pickups parameters
+    - Pickup parameters
+    - Spread controls
+  - Global parameters
+  - Amplitude envelope parameters
+  - Use the Waveshaper
+  - Filter parameters
+  - Sculpture Body EQ parameters
+    - Body EQ overview
+    - Basic EQ model
+    - Body EQ models
+  - Sculpture delay effect parameters
+    - Delay effect overview
+    - Groove Pad (stereo)
+    - Groove Pad (surround)
+  - Output parameters
+  - Use surround range and diversity
+  - Sculpture modulation controls
+    - Sculpture modulation overview
+    - Sculpture LFOs
+      - LFO overview
+      - LFO waveforms
+      - Modulate the LFOs
+    - Vibrato parameters
+    - Jitter generator controls
+    - Use note-on random modulators
+    - Velocity modulators
+    - Use Controller A and B
+    - Sculpture envelope parameters
+      - Envelope overview
+      - Active envelope controls
+      - Envelope display parameters
+      - Use envelope nodes
+      - Loop envelopes
+      - Record envelopes
+  - Sculpture morph parameters
+    - Morph overview
+    - Sculpture Morph Pad
+      - Morph points in the Morph Pad
+      - Morph Pad menu commands
+      - Randomize points in the Morph Pad
+      - Randomize menu commands
+    - Sculpture Morph Envelope
+      - Morph Envelope display overview
+      - Morph Envelope parameters
+      - Morph Envelope mode
+      - Morph Envelope Sustain and loop mode
+      - Record Morph Envelopes
+  - Define MIDI controllers
+  - Extended parameters
+  - Sculpture tutorials
+    - Explore Sculpture
+      - Explore Sculpture overview
+      - Explore the string
+      - Explore objects
+      - String and object interplay
+      - Explore the pickups
+      - Explore other processing options
+      - Explore modulation options
+    - Create basic sounds in Sculpture
+      - Basic sound programming overview
+      - Program acoustic instruments
+      - Program stringed instruments
+      - Program classic synthesizer sounds
+    - Advanced Sculpture tutorial: electric bass
+      - Electric bass programming overview
+      - Program a basic bass sound
+      - Refine the basic bass sound
+      - Program a picked bass sound
+      - Program a slap bass sound
+      - Program a fretless bass sound
+      - Add effects to your bass sound
+    - Advanced Sculpture tutorial: synthesizer sounds
+      - Synthetic sound programming overview
+      - Program a sustained synthesizer sound
+      - Program morphed sounds
+- Studio Bass
+  - Studio Bass overview
+  - Main view parameters
+  - Details view parameters
+  - Keyswitch mapping
+  - String and position MIDI Out channel assignments
+- Studio Horns
+  - Studio Horns overview
+  - Extended parameters
+  - Keyswitch mapping
+  - Section MIDI channel assignments
+- Studio Piano
+- Studio Strings
+  - Studio Strings overview
+  - Extended parameters
+  - Keyswitch mapping
+  - Section MIDI channel assignments
+- Ultrabeat
+  - Ultrabeat overview
+  - Ultrabeat interface
+  - Ultrabeat Assignment section
+    - Assignment section overview
+    - Play and select drum sounds
+    - Name, swap, and copy drum sounds
+    - Import sounds and sampler instruments
+    - Settings
+  - Synthesizer section overview
+  - Ultrabeat sound sources
+    - Oscillator overview
+    - Oscillator 1 phase oscillator mode
+    - Use oscillator 1 FM mode
+    - Oscillator 1 side chain mode
+    - Oscillator 2 phase oscillator mode
+    - Waveform characteristics
+    - Use oscillator 2 sample mode
+    - Use oscillator 2 model mode
+    - Ring modulator controls
+    - Noise generator controls
+  - Filter section controls
+  - Distortion circuit controls
+  - Ultrabeat Output section
+    - Output section overview
+    - Two-band EQ parameters
+    - Ultrabeat pan and stereo spread
+      - Use pan modulation mode
+      - Use stereo spread mode
+    - Voice volume control
+    - Trigger mode controls
+  - Ultrabeat modulation
+    - Ultrabeat modulation overview
+    - Mod and via modulation
+    - Create a mod routing
+    - Set MIDI controllers A–D
+    - Use the LFOs
+    - Envelope overview
+    - Envelope parameters
+    - Modulation target display
+  - Ultrabeat step sequencer
+    - Ultrabeat step sequencer overview
+    - Step sequencer basics
+    - Step sequencer interface
+    - Global sequencer controls
+    - Pattern controls
+    - Use the swing function
+    - Ultrabeat Step grid
+      - Step grid overview
+      - Create and remove steps
+      - Ultrabeat trigger shortcut menu
+      - Set step lengths and velocities
+      - Set step accents
+      - Use the Step grid full view
+    - Automate Ultrabeat step sequencer parameters
+      - Step automation overview
+      - Use the offset row
+    - Export Ultrabeat patterns as MIDI regions
+    - Step sequencer MIDI control
+  - Ultrabeat tutorials
+    - Ultrabeat sound programming overview
+    - Create kick drums
+    - Create snare drums
+    - Create tonal percussion
+    - Create hi-hats and cymbals
+    - Create metallic sounds
+    - Tips for extreme sounds
+- Utilities
+  - Utility instruments
+  - External Instrument
+  - Klopfgeist
+- Vintage B3 Organ
+  - Vintage B3 overview
+  - Vintage B3 Main window
+    - Main window overview
+    - Draw bar controls
+    - Scanner Vibrato and Chorus
+    - Percussion effect
+    - Use preset keys
+    - Set up Vintage B3 for your MIDI equipment
+      - MIDI setup overview
+      - Use multiple or multichannel controllers
+      - Use a single-channel controller
+  - Vintage B3 Rotor Cabinet window
+    - Rotor Cabinet window overview
+    - Advanced Cabinet parameters
+    - Advanced Motor parameters
+    - Advanced Brake parameters
+    - Microphone types
+    - Microphone parameters
+  - Vintage B3 Options window
+    - Options window overview
+    - Master and Click controls
+    - Morph parameters
+    - Use Morph controls
+  - Vintage B3 Effects window
+    - Use the integrated effects
+    - EQ controls
+    - Wah effect controls
+    - Distortion effect controls
+    - Reverb effect controls
+  - Vintage B3 Expert window
+    - Expert window overview
+    - Pitch controls
+    - Sustain controls
+    - Condition controls
+    - Organ Model controls
+  - Use a MIDI controller with Vintage B3
+    - Set a MIDI control mode
+    - MIDI mode: Roland VK or Korg CX
+    - MIDI mode: Hammond Suzuki
+    - MIDI mode: Native Instruments B4D
+    - MIDI mode: Nord Electro
+    - MIDI mode: Crumar
+  - B3 and Leslie information
+    - Additive synthesis with draw bars
+    - The residual effect
+    - Tonewheel sound generation
+    - A brief Hammond history
+    - The Leslie cabinet
+- Vintage Clav
+  - Vintage Clav overview
+  - Vintage Clav interface
+  - Vintage Clav Main window
+    - Main window overview
+    - Vintage Clav models
+    - Model characteristics
+    - Use Pickup parameters
+    - Use Stereo Spread
+  - Vintage Clav Effects window
+    - Effects window overview
+    - Compressor effect controls
+    - Distortion effect controls
+    - Modulation effect controls
+    - Wah effect controls
+  - Vintage Clav Details window
+    - Details window overview
+    - Excite and Click parameters
+    - String parameters
+    - Pitch parameters
+    - Misc parameters
+  - Extended parameters
+  - D6 Clavinet information
+    - D6 Clavinet history
+    - D6 mechanical details
+- Vintage Electric Piano
+  - Vintage Electric Piano overview
+  - Vintage Electric Piano interface
+  - Vintage Electric Piano Effects window
+    - EQ controls
+    - Drive effect controls
+    - Chorus effect controls
+    - Phaser effect controls
+    - Tremolo effect controls
+  - Vintage Electric Piano Details window
+    - Model controls
+    - Pitch controls
+  - Extended parameters
+  - Vintage Electric Piano emulations
+    - Rhodes models
+    - Hohner and Wurlitzer models
+  - MIDI controller assignments
+- Vintage Mellotron
+  - Vintage Mellotron overview
+  - Vintage Mellotron controls
+- Legacy instruments
+  - Legacy instruments overview
+  - Emulated instruments
+    - Bass
+    - Church Organ
+    - Drum Kits
+    - Electric Clav(inet)
+    - Electric Piano
+    - Guitar
+    - Horns
+    - Piano
+    - Sound Effects
+    - Strings
+    - Tuned Percussion
+    - Voice
+    - Woodwind
+    - Tonewheel Organ
+  - Synthesizers
+    - Analog Basic
+    - Analog Mono
+    - Analog Pad
+    - Analog Swirl
+    - Analog Sync
+    - Digital Basic
+    - Digital Mono
+    - Digital Stepper
+    - External Instrument
+    - Hybrid Basic
+    - Hybrid Morph
+- Synthesizer basics
+  - Synthesizer basics overview
+  - Sound basics
+    - Sound basics overview
+    - Tones, overtones, harmonics, and partials
+    - The frequency spectrum
+    - Other waveform properties
+  - Synthesizer fundamentals
+  - Subtractive synthesizers
+    - How subtractive synthesizers work
+    - Subtractive synthesizer components
+    - Oscillators
+    - Filters
+      - Filters overview
+      - Cutoff frequency
+      - Resonance
+      - Filter drive
+      - Filter slope
+    - Envelopes in the amplifier
+      - Amplifier envelope overview
+      - Attack, decay, sustain, and release
+    - Modulation
+      - Modulation overview
+      - Modulation routing in ES1 and ES2
+      - Common modulation sources
+    - Global controls
+  - Other synthesis methods
+    - Other synthesis methods overview
+    - Sample-based synthesis
+    - Frequency modulation (FM) synthesis
+    - Component modeling synthesis
+    - Wavetable, Vector, and LA synthesis
+    - Additive synthesis
+    - Spectral synthesis
+    - Resynthesis
+    - Phase distortion synthesis
+    - Granular synthesis
+  - A brief synthesizer history
+    - Precursors to the synthesizer
+    - Early voltage-controlled synthesizers
+    - The Minimoog
+    - Storage and polyphony
+    - Digital synthesizers
+
+## Glossary
+
+## Copyright and trademarks

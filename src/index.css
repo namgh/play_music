@@ -8,15 +8,15 @@
  * 사용자가 색 편집기에서 고친 값은 theme.ts 가 html 요소에 인라인으로 덮어쓴다.
  */
 @theme {
-  --color-body: #F1F1EE;
-  --color-panel: #E4E4E0;
-  --color-panel-2: #D5D5D0;
-  --color-rule: #CACAC4;
-  --color-ink: #111111;
-  --color-ink-2: #4A4A47;
-  --color-ink-3: #86867F;
-  --color-inv-2: #A3A39C;
-  --color-inv-3: #3A3A38;
+  --color-body: #FFFFFF;
+  --color-panel: #F4F4F5;
+  --color-panel-2: #E4E4E7;
+  --color-rule: #E4E4E7;
+  --color-ink: #0A0A0B;
+  --color-ink-2: #3F3F46;
+  --color-ink-3: #71717A;
+  --color-inv-2: #A1A1AA;
+  --color-inv-3: #3F3F46;
   --color-screen: #111113;
   --color-screen-2: #19191C;
   --color-grid: #25252A;

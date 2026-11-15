@@ -7,9 +7,9 @@ const THEMES = {
     inv2: '#B5B0A0', inv3: '#45423A', screen: '#18181A', screen2: '#202022', grid: '#2B2B2E', grid2: '#353539', sInk: '#E9E6DC', sInk2: '#9C988C', sInk3: '#66635B',
     acc: '#C8782E', acc2: '#E7B271', accInk: '#1D1B17', cta: '#DCEF7C', ctaInk: '#1D1B17', ok: '#8DB59A', rec: '#C2412D',
     t: ['#8DB59A', '#D9A066', '#86A9C8', '#C98A7A', '#AC9FCB', '#DCC979'] },
-  // A 전기 노랑: 차가운 흰 몸체 + 순도 높은 노랑 하나
-  volt: { keyw: '#FFFFFF', keyb: '#111111', name: 'A · 전기 노랑', body: '#F1F1EE', alu: '#E4E4E0', alu2: '#D5D5D0', rule: '#CACAC4', ink: '#111111', ink2: '#4A4A47', ink3: '#86867F',
-    inv2: '#A3A39C', inv3: '#3A3A38', screen: '#111113', screen2: '#19191C', grid: '#25252A', grid2: '#303036', sInk: '#EEEEEA', sInk2: '#9B9B97', sInk3: '#5E5E64',
+  // A 전기 노랑: 흰 몸체 + 순도 높은 노랑 하나
+  volt: { keyw: '#FFFFFF', keyb: '#111111', name: 'A · 전기 노랑', body: '#FFFFFF', alu: '#F4F4F5', alu2: '#E4E4E7', rule: '#E4E4E7', ink: '#0A0A0B', ink2: '#3F3F46', ink3: '#71717A',
+    inv2: '#A1A1AA', inv3: '#3F3F46', screen: '#111113', screen2: '#19191C', grid: '#25252A', grid2: '#303036', sInk: '#EEEEEA', sInk2: '#9B9B97', sInk3: '#5E5E64',
     acc: '#FFD400', acc2: '#FFDD33', accInk: '#111111', cta: '#FFD400', ctaInk: '#111111', ok: '#3DDC97', rec: '#FF4B3E',
     t: ['#3DDC97', '#FF6B4A', '#4C9DFF', '#A07BFF', '#FF6FB5', '#2ED3DB'] },
   // B 애시드 라임: 그래파이트 몸체(어두운 쪽)

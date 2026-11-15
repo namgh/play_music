@@ -7,7 +7,7 @@
  */
 
 export const THEMES = [
-  { key: 'volt', name: 'A · 전기 노랑', swatch: ['#F1F1EE', '#111113', '#FFD400', '#3DDC97', '#FF6B4A', '#4C9DFF'] },
+  { key: 'volt', name: 'A · 전기 노랑', swatch: ['#FFFFFF', '#111113', '#FFD400', '#3DDC97', '#FF6B4A', '#4C9DFF'] },
   { key: 'acid', name: 'B · 애시드 라임', swatch: ['#1B1B1E', '#0D0D0F', '#D8FF3C', '#3DDC97', '#FF8A3D', '#4C9DFF'] },
   { key: 'cobalt', name: 'C · 코발트', swatch: ['#F4F4F1', '#0F1120', '#3358FF', '#FFE03D', '#FF8A3D', '#46B8FF'] },
   { key: 'signal', name: 'D · 신호 주황', swatch: ['#EEEDEA', '#141312', '#FF5A1F', '#3DCB8C', '#FFB23F', '#4C9DFF'] },
