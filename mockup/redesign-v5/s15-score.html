@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>v5 15 악보</title>
+<link rel="stylesheet" href="base.css"><script src="../redesign-v4/lib.js"></script><script src="shell.js"></script>
+<style>
+  .insp{left:56px;top:52px;width:264px;height:848px}
+  .pb{display:grid;grid-template-columns:repeat(6,1fr);gap:4px}
+  .pb span{height:36px;border-radius:7px;background:var(--sub);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;color:var(--tx2)}
+  .pb span.on{background:var(--tx);color:#fff}
+  .canvas{left:320px;top:52px;width:1120px;height:848px;background:var(--sub)}
+  .bar{position:absolute;left:16px;top:12px;display:flex;gap:8px;align-items:center}
+  .paper{position:absolute;left:150px;top:60px;width:820px;height:1000px;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.08),0 12px 32px rgba(0,0,0,.06);border-radius:4px}
+</style></head>
+<body>
+<div class="pg" data-root id="root">
+  <div class="a insp">
+    <div class="ttl">악보 편집기</div><div class="st">로즈 · 베이스 — 전체 악보 세트</div>
+    <div class="sec">파트 상자 · 음표</div>
+    <div class="pb" id="pb1"></div>
+    <div class="sec">셈여림 · 표현</div>
+    <div class="pb" id="pb2"></div>
+    <div class="sec">입력</div>
+    <div class="g2"><div class="fd on"><small>입력 방식</small><b>건반 · 스텝</b></div><div class="fd"><small>조성 안으로만</small><b>켬 · A minor</b></div></div>
+    <div class="sec">표시</div>
+    <div class="g2"><div class="fd"><small>표시 퀀타이즈</small><b>1/16</b></div><div class="fd"><small>보표 스타일</small><b>피아노 2단</b></div>
+      <div class="fd"><small>음표 색</small><b>음정 오차</b></div><div class="fd"><small>센트 표시</small><b>±5¢ 넘으면</b></div></div>
+    <div class="note" style="margin-top:12px">센트가 있는 음은 음표 위에 작은 숫자로 보입니다. MusicXML 로 내보내면 미분음 표기로 바뀝니다.</div>
+  </div>
+  <div class="a canvas" id="cv">
+    <div class="bar"><span class="seg"><span class="on">페이지</span><span>이어서</span></span><span class="seg"><span class="on">전체 악보</span><span>로즈</span><span>베이스</span><span>＋ 파트</span></span><span class="chip">가사 · 코드 기호 보임</span><span class="chip">MusicXML · PDF 내보내기</span></div>
+    <div class="paper" id="paper"></div>
+  </div>
+</div>
+<script>
+  const root = $('#root');
+  shell(root, { rail: 'score', phase: ['plan', '설계만'] });
+  ['𝅝', '𝅗𝅥', '♩', '♪', '𝅘𝅥𝅯', '·'].forEach((g, i) => el('span', i === 2 ? 'on' : '', ['온', '2분', '4분', '8분', '16분', '점'][i], $('#pb1')));
+  ['pp', 'p', 'mf', 'f', '＜', '＞', '이음', '스타', '악센', '트릴', '페달', '코드'].forEach((g) => el('span', '', g, $('#pb2')));
+  const P = $('#paper'), L = 60, R = 760;
+  let s = `<text x="410" y="70" text-anchor="middle" font-family="Inter,Pretendard" font-size="26" font-weight="700" fill="#0B0B0C">비 오는 새벽</text>
+    <text x="410" y="96" text-anchor="middle" font-family="Inter,Pretendard" font-size="12" fill="#8C8C95">RESONA (이름 임시) · ♩ = 92</text>`;
+  const staff = (y) => { let o = ''; for (let k = 0; k < 5; k++) o += `<line x1="${L}" y1="${y + k * 8}" x2="${R}" y2="${y + k * 8}" stroke="#0B0B0C" stroke-width=".8"/>`; return o; };
+  const sys = (y0, bars0) => {
+    let o = staff(y0) + staff(y0 + 64);
+    o += `<line x1="${L}" y1="${y0}" x2="${L}" y2="${y0 + 96}" stroke="#0B0B0C" stroke-width="1.2"/>`;
+    o += `<text x="${L + 4}" y="${y0 + 30}" font-size="40" font-family="serif" fill="#0B0B0C">𝄞</text><text x="${L + 6}" y="${y0 + 64 + 26}" font-size="30" font-family="serif" fill="#0B0B0C">𝄢</text>`;
+    if (bars0 === 1) o += `<text x="${L + 40}" y="${y0 + 15}" font-size="16" font-weight="700" font-family="Inter">4</text><text x="${L + 40}" y="${y0 + 31}" font-size="16" font-weight="700" font-family="Inter">4</text>
+      <text x="${L + 40}" y="${y0 + 79}" font-size="16" font-weight="700" font-family="Inter">4</text><text x="${L + 40}" y="${y0 + 95}" font-size="16" font-weight="700" font-family="Inter">4</text>`;
+    const bw = (R - L - 64) / 4;
+    const CH = ['Am', 'F', 'C', 'G', 'Am', 'F', 'Dm', 'E7'];
+    for (let b = 0; b < 4; b++) { const x0 = L + 64 + b * bw; o += `<line x1="${x0 + bw}" y1="${y0}" x2="${x0 + bw}" y2="${y0 + 96}" stroke="#0B0B0C" stroke-width=".9"/>`;
+      o += `<text x="${x0 + 4}" y="${y0 - 14}" font-family="Inter" font-size="13" font-weight="600" fill="#0B0B0C">${CH[(bars0 - 1 + b) % 8]}</text>`;
+      o += `<text x="${x0 - 2}" y="${y0 - 30}" font-family="Inter" font-size="9" fill="#8C8C95">${bars0 + b}</text>`;
+      // 위 보표: 화음 4분음표 4개
+      [0, 1, 2, 3].forEach(q => { const nx = x0 + 16 + q * (bw / 4), base = [20, 24, 16, 20][(b + q) % 4];
+        [0, -8, -16].forEach((d, k) => o += `<ellipse cx="${nx}" cy="${y0 + base + d}" rx="5.4" ry="3.8" transform="rotate(-20 ${nx} ${y0 + base + d})" fill="#0B0B0C"/>`);
+        o += `<line x1="${nx + 5}" y1="${y0 + base}" x2="${nx + 5}" y2="${y0 + base - 42}" stroke="#0B0B0C" stroke-width="1"/>`; });
+      // 아래 보표: 베이스 8분음표 묶음
+      for (let q = 0; q < 8; q += 2) { const nx = x0 + 14 + q * (bw / 8), ny = y0 + 64 + [28, 20, 24, 16][(q / 2 + b) % 4], ny2 = ny + ((q + b) % 3 === 0 ? -4 : 4), sel = bars0 === 1 && b === 1 && q === 0;
+        const c = sel ? '#D4A800' : '#0B0B0C';
+        o += `<ellipse cx="${nx}" cy="${ny}" rx="5.4" ry="3.8" transform="rotate(-20 ${nx} ${ny})" fill="${c}"/><ellipse cx="${nx + bw / 8}" cy="${ny2}" rx="5.4" ry="3.8" transform="rotate(-20 ${nx + bw / 8} ${ny2})" fill="#0B0B0C"/>
+          <line x1="${nx + 5}" y1="${ny}" x2="${nx + 5}" y2="${ny - 30}" stroke="#0B0B0C"/><line x1="${nx + bw / 8 + 5}" y1="${ny2}" x2="${nx + bw / 8 + 5}" y2="${ny - 30}" stroke="#0B0B0C"/>
+          <line x1="${nx + 5}" y1="${ny - 30}" x2="${nx + bw / 8 + 5}" y2="${ny - 30}" stroke="#0B0B0C" stroke-width="3.5"/>`;
+        if (sel) o += `<text x="${nx - 8}" y="${ny + 18}" font-family="Inter" font-size="9" font-weight="600" fill="#D4A800">−3¢</text>`; }
+      o += `<text x="${x0 + 14}" y="${y0 + 120}" font-family="Pretendard,Inter" font-size="12" fill="#55555D">${['비가 와', '창가에', '불 꺼진', '새벽 두 시', '', '', '', ''][(bars0 - 1 + b) % 8]}</text>`; }
+    return o; };
+  s += sys(160, 1) + sys(340, 5) + sys(520, 9) + sys(700, 13);
+  s += `<text x="${L + 64}" y="${160 + 50}" font-family="serif" font-style="italic" font-weight="700" font-size="15" fill="#0B0B0C">mf</text>`;
+  P.innerHTML = `<svg width="820" height="1000" fill="none">${s}</svg>`;
+</script>
+<script src="../redesign-v4/extract4.js"></script>
+</body></html>

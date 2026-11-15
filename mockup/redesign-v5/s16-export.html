@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>v5 16 내보내기 · 공유</title>
+<link rel="stylesheet" href="base.css"><script src="../redesign-v4/lib.js"></script><script src="shell.js"></script>
+<style>
+  .nav{left:56px;top:52px;width:240px;height:848px;border-right:1px solid var(--line);padding:16px 10px}
+  .nav .g{font-size:11px;font-weight:600;color:var(--tx3);margin:18px 10px 6px}
+  .main{left:296px;top:52px;width:680px;height:848px;padding:24px 28px}
+  .h1{font-size:22px;font-weight:700;letter-spacing:-.4px}
+  .opt{display:flex;align-items:center;min-height:50px;border-bottom:1px solid var(--line);font-size:13px;gap:12px}
+  .opt .k{width:150px;color:var(--tx2)}
+  .opt .n{font-size:11px;color:var(--tx3);margin-left:auto}
+  .side{left:976px;top:52px;width:464px;height:848px;border-left:1px solid var(--line);padding:24px 20px}
+  .wv{margin-top:12px;height:120px;border-radius:12px;background:var(--d0);position:relative;overflow:hidden}
+  .fl{display:flex;align-items:center;gap:10px;height:40px;border-bottom:1px solid var(--line);font-size:13px}
+  .fl i{width:8px;height:8px;border-radius:2px;flex:none}
+  .fl span{margin-left:auto;font-size:12px;color:var(--tx3)}
+  .go{position:absolute;left:20px;right:20px;bottom:20px;height:46px;border-radius:10px;background:var(--tx);color:#fff;font-size:14px;font-weight:600;display:flex;align-items:center;justify-content:center;gap:10px}
+</style></head>
+<body>
+<div class="pg" data-root id="root">
+  <div class="a nav" id="nav"></div>
+  <div class="a main">
+    <div class="h1">트랙별 스템 내보내기</div><div class="st">트랙마다 따로 — 다른 프로그램에서 믹스하거나 공동 작업자에게 보낼 때</div>
+    <div class="opt" style="margin-top:14px"><span class="k">범위</span><span class="seg"><span class="on">곡 전체</span><span>반복 구간</span><span>마커 구간</span></span><span class="n">1.1 – 17.1 · 0:41.7</span></div>
+    <div class="opt"><span class="k">꼬리 포함</span><span class="seg"><span class="on">자동</span><span>끔</span><span>2초</span></span><span class="n">리버브가 끝날 때까지</span></div>
+    <div class="opt"><span class="k">형식</span><span class="seg"><span class="on">WAV</span><span>AIFF</span><span>FLAC</span><span>MP3</span><span>AAC</span></span></div>
+    <div class="opt"><span class="k">샘플레이트 · 비트</span><span class="seg"><span>44.1</span><span class="on">48</span><span>96</span></span><span class="seg"><span>16</span><span class="on">24</span><span>32 float</span></span></div>
+    <div class="opt"><span class="k">디더링</span><span class="seg"><span class="on">끔 (24bit)</span><span>삼각 (TPDF)</span><span>노이즈 셰이핑</span></span></div>
+    <div class="opt"><span class="k">노멀라이즈</span><span class="seg"><span>끔</span><span class="on">과부하만 막기</span><span>최대</span></span></div>
+    <div class="opt"><span class="k">소리 크기 맞추기</span><span class="seg"><span class="on">끔</span><span>−14 LUFS</span><span>−16 LUFS</span><span>직접</span></span><span class="n">스템에는 보통 끔</span></div>
+    <div class="opt"><span class="k">이펙트 포함</span><span class="seg"><span class="on">트랙 이펙트 포함</span><span>원음만</span></span></div>
+    <div class="opt"><span class="k">마스터 처리</span><span class="seg"><span>포함</span><span class="on">빼기</span></span><span class="n">스템 합이 믹스와 같도록</span></div>
+    <div class="opt"><span class="k">렌더 방식</span><span class="seg"><span class="on">오프라인 (빠름)</span><span>실시간</span></span><span class="n">결과는 재생과 똑같음</span></div>
+  </div>
+  <div class="a side">
+    <div class="ttl">만들어질 파일 8개</div><div class="st">비 오는 새벽 — stems · 약 64 MB</div>
+    <div class="wv" id="wv"></div>
+    <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--tx3);margin-top:8px"><span>믹스 · −14.2 LUFS · 트루 피크 −1.1 dBTP</span><span>0:41.7</span></div>
+    <div class="sec">파일</div>
+    <div id="files"></div>
+    <div class="go">${''}내보내기 · 8개 파일</div>
+  </div>
+</div>
+<script>
+  const root = $('#root');
+  shell(root, { rail: 'none', phase: ['part', '일부 구현 · WAV 믹스'] });
+  document.querySelector('.go').innerHTML = ICON.export(16) + '내보내기 · 8개 파일';
+  const N = $('#nav');
+  el('div', 'g', '오디오', N); [['믹스 (한 파일)', 'WAV 됨'], ['트랙별 스템', '', 1], ['고른 리전만', ''], ['바이노럴 · 헤드폰용', '']].forEach(([n, s, on]) => el('div', 'li' + (on ? ' on' : ''), `${n}<span>${s}</span>`, N));
+  el('div', 'g', '악보 · 데이터', N); [['MIDI 파일', '됨'], ['MusicXML 악보', ''], ['곡 파일 (.json)', '됨'], ['다른 DAW 로 (AAF)', '']].forEach(([n, s]) => el('div', 'li', `${n}<span>${s}</span>`, N));
+  el('div', 'g', '공유', N); [['공유 링크', '듣기 전용'], ['함께 편집 초대', ''], ['휴대폰으로 보내기', '']].forEach(([n, s]) => el('div', 'li', `${n}<span>${s}</span>`, N));
+  const F = $('#files');
+  [...SONG.tracks.map((t, i) => [t.name, HEX[i]]), ['버스 1 · 리버브', '#9C9CA5'], ['버스 2 · 딜레이', '#9C9CA5']].forEach(([n, c]) => el('div', 'fl', `<i style="background:${c}"></i>비 오는 새벽 — ${n}.wav<span>8.0 MB</span>`, F));
+  let w = ''; for (let k = 0; k < 200; k++) { const v = 6 + Math.abs(Math.sin(k * .17) * Math.sin(k * .031 + 1)) * 96; w += `<rect x="${8 + k * 2.1}" y="${60 - v / 2}" width="1.3" height="${v}" fill="#EDEDF0" opacity=".7"/>`; }
+  $('#wv').innerHTML = `<svg width="424" height="120">${w}<line x1="0" y1="14" x2="424" y2="14" stroke="#E5484D" stroke-dasharray="3 4" opacity=".6"/></svg>`;
+</script>
+<script src="../redesign-v4/extract4.js"></script>
+</body></html>

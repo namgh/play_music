@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>v5 14 오디오 음정 · 타이밍</title>
+<link rel="stylesheet" href="base.css"><script src="../redesign-v4/lib.js"></script><script src="shell.js"></script>
+<style>
+  .insp{left:56px;top:52px;width:264px;height:848px}
+  .ws{left:320px;top:52px;width:1120px;height:848px}
+  .key{position:absolute;left:0;width:56px;border-bottom:1px solid #D9D9DE;background:#FAFAFB}
+  .key.bk{background:#26262B;border-color:#1A1A1E;width:36px}
+  .kl{position:absolute;left:30px;font-size:9px;font-weight:600;color:#8C8C95}
+  .blob{position:absolute;border-radius:10px;background:rgba(111,207,214,.28);border:1px solid rgba(111,207,214,.8)}
+  .blob.sel{background:rgba(255,214,10,.22);border:1.5px solid var(--y)}
+  .blob span{position:absolute;left:8px;top:4px;font-size:10px;font-weight:600;color:#6FCFD6}
+  .blob.sel span{color:var(--y)}
+  .fm{position:absolute;width:1.5px;background:#B9A2EE}
+  .fmh{position:absolute;width:10px;height:10px;border-radius:2px;background:#B9A2EE;transform:rotate(45deg)}
+  .hs{position:absolute;width:11px;height:11px;border-radius:50%;background:var(--d0);border:2px solid var(--y)}
+  .bub{position:absolute;height:28px;border-radius:7px;background:#26262B;color:var(--dt);font-size:12px;display:flex;align-items:center;gap:8px;padding:0 10px;white-space:nowrap;box-shadow:0 6px 16px rgba(0,0,0,.35)}
+  .bub b{font-weight:600;color:var(--y)}
+</style></head>
+<body>
+<div class="pg" data-root id="root">
+  <div class="a insp">
+    <div class="ttl"><i style="background:var(--c6)"></i>보컬 · 오디오 편집</div><div class="st">녹음된 소리의 음정과 타이밍 — 음표처럼</div>
+    <div class="sec">무엇을</div>
+    <div class="seg"><span>음정</span><span>타이밍</span><span class="on">둘 다</span></div>
+    <div class="sec">분석 방식</div>
+    <div class="g2"><div class="fd on"><small>소리 종류</small><b>단선율 (보컬)</b></div><div class="fd"><small>포먼트</small><b>지킴</b></div></div>
+    <div class="sec">음정 보정<span>A minor 스케일</span></div>
+    <div class="row"><span class="lb">강도</span><span class="tr"><i style="width:60%"></i><u style="left:calc(60% - 7px)"></u></span><b>60 %</b></div>
+    <div class="row"><span class="lb">반응</span><span class="tr"><i style="width:35%"></i><u style="left:calc(35% - 7px)"></u></span><b>90 ms</b></div>
+    <div class="row"><span class="lb">허용 오차</span><span class="tr"><i style="width:20%"></i><u style="left:calc(20% - 7px)"></u></span><b>10 ¢</b></div>
+    <div class="sec">선택한 음 3개</div>
+    <div class="g2"><div class="fd"><small>음정 이동</small><b>+35<em>¢</em></b></div><div class="fd"><small>흔들림</small><b>−20<em>%</em></b></div>
+      <div class="fd"><small>시작 드리프트</small><b>−40<em>%</em></b></div><div class="fd"><small>게인</small><b>+1.5<em>dB</em></b></div></div>
+    <div class="sec">더</div>
+    <div class="li">오디오 → MIDI 음표 만들기<span>새 트랙</span></div>
+    <div class="li">곡 템포에 맞추기<span>스마트 템포</span></div>
+    <div class="li">속도 · 음정 함께 (바리스피드)<span>100 %</span></div>
+    <div class="li">무음 구간 지우기<span>−50 dB</span></div>
+  </div>
+  <div class="a ws" id="ws"></div>
+</div>
+<script>
+  const root = $('#root');
+  shell(root, { rail: 'arrange', pos: '9.2.240', phase: ['plan', '설계만 · Phase 4'] });
+  const W = $('#ws'), EH = 36, GX = 56, GW = 1064;
+  const eh = at(el('div', 'eh', null, W), 0, 0, 1120); eh.style.borderTop = '0';
+  [['오디오 트랙 편집기', 1, 16], ['오디오 파일', 0, 150], ['악기 분리', 0, 236]].forEach(([n, on, x]) => at(el('div', 'tab' + (on ? ' on' : ''), n, eh), x, 0));
+  at(el('div', 'tab', '<span style="color:var(--dt)">보컬 · 컴프 A</span>&nbsp;· 9–11마디 · 플렉스 켬', eh), 330, 0);
+  const PN = ['E4', 'D#4', 'D4', 'C#4', 'C4', 'B3', 'A#3', 'A3', 'G#3', 'G3', 'F#3', 'F3', 'E3'];
+  const TOP = EH + 40, WH = 150, GH = 848 - TOP - WH, RH = GH / 13;
+  // 플렉스 타임 마커 줄
+  at(el('div', 'hc', null, W), 0, EH, 1120, 40);
+  at(el('div', 'lb2', '타이밍', W), 12, EH + 13);
+  const S = GW / 8;
+  for (let b = 0; b <= 8; b++) { at(el('div', 'vl' + (b % 4 === 0 ? ' b' : ''), null, W), GX + b * S, EH, null, 848 - EH); if (b < 8) at(el('div', 'rul', `${9 + Math.floor(b / 4)}.${b % 4 + 1}`, W), GX + b * S + 6, EH + 4); }
+  [.6, 1.1, 2.05, 3.0, 3.9, 4.6, 5.8, 6.9].forEach((p, i) => { at(el('div', 'fm', null, W), GX + p * S, EH + 22, null, 848 - EH - 22).style.opacity = i === 3 ? 1 : .35; at(el('div', 'fmh', null, W), GX + p * S - 4.5, EH + 24); });
+  PN.forEach((p, i) => { const y = TOP + i * RH, bk = p.includes('#'); at(el('div', 'key' + (bk ? ' bk' : ''), null, W), 0, y, null, RH);
+    at(el('div', 'hl', null, W), GX, y, GW, bk ? RH : 1).style.background = bk ? 'rgba(255,255,255,.018)' : 'var(--dl)';
+    if (!bk) at(el('div', 'kl', p, W), 30, y + RH / 2 - 6); });
+  const yOf = p => TOP + PN.indexOf(p) * RH;
+  const NT = [[.1, .9, 'A3', 12], [1.1, 1.8, 'C4', -8], [2.05, 2.9, 'E4', 35, 1], [3.0, 3.8, 'D4', 22, 1], [3.9, 4.5, 'C4', 4, 1], [4.6, 5.7, 'A3', -14], [5.8, 6.8, 'G3', 6], [6.9, 7.9, 'A3', -2]];
+  let path = '';
+  NT.forEach(([a, b, p, c, sel], i) => { const x = GX + a * S + 2, w = (b - a) * S - 4, y = yOf(p) + 3;
+    at(el('div', 'blob' + (sel ? ' sel' : ''), `<span>${p} ${c > 0 ? '+' : ''}${c}¢</span>`, W), x, y, w, RH - 6);
+    const cy = yOf(p) + RH / 2 - c / 100 * RH; for (let k = 0; k <= 20; k++) { const xx = x + w * k / 20, yy = cy + Math.sin(k * .9 + i) * RH * .12 + (k < 3 ? (3 - k) * RH * .15 : 0);
+      path += (k ? ' L ' : ' M ') + xx.toFixed(1) + ' ' + yy.toFixed(1); } });
+  at(el('div', '', `<svg width="1120" height="848" fill="none"><path d="${path}" stroke="#EDEDF0" stroke-width="1.3" opacity=".8"/></svg>`, W), 0, 0).style.position = 'absolute';
+  const sx = GX + 2.05 * S + 2, sw = .85 * S - 4, sy = yOf('E4') + 3;
+  [[sx, sy], [sx + sw / 2, sy], [sx + sw, sy], [sx, sy + RH - 6], [sx + sw / 2, sy + RH - 6], [sx + sw, sy + RH - 6]].forEach(([x, y]) => at(el('div', 'hs', null, W), x - 5.5, y - 5.5));
+  at(el('div', 'bub', '음정 <b>+35 ¢</b> E4 쪽으로 · 3개', W), sx - 20, sy - 40 > TOP ? sy - 40 : sy + RH + 4);
+  // 아래 파형
+  const WY = 848 - WH; at(el('div', 'hl', null, W), 0, WY, 1120).style.background = 'var(--dl2)';
+  at(el('div', 'lb2', '파형', W), 12, WY + 8);
+  let wv = ''; for (let k = 0; k < GW / 2.2; k++) { const v = 4 + Math.abs(Math.sin(k * .21) * Math.sin(k * .033 + 1)) * (WH - 30); wv += `<rect x="${GX + k * 2.2}" y="${WY + (WH - v) / 2}" width="1.4" height="${v}" fill="#6FCFD6" opacity=".75"/>`; }
+  at(el('div', '', `<svg width="1120" height="848" fill="none">${wv}</svg>`, W), 0, 0).style.position = 'absolute';
+</script>
+<script src="../redesign-v4/extract4.js"></script>
+</body></html>

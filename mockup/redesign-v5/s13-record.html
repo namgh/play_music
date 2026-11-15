@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>v5 13 녹음 · 컴핑</title>
+<link rel="stylesheet" href="base.css"><script src="../redesign-v4/lib.js"></script><script src="shell.js"></script>
+<style>
+  .insp{left:56px;top:52px;width:264px;height:848px}
+  .meter{height:10px;border-radius:5px;background:var(--sub2);position:relative;overflow:hidden;margin-top:6px}
+  .meter i{position:absolute;left:0;top:0;bottom:0;background:linear-gradient(90deg,#86D3A4 0%,#86D3A4 70%,#FFD60A 88%,#E5484D 100%)}
+  .fb{margin-top:10px;height:40px;border-radius:10px;background:var(--sub);display:flex;align-items:center;gap:10px;padding:0 12px;font-size:13px;font-weight:500}
+  .fb span{margin-left:auto;font-size:11px;color:var(--tx3)}
+  .ws{left:320px;top:52px;width:1120px;height:848px}
+  .th{position:absolute;left:0;width:200px}
+  .th .cb{position:absolute;left:0;top:0;bottom:0;width:3px}
+  .th .nm{position:absolute;left:14px;top:10px;font-size:13px;font-weight:500;color:var(--dt)}
+  .th .in{position:absolute;left:14px;top:29px;font-size:11px;color:var(--dt3)}
+  .th .bt{position:absolute;right:10px;top:14px;display:flex;gap:3px}
+  .th .bt span{width:20px;height:20px;border-radius:5px;background:var(--d2);font-size:10px;font-weight:600;color:var(--dt3);display:flex;align-items:center;justify-content:center}
+  .th .bt span.r{background:var(--rec);color:#fff}
+  .tk{position:absolute;left:0;width:200px;background:var(--d1)}
+  .tk span{position:absolute;left:24px;top:8px;font-size:12px;color:var(--dt2)}
+  .tk b{position:absolute;right:12px;top:8px;font-size:11px;font-weight:500;color:var(--dt3)}
+  .wvr{position:absolute;border-radius:4px;overflow:hidden}
+  .wvr i{position:absolute;width:1.5px;border-radius:1px}
+  .wvr .tl{position:absolute;left:0;right:0;top:0;height:14px;font-size:10px;font-weight:600;padding-left:6px;line-height:14px}
+  .punch{position:absolute;height:6px;background:var(--rec);border-radius:3px}
+  .rgn{position:absolute;border-radius:4px}
+</style></head>
+<body>
+<div class="pg" data-root id="root">
+  <div class="a insp">
+    <div class="ttl"><i style="background:var(--c6)"></i>보컬 · 녹음</div><div class="st">오디오 트랙 · 테이크 4개 · 컴프 1</div>
+    <div class="sec">입력</div>
+    <div class="g2"><div class="fd"><small>장치</small><b>USB 인터페이스</b></div><div class="fd"><small>입력</small><b>1 · 모노</b></div></div>
+    <div class="row" style="margin-top:6px"><span class="lb">입력 레벨</span><span style="flex:1"><div class="meter"><i style="width:64%"></i></div></span><b>−12 dB</b></div>
+    <div class="g2" style="margin-top:6px"><div class="fd"><small>모니터</small><b>켬 · 낮은 지연</b></div><div class="fd"><small>지연 보정</small><b>8.4<em>ms 측정됨</em></b></div></div>
+    <div class="sec">녹음 방식</div>
+    <div class="seg"><span class="on">테이크 폴더</span><span>덮어쓰기</span><span>겹쳐 쓰기</span></div>
+    <div class="g2" style="margin-top:8px"><div class="fd on"><small>펀치</small><b>9.1 – 11.1</b></div><div class="fd"><small>카운트인</small><b>1<em>마디</em></b></div>
+      <div class="fd"><small>사이클 녹음</small><b>켬 · 테이크마다</b></div><div class="fd"><small>메트로놈</small><b>녹음 중만</b></div></div>
+    <div class="sec">놓친 연주 되살리기</div>
+    <div class="fb">재생 중 친 것 되살리기<span>⇧⌘R</span></div>
+    <div class="note" style="margin-top:8px">녹음 대기를 안 켜고 친 MIDI 연주도 마지막 몇 마디는 기억해 둡니다.</div>
+    <div class="sec">컴핑</div>
+    <div class="note">테이크 위를 끌어 고르면 위 "컴프" 줄에 이어 붙습니다. 경계는 자동 크로스페이드 10 ms.</div>
+  </div>
+  <div class="a ws" id="ws"></div>
+</div>
+<script>
+  const root = $('#root');
+  shell(root, { rail: 'arrange', pos: '10.2.418', phase: ['plan', '설계만 · Phase 2'], recording: true, playing: true });
+  const W = $('#ws'), HX = 200, BW = 920 / 16;
+  at(el('div', 'hc', null, W), 0, 0, 200, 848);
+  for (let b = 0; b <= 16; b++) { at(el('div', 'vl' + (b % 4 === 0 ? ' b' : ''), null, W), HX + b * BW, 0, null, 848); if (b < 16) at(el('div', 'rul', String(b + 1), W), HX + b * BW + 6, 8); }
+  at(el('div', 'punch', null, W), HX + 8 * BW, 20, 2 * BW, 6);
+  at(el('div', 'lb2', '펀치', W), HX + 8 * BW + 4, 26).style.color = '#FF8A8D';
+  at(el('div', 'hl', null, W), 0, 40, 1120);
+  const wave = (r, c, w, h, seed, a = 1) => { const g = rng(seed); for (let k = 0; k < w / 2.6; k++) { const v = (2 + Math.abs(Math.sin(k * .23 + seed) * Math.sin(k * .041 + 2)) * (h - 22)) * (.6 + g() * .4) * a;
+    at(el('i', '', null, r), 4 + k * 2.6, 16 + (h - 18 - v) / 2, null, v).style.background = c; } };
+  let y = 40;
+  const rowT = (t, i, h, rec) => { at(el('div', 'th', `<i class="cb" style="background:${HEX[i]}"></i><span class="nm">${t.name}</span><span class="in">${t.inst}</span>
+      <span class="bt"><span>M</span><span>S</span><span class="${rec ? 'r' : ''}">R</span></span>`, W), 0, y, null, h); at(el('div', 'hl', null, W), 0, y, 1120); };
+  // 위: 드럼·베이스 (참고)
+  [0, 1].forEach(i => { const t = SONG.tracks[i]; rowT(t, i, 52); t.clips.forEach(([b, len], ci) => { const r = at(el('div', 'rgn', null, W), HX + b * BW + 1, y + 4, len * BW - 2, 44); r.style.background = rgba(HEX[i], .16); r.style.borderTop = `3px solid ${HEX[i]}`; }); y += 52; });
+  // 보컬 + 테이크 폴더
+  const V = { name: '보컬', inst: '오디오 · 입력 1' };
+  rowT(V, 0, 70, true); y += 0;
+  const comp = at(el('div', 'wvr', '<div class="tl" style="background:#6FCFD6;color:#0E0E10">보컬 · 컴프 A</div>', W), HX + 4 * BW + 1, y + 3, 6 * BW - 2, 64); comp.style.background = 'rgba(111,207,214,.16)';
+  wave(comp, '#6FCFD6', 6 * BW, 64, 3);
+  const live = at(el('div', 'wvr', '<div class="tl" style="background:#E5484D;color:#fff">녹음 중 · 테이크 5</div>', W), HX + 8 * BW + 1, y + 3, 1.6 * BW, 64); live.style.background = 'rgba(229,72,77,.16)';
+  wave(live, '#FF8A8D', 1.6 * BW, 64, 9);
+  y += 70;
+  [1, 2, 3, 4].forEach(k => { at(el('div', 'tk', `<span>테이크 ${k}</span><b>${['3:12', '3:15', '3:11', '3:14'][k - 1]}</b>`, W), 0, y, null, 46); at(el('div', 'hl', null, W), 0, y, 1120);
+    const r = at(el('div', 'wvr', null, W), HX + 4 * BW + 1, y + 3, 6 * BW - 2, 40); r.style.background = 'rgba(255,255,255,.03)'; wave(r, '#5F5F68', 6 * BW, 40, k * 5, .8);
+    const pick = [[[0, 2]], [[2, 4.5]], [], [[4.5, 6]]][k - 1];
+    pick.forEach(([a, b]) => { const p = at(el('div', 'wvr', null, W), HX + (4 + a) * BW + 1, y + 3, (b - a) * BW - 2, 40); p.style.background = 'rgba(111,207,214,.22)'; p.style.outline = '1.5px solid #6FCFD6'; wave(p, '#6FCFD6', (b - a) * BW, 40, k * 5 + a, .8); });
+    y += 46; });
+  [2, 3, 4].forEach(i => { const t = SONG.tracks[i]; rowT(t, i, 52); t.clips.forEach(([b, len], ci) => { const r = at(el('div', 'rgn', null, W), HX + b * BW + 1, y + 4, len * BW - 2, 44); r.style.background = rgba(HEX[i], .16); r.style.borderTop = `3px solid ${HEX[i]}`; }); y += 52; });
+  at(el('div', 'hl', null, W), 0, y, 1120);
+  at(el('div', 'ph', null, W), HX + 9.6 * BW, 0, null, 848).style.background = '#E5484D';
+</script>
+<script src="../redesign-v4/extract4.js"></script>
+</body></html>
