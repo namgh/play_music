@@ -364,7 +364,7 @@ export function PianoRoll({
     : null;
 
   return (
-    <div className={`flex overflow-auto rounded-lg border border-neutral-800 bg-neutral-950 ${className}`}>
+    <div className={`flex overflow-auto rounded-xl border border-neutral-800 bg-neutral-950 ${className}`}>
       {/* 건반 */}
       <div className="sticky left-0 z-20 shrink-0 border-r border-neutral-800 bg-neutral-950">
         <div className="h-6 border-b border-neutral-800" />
@@ -384,12 +384,12 @@ export function PianoRoll({
               title={title}
               className={`flex w-16 items-center justify-end border-b px-2 text-[9px] font-mono ${
                 isBlackKey(midi)
-                  ? 'border-neutral-900 bg-neutral-900 text-neutral-500'
-                  : 'border-neutral-800 bg-neutral-200 text-neutral-700'
+                  ? 'border-screen bg-keyb text-sink-3'
+                  : 'border-grid bg-keyw text-ink-3'
               } ${inScale ? '' : 'opacity-40'} ${playable ? '' : 'opacity-25'}`}
             >
               {tonic ? (
-                <span className="text-teal-500">{pitchName({ midi, cents: 0 })}</span>
+                <span className="font-semibold text-ink">{pitchName({ midi, cents: 0 })}</span>
               ) : (
                 midi % 12 === 0 ? `C${Math.floor(midi / 12) - 1}` : ''
               )}
@@ -410,7 +410,7 @@ export function PianoRoll({
             <div
               key={i}
               style={{ width: barTicks * pxPerTick }}
-              className="pointer-events-none shrink-0 border-l border-neutral-800 pl-1 font-mono text-[10px] text-neutral-500"
+              className="pointer-events-none shrink-0 border-l border-neutral-800 pl-1.5 pt-0.5 font-num text-[13px] text-neutral-400"
             >
               {i + 1}
             </div>
@@ -463,7 +463,7 @@ export function PianoRoll({
           {/* 편집 커서 — 재생 시작 위치이자 붙여넣기 위치 */}
           <div
             style={{ left: tickToLeft(cursorTick) }}
-            className="pointer-events-none absolute inset-y-0 z-10 w-px bg-amber-400/70"
+            className="pointer-events-none absolute inset-y-0 z-10 w-px bg-sink/50"
           />
 
           {playheadTick !== null && playheadTick >= clip.startTick && (
@@ -551,10 +551,11 @@ export function PianoRoll({
                 }}
                 className={`absolute flex items-center rounded-[3px] border text-[9px] ${
                   selected
-                    ? 'border-teal-200 bg-teal-300 text-teal-950'
+                    ? 'border-acc-2 bg-acc text-acc-ink'
                     : edited
-                      ? 'border-amber-300/70 bg-amber-400/80 text-amber-950'
-                      : 'border-teal-700 bg-teal-600/90 text-teal-50'
+                      // 음정을 손본 음 — 트랙 색 2(따뜻한 색)로 구분한다
+                      ? 'border-t2 bg-t2/85 text-screen'
+                      : 'border-t3 bg-t3/70 text-sink'
                 }`}
               >
                 <span

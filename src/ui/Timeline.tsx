@@ -41,17 +41,22 @@ const instrumentName = (id: string) =>
 
 // 켜짐/꺼짐 스타일을 한 문자열에 섞지 않는다 — 색 배경일 때는 같은 계열의 어두운 글자
 const TOGGLE_BASE = 'h-7 w-7 shrink-0 rounded border text-xs font-semibold';
-const TOGGLE_OFF = 'border-neutral-700 text-neutral-400';
-const MUTE_ON = 'border-amber-400 bg-amber-400 text-amber-950';
-const SOLO_ON = 'border-teal-300 bg-teal-300 text-teal-950';
-const TRACK_COLORS: Record<string, string> = {
-  j1: 'bg-teal-500/70 border-teal-300',
-  j2: 'bg-amber-500/70 border-amber-300',
-  j3: 'bg-violet-500/70 border-violet-300',
-  j4: 'bg-rose-500/70 border-rose-300',
-  j5: 'bg-sky-500/70 border-sky-300',
-  j6: 'bg-lime-500/70 border-lime-300',
+const TOGGLE_OFF = 'border-rule bg-body text-ink-3 hover:border-ink-3';
+const MUTE_ON = 'border-acc bg-acc text-acc-ink';
+const SOLO_ON = 'border-ink bg-ink text-body';
+/**
+ * 트랙 색 → 테마 토큰 t1–t6 (`index.css`). 클립은 화면 판 위에서 옅은 바탕 + 진한 머리띠,
+ * 색 띠는 트랙 헤더 왼쪽에 같은 색으로 — 두 곳의 색이 같아야 눈으로 짝을 짓는다
+ */
+const TRACK_COLORS: Record<string, { strip: string; clip: string; head: string }> = {
+  j1: { strip: 'bg-t1', clip: 'bg-t1/20', head: 'bg-t1' },
+  j2: { strip: 'bg-t2', clip: 'bg-t2/20', head: 'bg-t2' },
+  j3: { strip: 'bg-t3', clip: 'bg-t3/20', head: 'bg-t3' },
+  j4: { strip: 'bg-t4', clip: 'bg-t4/20', head: 'bg-t4' },
+  j5: { strip: 'bg-t5', clip: 'bg-t5/20', head: 'bg-t5' },
+  j6: { strip: 'bg-t6', clip: 'bg-t6/20', head: 'bg-t6' },
 };
+const FALLBACK_COLOR = { strip: 'bg-ink-3', clip: 'bg-sink-3/30', head: 'bg-sink-3' };
 
 export interface TimelineProps {
   editor: ProjectEditor;
@@ -162,32 +167,32 @@ export function Timeline({
     <section>
       <div className="mb-2 flex items-center gap-3">
         <div className={`flex ${NAME_COL} shrink-0 items-center justify-between gap-2 pr-2`}>
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-neutral-500">
-            트랙 {project.tracks.length}
+          <h2 className="font-disp text-lg leading-none text-ink">
+            트랙 <span className="text-ink-3">{project.tracks.length}</span>
           </h2>
           <button
             type="button"
             onClick={onAddTrack}
-            className="rounded border border-neutral-700 px-2 py-1 text-xs hover:border-neutral-500"
+            className="h-7 rounded-md border border-rule bg-panel px-2.5 text-xs text-ink hover:border-ink-3"
           >
             ＋ 트랙 추가
           </button>
         </div>
-        <span className="min-w-0 truncate text-xs text-neutral-500">
+        <span className="min-w-0 truncate text-[11px] text-ink-3">
           빈 곳을 클릭해 클립 추가 · 클립을 클릭해 편집 · 끝을 끌어 길이 조절
         </span>
       </div>
 
-      <div className="overflow-hidden rounded-lg border border-neutral-800">
+      <div className="overflow-hidden rounded-xl border border-rule">
         {/* 마디 눈금 */}
-        <div className="relative flex h-6 border-b border-neutral-800 bg-neutral-900/60">
-          <div className={`${NAME_COL} shrink-0 border-r border-neutral-800`} />
-          <div className="relative flex-1">
+        <div className="relative flex h-7 border-b border-grid">
+          <div className={`${NAME_COL} shrink-0 border-r border-rule bg-body`} />
+          <div className="relative flex-1 bg-screen">
             {Array.from({ length: project.lengthBars }, (_, bar) => (
               <span
                 key={bar}
                 style={{ left: pct(bar * barTicks) }}
-                className="absolute top-0 border-l border-neutral-800 pl-1 font-mono text-[10px] text-neutral-500"
+                className="absolute inset-y-0 flex items-center border-l border-grid pl-1.5 font-num text-[13px] text-sink-2"
               >
                 {bar + 1}
               </span>
@@ -196,29 +201,27 @@ export function Timeline({
         </div>
 
         {project.tracks.length === 0 && (
-          <p className="p-4 text-sm text-neutral-500">
+          <p className="bg-body p-4 text-sm text-ink-3">
             트랙이 없습니다. 위의 <b>＋ 트랙 추가</b>를 누르면 악기와 클립이 함께 만들어집니다.
           </p>
         )}
 
         {project.tracks.map((track) => (
-          <div key={track.id} className="flex border-b border-neutral-800 last:border-b-0">
+          <div key={track.id} className="flex border-b border-grid last:border-b-0">
             {/* 왼쪽 칸 = 이 트랙의 설정. 오른쪽 레인과 **같은 행**이라 눈이 오가지 않는다 */}
             <div
               style={{ height: LANE_HEIGHT }}
-              className={`flex ${NAME_COL} shrink-0 items-center gap-1.5 border-r border-neutral-800 px-2 ${
-                track.id === selectedTrackId ? 'bg-neutral-900' : ''
+              className={`flex ${NAME_COL} shrink-0 items-center gap-1.5 border-r border-rule px-2 ${
+                track.id === selectedTrackId ? 'bg-panel' : 'bg-body'
               }`}
             >
               <button
                 type="button"
                 onClick={() => onSelectTrack(track.id)}
                 aria-label={`${track.name} 선택`}
-                className={`h-6 w-1.5 shrink-0 rounded-sm ${
-                  track.id === selectedTrackId
-                    ? 'bg-teal-300'
-                    : TRACK_COLORS[track.color]?.split(' ')[0] ?? 'bg-neutral-700'
-                }`}
+                className={`h-7 shrink-0 rounded-sm ${
+                  (TRACK_COLORS[track.color] ?? FALLBACK_COLOR).strip
+                } ${track.id === selectedTrackId ? 'w-2 ring-2 ring-ink ring-offset-1 ring-offset-panel' : 'w-1.5'}`}
               />
               <select
                 value={track.instrumentId}
@@ -229,7 +232,7 @@ export function Timeline({
                   toneId: 'default',
                   toneParams: null,
                 }))}
-                className="min-w-0 flex-1 rounded border border-neutral-700 bg-neutral-900 px-2 py-1 text-sm"
+                className="min-w-0 flex-1 rounded-md border border-rule bg-body px-2 py-1 text-sm text-ink"
               >
                 {INSTRUMENT_GROUPS.map((group) => (
                   <optgroup key={group.category} label={group.category}>
@@ -244,7 +247,7 @@ export function Timeline({
                 aria-label={`${track.name} 음색`}
                 onChange={(event) =>
                   editor.commit(updateTrack(project, track.id, { toneId: event.target.value }))}
-                className="w-20 shrink-0 rounded border border-neutral-700 bg-neutral-900 px-1.5 py-1 text-xs"
+                className="w-20 shrink-0 rounded-md border border-rule bg-body px-1.5 py-1 text-xs text-ink"
               >
                 {/* 음색은 정의가 와야 안다 — 오는 동안은 지금 고른 것만 보여 준다 */}
                 {(ready
@@ -274,7 +277,7 @@ export function Timeline({
                 onChange={(event) =>
                   editor.preview(updateTrack(project, track.id, { gain: Number(event.target.value) }))}
                 onPointerUp={() => editor.commitCurrent()}
-                className="w-16 shrink-0 accent-teal-300"
+                className="w-16 shrink-0 accent-ink"
               />
               {/* **페이더 바로 옆에 둔다.** 어느 트랙이 큰지 보고 그 자리에서
                   줄일 수 있어야 의미가 있다 — 멀리 있으면 안 본다 */}
@@ -289,7 +292,7 @@ export function Timeline({
                 type="button"
                 onClick={() => editor.commit(deleteTrack(project, track.id))}
                 aria-label={`${track.name} 삭제`}
-                className="h-7 w-7 shrink-0 rounded border border-neutral-800 text-xs text-neutral-500 hover:border-red-800 hover:text-red-400"
+                className="h-7 w-7 shrink-0 rounded border border-rule text-xs text-ink-3 hover:border-rec hover:text-rec"
               >✕</button>
             </div>
 
@@ -297,7 +300,7 @@ export function Timeline({
               data-lane
               onClick={(event) => onLaneClick(track.id, event)}
               style={{ height: LANE_HEIGHT }}
-              className="relative flex-1 cursor-copy bg-neutral-950"
+              className="relative flex-1 cursor-copy bg-screen"
             >
               {track.clips.map((clip) => {
                 const selected = clip.id === selectedClipId;
@@ -307,10 +310,11 @@ export function Timeline({
                     key={clip.id}
                     data-clip
                     style={{ left: pct(clip.startTick), width: pct(clip.lengthTick) }}
-                    className={`absolute inset-y-1 flex items-center overflow-hidden rounded border px-1.5 text-[10px] ${
-                      TRACK_COLORS[track.color] ?? 'border-neutral-600 bg-neutral-700'
-                    } ${selected ? 'ring-2 ring-white/70' : ''}`}
+                    className={`absolute inset-y-1 flex items-center overflow-hidden rounded-md pl-1.5 pt-2 text-[10px] ${
+                      (TRACK_COLORS[track.color] ?? FALLBACK_COLOR).clip
+                    } ${selected ? 'ring-[1.5px] ring-acc' : ''}`}
                   >
+                    <i className={`pointer-events-none absolute inset-x-0 top-0 h-1.5 ${(TRACK_COLORS[track.color] ?? FALLBACK_COLOR).head}`} />
                     <button
                       type="button"
                       onClick={() => onSelect(track.id, clip.id)}
@@ -319,10 +323,10 @@ export function Timeline({
                       onPointerUp={endClipDrag}
                       onPointerCancel={endClipDrag}
                       title="끌어서 옮깁니다"
-                      className="min-w-0 flex-1 cursor-grab truncate text-left font-medium text-black/80"
+                      className="min-w-0 flex-1 cursor-grab truncate text-left font-semibold text-sink"
                     >
                       {clip.label || '클립'}
-                      <span className="ml-1 opacity-70">
+                      <span className="ml-1 font-normal text-sink-2">
                         {clip.notes.length}음{edited > 0 ? ` · ${edited} 수정` : ''}
                       </span>
                       {clip.locked && <span className="ml-1">🔒</span>}
@@ -341,7 +345,7 @@ export function Timeline({
                           // 사용자가 의도하지 않은 곳에 붙는다
                         }
                       }}
-                      className="px-1 text-black/60 hover:text-black"
+                      className="px-1 text-sink-2 hover:text-sink"
                     >
                       ⧉
                     </button>
@@ -349,7 +353,7 @@ export function Timeline({
                       type="button"
                       aria-label="클립 삭제"
                       onClick={() => editor.commit(deleteClip(project, clip.id))}
-                      className="px-1 text-black/60 hover:text-black"
+                      className="px-1 text-sink-2 hover:text-sink"
                     >
                       ✕
                     </button>
@@ -377,7 +381,7 @@ export function Timeline({
                         window.addEventListener('pointermove', move);
                         window.addEventListener('pointerup', up);
                       }}
-                      className="h-full w-1.5 cursor-ew-resize bg-black/25"
+                      className="h-full w-1.5 cursor-ew-resize bg-sink/15 hover:bg-sink/40"
                     />
                   </div>
                 );
@@ -391,7 +395,7 @@ export function Timeline({
             <div className="pointer-events-none absolute inset-x-32 -top-px">
               <div
                 style={{ left: pct(playheadTick) }}
-                className="absolute h-2 w-px bg-teal-300"
+                className="absolute h-2 w-px bg-acc"
               />
             </div>
           </div>

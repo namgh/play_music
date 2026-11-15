@@ -52,7 +52,7 @@ export function Router() {
 
   if (!ready) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-neutral-950 text-sm text-neutral-500">
+      <div className="flex min-h-screen items-center justify-center bg-body text-sm text-ink-3">
         불러오는 중…
       </div>
     );

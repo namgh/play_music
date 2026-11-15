@@ -1,1 +1,159 @@
 @import 'tailwindcss';
+
+/*
+ * 색 토큰 — 시안 v4 "기기" (mockup/redesign-v4).
+ *
+ * 몸체(밝은 패널) 위에 정밀하게 봐야 하는 곳만 검은 "화면" 판을 둔다.
+ * 포인트 색은 한 가지(acc)만 재생 위치·선택에 쓴다. 값은 묶음(data-theme)마다 바뀌고,
+ * 사용자가 색 편집기에서 고친 값은 theme.ts 가 html 요소에 인라인으로 덮어쓴다.
+ */
+@theme {
+  --color-body: #F1F1EE;
+  --color-panel: #E4E4E0;
+  --color-panel-2: #D5D5D0;
+  --color-rule: #CACAC4;
+  --color-ink: #111111;
+  --color-ink-2: #4A4A47;
+  --color-ink-3: #86867F;
+  --color-inv-2: #A3A39C;
+  --color-inv-3: #3A3A38;
+  --color-screen: #111113;
+  --color-screen-2: #19191C;
+  --color-grid: #25252A;
+  --color-grid-2: #303036;
+  --color-sink: #EEEEEA;
+  --color-sink-2: #9B9B97;
+  --color-sink-3: #5E5E64;
+  --color-acc: #FFD400;
+  --color-acc-2: #FFDD33;
+  --color-acc-ink: #111111;
+  --color-cta: #FFD400;
+  --color-cta-ink: #111111;
+  --color-ok: #3DDC97;
+  --color-rec: #FF4B3E;
+  --color-t1: #3DDC97;
+  --color-t2: #FF6B4A;
+  --color-t3: #4C9DFF;
+  --color-t4: #A07BFF;
+  --color-t5: #FF6FB5;
+  --color-t6: #2ED3DB;
+  --color-keyw: #FFFFFF;
+  --color-keyb: #111111;
+
+  --font-sans: "Avenir Next", "Pretendard", "Apple SD Gothic Neo", "Noto Sans KR", system-ui, sans-serif;
+  --font-disp: "Futura", "Avenir Next", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+  --font-num: "DIN Condensed", "Avenir Next Condensed", "Arial Narrow", sans-serif;
+}
+
+/* 묶음별 값. 기본(volt)은 위 @theme 그대로 */
+:root[data-theme='acid'] {
+  --color-body: #1B1B1E; --color-panel: #26262A; --color-panel-2: #323237; --color-rule: #38383E;
+  --color-ink: #F1F1EC; --color-ink-2: #B4B4AD; --color-ink-3: #7C7C78; --color-inv-2: #5A5A55; --color-inv-3: #C9C9C2;
+  --color-screen: #0D0D0F; --color-screen-2: #141417; --color-grid: #202024; --color-grid-2: #2B2B30;
+  --color-sink: #EEEEE8; --color-sink-2: #96968F; --color-sink-3: #55555B;
+  --color-acc: #D8FF3C; --color-acc-2: #E3FF6B; --color-acc-ink: #111111; --color-cta: #D8FF3C; --color-cta-ink: #111111;
+  --color-ok: #3DDC97; --color-rec: #FF4B3E;
+  --color-t1: #3DDC97; --color-t2: #FF8A3D; --color-t3: #4C9DFF; --color-t4: #B18CFF; --color-t5: #FF6FB5; --color-t6: #36D6E7;
+  --color-keyw: #D9D9D3; --color-keyb: #0D0D0F;
+}
+:root[data-theme='cobalt'] {
+  --color-body: #F4F4F1; --color-panel: #E8E8E4; --color-panel-2: #DADAD5; --color-rule: #CFCFC9;
+  --color-ink: #0E1020; --color-ink-2: #4A4C5A; --color-ink-3: #878996; --color-inv-2: #A2A4B4; --color-inv-3: #2E3146;
+  --color-screen: #0F1120; --color-screen-2: #161929; --color-grid: #22263A; --color-grid-2: #2D3247;
+  --color-sink: #ECEDF3; --color-sink-2: #9598AB; --color-sink-3: #5C6078;
+  --color-acc: #3358FF; --color-acc-2: #7D95FF; --color-acc-ink: #FFFFFF; --color-cta: #FFE03D; --color-cta-ink: #0E1020;
+  --color-ok: #2FD08F; --color-rec: #FF4B3E;
+  --color-t1: #2FD08F; --color-t2: #FF8A3D; --color-t3: #46B8FF; --color-t4: #A98BFF; --color-t5: #FF6FA8; --color-t6: #FFD23F;
+  --color-keyw: #FFFFFF; --color-keyb: #0E1020;
+}
+:root[data-theme='signal'] {
+  --color-body: #EEEDEA; --color-panel: #E1E0DC; --color-panel-2: #D2D1CC; --color-rule: #C7C6C0;
+  --color-ink: #151413; --color-ink-2: #4D4B48; --color-ink-3: #88857F; --color-inv-2: #A6A39C; --color-inv-3: #3C3A37;
+  --color-screen: #141312; --color-screen-2: #1C1B1A; --color-grid: #292826; --color-grid-2: #34322F;
+  --color-sink: #EFEDE8; --color-sink-2: #9D9A93; --color-sink-3: #63605A;
+  --color-acc: #FF5A1F; --color-acc-2: #FF8A5C; --color-acc-ink: #FFFFFF; --color-cta: #FF5A1F; --color-cta-ink: #FFFFFF;
+  --color-ok: #3DCB8C; --color-rec: #E5332A;
+  --color-t1: #3DCB8C; --color-t2: #FFB23F; --color-t3: #4C9DFF; --color-t4: #A88BFF; --color-t5: #FF6FA0; --color-t6: #35CFD9;
+  --color-keyw: #FAF9F6; --color-keyb: #151413;
+}
+:root[data-theme='oak'] {
+  --color-body: #F3F1E6; --color-panel: #E3E0D4; --color-panel-2: #D6D2C4; --color-rule: #CBC6B6;
+  --color-ink: #1D1B17; --color-ink-2: #57534A; --color-ink-3: #8A8577; --color-inv-2: #B5B0A0; --color-inv-3: #45423A;
+  --color-screen: #18181A; --color-screen-2: #202022; --color-grid: #2B2B2E; --color-grid-2: #353539;
+  --color-sink: #E9E6DC; --color-sink-2: #9C988C; --color-sink-3: #66635B;
+  --color-acc: #C8782E; --color-acc-2: #E7B271; --color-acc-ink: #1D1B17; --color-cta: #DCEF7C; --color-cta-ink: #1D1B17;
+  --color-ok: #8DB59A; --color-rec: #C2412D;
+  --color-t1: #8DB59A; --color-t2: #D9A066; --color-t3: #86A9C8; --color-t4: #C98A7A; --color-t5: #AC9FCB; --color-t6: #DCC979;
+  --color-keyw: #FBFAF4; --color-keyb: #1D1B17;
+}
+
+html, body { background: var(--color-body); color: var(--color-ink); }
+
+/*
+ * 예전 화면(어두운 회색·청록으로 쓴 컴포넌트)을 새 색으로 옮기는 범위.
+ *
+ * 컴포넌트를 한 줄씩 다시 칠하지 않고, 그 컴포넌트를 감싼 범위 안에서 Tailwind 의
+ * neutral·teal 변수를 지금 묶음의 색으로 바꿔 끼운다. Tailwind v4 의 색 유틸리티는
+ * `var(--color-neutral-800)` 을 읽으므로 변수만 바꾸면 모두 따라온다.
+ *
+ * - scope-screen : 검은 화면 판 안 (레인·피아노롤·튜닝 도구)
+ * - scope-body   : 밝은 몸체 위 (인스펙터·믹서)
+ */
+.scope-screen {
+  --color-neutral-950: var(--color-screen);
+  --color-neutral-900: var(--color-screen-2);
+  --color-neutral-800: var(--color-grid);
+  --color-neutral-700: var(--color-grid-2);
+  --color-neutral-600: color-mix(in oklab, var(--color-grid-2) 50%, var(--color-sink-3));
+  --color-neutral-500: var(--color-sink-3);
+  --color-neutral-400: var(--color-sink-2);
+  --color-neutral-300: color-mix(in oklab, var(--color-sink-2) 40%, var(--color-sink));
+  --color-neutral-200: var(--color-sink);
+  --color-neutral-100: var(--color-sink);
+  --color-neutral-50: var(--color-sink);
+  --color-white: var(--color-sink);
+  --color-teal-50: var(--color-acc-2);
+  --color-teal-100: var(--color-acc-2);
+  --color-teal-200: var(--color-acc-2);
+  --color-teal-300: var(--color-acc);
+  --color-teal-400: var(--color-acc);
+  --color-teal-500: var(--color-acc);
+  --color-teal-600: color-mix(in oklab, var(--color-acc) 70%, var(--color-screen));
+  --color-teal-700: color-mix(in oklab, var(--color-acc) 50%, var(--color-screen));
+  --color-teal-800: color-mix(in oklab, var(--color-acc) 35%, var(--color-screen));
+  --color-teal-900: color-mix(in oklab, var(--color-acc) 22%, var(--color-screen));
+  --color-teal-950: color-mix(in oklab, var(--color-acc) 14%, var(--color-screen));
+  color: var(--color-sink);
+}
+.scope-screen .text-teal-950 { color: var(--color-acc-ink); }
+
+.scope-body {
+  --color-neutral-950: var(--color-body);
+  --color-neutral-900: var(--color-panel);
+  --color-neutral-800: var(--color-rule);
+  --color-neutral-700: color-mix(in oklab, var(--color-rule) 65%, var(--color-ink-3));
+  --color-neutral-600: var(--color-ink-3);
+  --color-neutral-500: var(--color-ink-3);
+  --color-neutral-400: var(--color-ink-2);
+  --color-neutral-300: var(--color-ink-2);
+  --color-neutral-200: var(--color-ink);
+  --color-neutral-100: var(--color-ink);
+  --color-neutral-50: var(--color-ink);
+  --color-white: var(--color-ink);
+  --color-teal-50: var(--color-acc);
+  --color-teal-100: var(--color-acc);
+  --color-teal-200: var(--color-acc);
+  --color-teal-300: var(--color-acc);
+  --color-teal-400: var(--color-acc);
+  --color-teal-500: var(--color-acc);
+  --color-teal-600: var(--color-ink);
+  --color-teal-700: var(--color-ink);
+  --color-teal-800: var(--color-ink);
+  --color-teal-900: color-mix(in oklab, var(--color-acc) 45%, var(--color-body));
+  --color-teal-950: color-mix(in oklab, var(--color-acc) 35%, var(--color-body));
+  color: var(--color-ink);
+}
+/* 밝은 바탕에서 포인트색 글자는 안 읽힌다 — 글자는 잉크로, 바탕만 포인트색 */
+.scope-body [class*='text-teal-'] { color: var(--color-ink); }
+.scope-body .text-teal-950 { color: var(--color-acc-ink); }
+.scope-body [class*='accent-teal'] { accent-color: var(--color-ink); }
