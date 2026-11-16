@@ -16,7 +16,7 @@ import { isPitchEdited } from '../model/project.ts';
 import type { Project } from '../model/project.ts';
 import { History } from './history.ts';
 import {
-  addClip, addNote, addTrack, applyGateEnvelope, applySidechainDuck, clearVolumeAutomation, copyNotes, deleteClip, deleteNotes, deleteTrack, duplicateClip, duplicateNotes, EditError, findNote, moveClip, moveNotes, moveNotesToTrack, nudgeCents, pasteNotes, quantizeNotes, resizeClip, resizeNotes, setCents, setKey, setLengthBars, setLoop, setLoopEnabled, setMute, setPitchCurve, setTempo, setVelocity, setVolumeAutomation, updateTrack,
+  addClip, addNote, addTrack, applyGateEnvelope, applySidechainDuck, clearVolumeAutomation, copyNotes, deleteClip, deleteNotes, deleteTrack, duplicateClip, duplicateNotes, duplicateTrack, EditError, findNote, joinClips, moveClip, moveNotes, moveNotesToTrack, moveTrack, nextClipOnTrack, repeatClip, splitClip, nudgeCents, pasteNotes, quantizeNotes, resizeClip, resizeNotes, setCents, setKey, setLengthBars, setLoop, setLoopEnabled, setMute, setPitchCurve, setTempo, setVelocity, setVolumeAutomation, updateTrack,
 } from './edits.ts';
 
 function base(): Project {
@@ -249,12 +249,62 @@ test('replace 는 히스토리를 남기지 않는다', () => {
   const history = new History(base());
   const ids = history.state.tracks[0]!.clips[0]!.notes.map((n) => n.id);
 
-  history.commit(moveNotes(history.state, ids, { ticks: 10 })); // 드래그 시작
   for (let i = 0; i < 50; i++) history.replace(moveNotes(history.state, ids, { ticks: 1 }));
+  assert.equal(history.depth.past, 0, `언두 단계가 ${history.depth.past} 개로 늘어났다`);
 
-  assert.equal(history.depth.past, 1, `언두 단계가 ${history.depth.past} 개로 늘어났다`);
+  history.commitPreview(); // 드래그 끝
+  assert.equal(history.depth.past, 1);
+  assert.deepEqual(history.state.tracks[0]!.clips[0]!.notes.map((n) => n.startTick), [50, PPQ + 50]);
+});
+
+test('드래그를 되돌리면 드래그 전 자리로 간다', () => {
+  // 화면이 실제로 쓰는 순서 — 미리보기(replace)만 하다가 놓을 때 확정한다.
+  // 예전에는 여기서 "옮긴 뒤"가 두 번 쌓여 되돌리기가 헛돌았다
+  const history = new History(base());
+  const ids = history.state.tracks[0]!.clips[0]!.notes.map((n) => n.id);
+  const origin = history.state;
+
+  history.replace(moveNotes(origin, ids, { ticks: 10 }));
+  history.replace(moveNotes(origin, ids, { ticks: 20 }));
+  history.commitPreview();
+
   history.undo();
   assert.deepEqual(history.state.tracks[0]!.clips[0]!.notes.map((n) => n.startTick), [0, PPQ]);
+  history.redo();
+  assert.deepEqual(history.state.tracks[0]!.clips[0]!.notes.map((n) => n.startTick), [20, PPQ + 20]);
+});
+
+test('바뀐 것이 없는 미리보기는 언두 단계가 되지 않는다', () => {
+  const history = new History(base());
+  const ids = history.state.tracks[0]!.clips[0]!.notes.map((n) => n.id);
+  const origin = history.state;
+
+  history.commitPreview(); // 음을 누르기만 하고 놓았다
+  assert.equal(history.canUndo, false);
+
+  history.replace(moveNotes(origin, ids, { ticks: 10 }));
+  history.replace(origin); // 끌었다가 제자리로
+  history.commitPreview();
+  assert.equal(history.canUndo, false);
+});
+
+test('미리보기 도중 커밋·되돌리기를 해도 시작 전 상태를 잃지 않는다', () => {
+  const history = new History(base());
+  const ids = history.state.tracks[0]!.clips[0]!.notes.map((n) => n.id);
+
+  // 이름을 치다가(미리보기) 포커스를 잃기 전에 다른 편집이 커밋되는 경우
+  history.replace(moveNotes(history.state, ids, { ticks: 10 }));
+  history.commit(setTempo(history.state, 140));
+  history.undo();
+  assert.deepEqual(history.state.tracks[0]!.clips[0]!.notes.map((n) => n.startTick), [0, PPQ]);
+
+  // 놓지 않은 채 되돌리기를 눌러도 같다
+  history.redo();
+  history.replace(moveNotes(history.state, ids, { ticks: 5 }));
+  assert.equal(history.canUndo, true);
+  history.undo();
+  assert.equal(history.state.tempo.bpm, 140);
+  assert.deepEqual(history.state.tracks[0]!.clips[0]!.notes.map((n) => n.startTick), [10, PPQ + 10]);
 });
 
 test('히스토리 상한을 넘으면 오래된 것이 빠진다', () => {
@@ -715,4 +765,154 @@ test('뮤트 값은 0~1 로 잘린다', () => {
   const noteId = project.tracks[0]!.clips[0]!.notes[0]!.id;
   assert.equal(findNote(setMute(project, [noteId], 5), noteId)!.note.expression?.mute, 1);
   assert.equal(findNote(setMute(project, [noteId], -3), noteId)!.note.expression, null);
+});
+
+// --- 클립 나누기·합치기·반복, 트랙 복제·순서 (LOGIC_PARITY 3-1 편곡·트랙) ---------
+
+test('클립을 나누면 음이 자리를 지킨 채 둘로 갈린다', () => {
+  const p0 = base();
+  const clip = p0.tracks[0]!.clips[0]!;
+  const ids = clip.notes.map((n) => n.id);
+
+  const { project: p1, leftId, rightId } = splitClip(p0, clip.id, PPQ);
+  const [left, right] = p1.tracks[0]!.clips;
+  assert.equal(leftId, clip.id, '왼쪽이 원래 클립이다');
+  assert.equal(right!.id, rightId);
+  assert.deepEqual([left!.startTick, left!.lengthTick], [0, PPQ]);
+  assert.deepEqual([right!.startTick, right!.lengthTick], [PPQ, 3 * PPQ]);
+  // 곡 기준 위치가 그대로다
+  assert.deepEqual(left!.notes.map((n) => left!.startTick + n.startTick), [0]);
+  assert.deepEqual(right!.notes.map((n) => right!.startTick + n.startTick), [PPQ]);
+  // 음 id 가 유지된다 — 선택이 끊기지 않는다
+  assert.deepEqual([...left!.notes, ...right!.notes].map((n) => n.id), ids);
+});
+
+test('경계에 걸친 음은 왼쪽에 길이 그대로 남는다', () => {
+  const p0 = base();
+  const clip = p0.tracks[0]!.clips[0]!;
+  const { project: p1 } = splitClip(p0, clip.id, PPQ / 2);
+  const [left, right] = p1.tracks[0]!.clips;
+  assert.equal(left!.notes.length, 1);
+  assert.equal(left!.notes[0]!.lengthTick, PPQ, '길이를 깎으면 합쳤을 때 원래대로 안 돌아온다');
+  assert.equal(right!.notes.length, 1);
+});
+
+test('클립 밖이나 끝에서는 나눌 수 없다', () => {
+  const p0 = base();
+  const id = p0.tracks[0]!.clips[0]!.id;
+  assert.throws(() => splitClip(p0, id, 0), EditError);
+  assert.throws(() => splitClip(p0, id, 4 * PPQ), EditError);
+  assert.throws(() => splitClip(p0, id, 99 * PPQ), EditError);
+});
+
+test('나눴다가 합치면 원래대로 돌아온다', () => {
+  const p0 = base();
+  const clip = p0.tracks[0]!.clips[0]!;
+  const split = splitClip(p0, clip.id, PPQ / 2);
+  const { project: p2, clipId } = joinClips(split.project, [split.leftId, split.rightId]);
+  assert.equal(clipId, clip.id);
+  assert.deepEqual(p2.tracks[0]!.clips, p0.tracks[0]!.clips);
+});
+
+test('떨어진 클립을 합치면 사이가 빈 채로 이어진다', () => {
+  let project = base();
+  const trackId = project.tracks[0]!.id;
+  const first = project.tracks[0]!.clips[0]!;
+  const added = addClip(project, { trackId, startTick: 8 * PPQ, lengthTick: 4 * PPQ });
+  project = addNote(added.project, { clipId: added.clipId, startTick: PPQ, lengthTick: PPQ, midi: 72 }).project;
+
+  const { project: joined, clipId } = joinClips(project, [added.clipId, first.id]);
+  const merged = joined.tracks[0]!.clips;
+  assert.equal(merged.length, 1);
+  assert.equal(merged[0]!.id, clipId);
+  assert.deepEqual([merged[0]!.startTick, merged[0]!.lengthTick], [0, 12 * PPQ]);
+  assert.deepEqual(merged[0]!.notes.map((n) => n.startTick), [0, PPQ, 9 * PPQ]);
+});
+
+test('사이에 다른 클립이 끼어 있거나 트랙이 다르면 합치지 않는다', () => {
+  let project = base();
+  const trackId = project.tracks[0]!.id;
+  const first = project.tracks[0]!.clips[0]!;
+  const mid = addClip(project, { trackId, startTick: 4 * PPQ, lengthTick: 4 * PPQ });
+  const last = addClip(mid.project, { trackId, startTick: 8 * PPQ, lengthTick: 4 * PPQ });
+  project = last.project;
+  assert.throws(() => joinClips(project, [first.id, last.clipId]), /사이에/);
+  assert.throws(() => joinClips(project, [first.id]), EditError);
+  assert.equal(nextClipOnTrack(project, first.id)!.id, mid.clipId);
+  assert.equal(nextClipOnTrack(project, last.clipId), null);
+
+  const other = addTrack(project, { name: '베이스', instrumentId: 'acoustic-guitar' });
+  const otherClip = addClip(other.project, { trackId: other.trackId, startTick: 0, lengthTick: PPQ });
+  assert.throws(() => joinClips(otherClip.project, [first.id, otherClip.clipId]), /다른 트랙/);
+});
+
+test('클립 반복 — 횟수만큼, 음은 새 id 로', () => {
+  const p0 = base();
+  const clip = p0.tracks[0]!.clips[0]!;
+  const { project: p1, clipIds } = repeatClip(p0, clip.id, { count: 3 });
+  const clips = p1.tracks[0]!.clips;
+  assert.equal(clipIds.length, 3);
+  assert.deepEqual(clips.map((c) => c.startTick), [0, 4 * PPQ, 8 * PPQ, 12 * PPQ]);
+  const noteIds = clips.flatMap((c) => c.notes.map((n) => n.id));
+  assert.equal(new Set(noteIds).size, 8, '음 id 가 겹친다');
+  assert.equal(new Set(clips.map((c) => c.id)).size, 4);
+});
+
+test('클립 반복 — 끝 위치까지만, 막히면 들어가는 데까지', () => {
+  const p0 = base();
+  const clip = p0.tracks[0]!.clips[0]!;
+  // 4박 클립을 14박까지 → 4·8 에 두 개 (12 에 놓으면 16 까지 가서 넘친다)
+  assert.equal(repeatClip(p0, clip.id, { untilTick: 14 * PPQ }).clipIds.length, 2);
+
+  const blocked = addClip(p0, { trackId: p0.tracks[0]!.id, startTick: 9 * PPQ, lengthTick: PPQ }).project;
+  assert.equal(repeatClip(blocked, clip.id, { count: 5 }).clipIds.length, 1);
+
+  const full = addClip(p0, { trackId: p0.tracks[0]!.id, startTick: 4 * PPQ, lengthTick: PPQ }).project;
+  assert.throws(() => repeatClip(full, clip.id, { count: 2 }), /자리가 없다/);
+  assert.throws(() => repeatClip(p0, clip.id, {}), EditError);
+});
+
+test('복제는 팜뮤트 같은 표현 값도 가져간다', () => {
+  // 전에는 필드를 하나씩 옮겨 적어서 나중에 생긴 expression 이 복제본에서 빠졌다
+  let project = base();
+  const clip = project.tracks[0]!.clips[0]!;
+  project = setMute(project, [clip.notes[0]!.id], 0.7);
+
+  const { project: next, clipId } = duplicateClip(project, clip.id);
+  const copy = next.tracks[0]!.clips.find((c) => c.id === clipId)!;
+  assert.equal(copy.notes[0]!.expression?.mute, 0.7);
+
+  // 깊은 복사다 — 복제본을 고쳐도 원본은 그대로
+  const edited = setMute(next, [copy.notes[0]!.id], 0.1);
+  assert.equal(edited.tracks[0]!.clips[0]!.notes[0]!.expression?.mute, 0.7);
+});
+
+test('트랙 복제 — 바로 아래에, 전부 새 id 로, 솔로는 안 따라온다', () => {
+  let project = base();
+  const original = project.tracks[0]!;
+  project = updateTrack(project, original.id, { solo: true, gain: 0.4 });
+  project = addTrack(project, { name: '베이스', instrumentId: 'acoustic-guitar' }).project;
+
+  const { project: next, trackId } = duplicateTrack(project, original.id);
+  assert.deepEqual(next.tracks.map((t) => t.name), ['기타', '기타 복사', '베이스']);
+  const copy = next.tracks[1]!;
+  assert.equal(copy.id, trackId);
+  assert.equal(copy.gain, 0.4);
+  assert.equal(copy.solo, false);
+  assert.equal(copy.clips[0]!.notes.length, 2);
+
+  const allIds = next.tracks.flatMap((t) => [t.id, ...t.clips.flatMap((c) => [c.id, ...c.notes.map((n) => n.id)])]);
+  assert.equal(new Set(allIds).size, allIds.length, 'id 가 겹친다');
+});
+
+test('트랙 순서 바꾸기', () => {
+  let project = base();
+  project = addTrack(project, { name: '베이스', instrumentId: 'acoustic-guitar' }).project;
+  project = addTrack(project, { name: '드럼', instrumentId: 'acoustic-guitar' }).project;
+  const [guitar, , drums] = project.tracks;
+
+  assert.deepEqual(moveTrack(project, drums!.id, 0).tracks.map((t) => t.name), ['드럼', '기타', '베이스']);
+  assert.deepEqual(moveTrack(project, guitar!.id, 1).tracks.map((t) => t.name), ['베이스', '기타', '드럼']);
+  assert.deepEqual(moveTrack(project, guitar!.id, 99).tracks.map((t) => t.name), ['베이스', '드럼', '기타']);
+  assert.equal(moveTrack(project, guitar!.id, -5), project, '제자리면 같은 객체를 돌려준다');
 });

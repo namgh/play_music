@@ -3,14 +3,15 @@ import { CloudPanel } from './ui/CloudPanel.tsx';
 
 import { BRAND } from './brand.ts';
 import {
-  addClip, addTrack, copyNotes, deleteNotes, duplicateNotes, moveNotes, pasteNotes,
+  addClip, addTrack, copyNotes, deleteNotes, duplicateNotes, duplicateTrack, joinClips, moveNotes,
+  moveTrack, nextClipOnTrack, pasteNotes, repeatClip, splitClip,
   moveNotesToTrack, quantizeNotes, setKey, setLoop, setLoopEnabled, setSwing, setTempo,
   setTempoChange,
 } from './editor/edits.ts';
 import { useProjectEditor } from './editor/useProjectEditor.ts';
 import { downloadProject, loadAutosave, readProjectFile, saveAutosave } from './editor/projectStorage.ts';
 import { decodeMidi, encodeMidi } from './model/midi.ts';
-import { createEmptyProject } from './model/factory.ts';
+import { createEmptyProject, projectLengthTicks } from './model/factory.ts';
 import type { ClipId, MusicalKey, Note, Project, TrackId } from './model/project.ts';
 import { NOTE_NAMES } from './model/pitch.ts';
 import { PPQ, ticksPerBar, ticksToBarBeat } from './model/time.ts';
@@ -39,6 +40,8 @@ import {
 
 /** 트랙·악기가 없을 때 쓰는 음역. 화면이 비지 않게만 하면 된다 */
 const FALLBACK_RANGE = { low: 36, high: 84 };
+/** 편집이 멈춘 뒤 저장까지 — 끄는 동안 매 프레임 쓰지 않을 만큼만 */
+const AUTOSAVE_DELAY_MS = 150;
 
 /**
  * 상단 바의 둥근 기기 버튼. 몸체(밝은 패널) 위에 놓인다.
@@ -51,7 +54,7 @@ const ROUND_ON = 'border-ink bg-ink text-body';
 
 /** 툴바의 작은 입력칸 */
 const FIELD = 'h-7 rounded-md border border-rule bg-panel px-2 text-xs text-ink';
-const TOOL_BTN = 'h-7 rounded-md border border-rule bg-panel px-2.5 text-xs text-ink hover:border-ink-3 disabled:opacity-40';
+const TOOL_BTN = 'h-7 shrink-0 whitespace-nowrap rounded-md border border-rule bg-panel px-2.5 text-xs text-ink hover:border-ink-3 disabled:opacity-40';
 /** 파일 메뉴의 한 줄 */
 const MENU_ITEM = 'flex h-9 w-full items-center rounded-lg px-3 text-left text-sm text-ink hover:bg-panel';
 
@@ -164,11 +167,36 @@ export function App() {
   const instrument =
     track && instrumentsReady ? resolveInstrument(track.instrumentId, registry) : null;
 
-  // 자동 저장 — 편집이 멈춘 뒤 잠깐 기다렸다 쓴다 (매 편집마다 쓰면 낭비다)
+  // 실시간 저장 — 편집이 멈추면 곧바로 쓴다. 끄는 중(드래그)에는 매 프레임
+  // 직렬화하지 않도록 아주 짧게만 모은다
+  const [saveState, setSaveState] = useState<'saved' | 'pending' | 'failed'>('saved');
+  const unsaved = useRef<typeof project | null>(null);
+  const flushSave = useCallback(() => {
+    const pending = unsaved.current;
+    if (!pending) return;
+    unsaved.current = null;
+    setSaveState(saveAutosave(pending) ? 'saved' : 'failed');
+  }, []);
+  const firstRender = useRef(true);
   useEffect(() => {
-    const timer = setTimeout(() => saveAutosave(project), 600);
+    // 처음 뜰 때는 방금 읽어 온 것과 같으므로 다시 쓰지 않는다
+    if (firstRender.current) { firstRender.current = false; return; }
+    unsaved.current = project;
+    setSaveState('pending');
+    const timer = setTimeout(flushSave, AUTOSAVE_DELAY_MS);
     return () => clearTimeout(timer);
-  }, [project]);
+  }, [project, flushSave]);
+  // **창을 닫거나 탭을 떠나는 순간에는 기다리지 않고 쓴다.** 타이머만 믿으면
+  // 마지막 편집 직후 닫았을 때 그 편집이 사라진다
+  useEffect(() => {
+    const onHide = () => { if (document.visibilityState === 'hidden') flushSave(); };
+    window.addEventListener('pagehide', flushSave);
+    document.addEventListener('visibilitychange', onHide);
+    return () => {
+      window.removeEventListener('pagehide', flushSave);
+      document.removeEventListener('visibilitychange', onHide);
+    };
+  }, [flushSave]);
 
   // 삭제된 트랙을 가리키고 있으면 살아 있는 것으로 옮긴다
   useEffect(() => {
@@ -390,6 +418,15 @@ export function App() {
       })();
 
   const keyLabel = project.key === null ? '없음' : `${project.key.tonic} ${project.key.mode === 'major' ? '장조' : '단조'}`;
+  /** 편집 함수가 거절하면(겹침·자리 없음) 조용히 넘기지 않고 이유를 보여 준다 */
+  const runEdit = (edit: () => void) => {
+    try {
+      edit();
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : String(err));
+    }
+  };
+
   const togglePlay = () => (engine.state === 'playing'
     ? engine.stop()
     : void engine.play(cursorTick + (clip?.startTick ?? 0)));
@@ -420,6 +457,16 @@ export function App() {
           <div className="flex items-baseline gap-1.5">
             <span className="font-disp text-[15px] font-semibold tracking-wide">{BRAND.name}</span>
             {BRAND.isPlaceholder && <span className="text-[11px] text-ink-3">이름 임시</span>}
+            <span
+              role="status"
+              data-save-state={saveState}
+              title={saveState === 'failed'
+                ? '이 브라우저에 저장하지 못했습니다 (용량 초과 또는 저장소 차단). 파일 메뉴에서 파일로 저장하세요'
+                : '고칠 때마다 이 브라우저에 자동으로 저장됩니다'}
+              className={`ml-auto shrink-0 text-[11px] ${saveState === 'failed' ? 'font-semibold text-red-600' : 'text-ink-3'}`}
+            >
+              {saveState === 'saved' ? '저장됨' : saveState === 'pending' ? '저장 중…' : '저장 실패'}
+            </span>
           </div>
           <input
             aria-label="곡 이름"
@@ -811,6 +858,69 @@ export function App() {
                 playheadTick={engine.playheadTick}
                 onSelect={(trackId, clipId) => { setSelectedTrackId(trackId); setSelectedClipId(clipId); }}
                 readLevel={engine.readLevel}
+                tools={<>
+          {/* 클립·트랙 조작 — 고른 클립과 트랙에 대해 (`LOGIC_PARITY.md` 3-1 편곡·트랙) */}
+          <button
+            type="button"
+            disabled={!clip || cursorTick <= 0 || cursorTick >= clip.lengthTick}
+            onClick={() => runEdit(() => {
+              const next = splitClip(project, clip!.id, clip!.startTick + cursorTick);
+              editor.commit(next.project);
+              setCursorTick(0);
+              setSelectedClipId(next.rightId);
+            })}
+            title="고른 클립을 커서 위치에서 둘로 나눕니다"
+            className={TOOL_BTN}
+          >나누기</button>
+          <button
+            type="button"
+            disabled={!clip || nextClipOnTrack(project, clip.id) === null}
+            onClick={() => runEdit(() => {
+              const following = nextClipOnTrack(project, clip!.id)!;
+              editor.commit(joinClips(project, [clip!.id, following.id]).project);
+            })}
+            title="고른 클립을 같은 트랙의 다음 클립과 하나로 합칩니다"
+            className={TOOL_BTN}
+          >합치기</button>
+          <button
+            type="button"
+            disabled={!clip}
+            onClick={() => runEdit(() => {
+              const next = repeatClip(project, clip!.id, { untilTick: projectLengthTicks(project) });
+              editor.commit(next.project);
+              setNotice(`${next.clipIds.length}번 반복했습니다`);
+            })}
+            title="고른 클립을 곡 끝(또는 다음 클립)까지 되풀이합니다"
+            className={TOOL_BTN}
+          >반복</button>
+          <button
+            type="button"
+            disabled={!track}
+            onClick={() => runEdit(() => {
+              const next = duplicateTrack(project, track!.id);
+              editor.commit(next.project);
+              setSelectedTrackId(next.trackId);
+              setSelectedClipId(null);
+            })}
+            title="고른 트랙을 악기·이펙트·클립째 복제해 바로 아래에 놓습니다"
+            className={TOOL_BTN}
+          >트랙 복제</button>
+          {(['up', 'down'] as const).map((dir) => {
+            const index = track ? project.tracks.indexOf(track) : -1;
+            const to = dir === 'up' ? index - 1 : index + 1;
+            return (
+              <button
+                key={dir}
+                type="button"
+                disabled={!track || to < 0 || to >= project.tracks.length}
+                onClick={() => editor.commit(moveTrack(project, track!.id, to))}
+                title={dir === 'up' ? '고른 트랙을 한 칸 위로' : '고른 트랙을 한 칸 아래로'}
+                aria-label={dir === 'up' ? '트랙 위로' : '트랙 아래로'}
+                className={TOOL_BTN}
+              >{dir === 'up' ? '▲' : '▼'}</button>
+            );
+          })}
+                </>}
                 onSelectTrack={(id) => {
                   setSelectedTrackId(id);
                   setSelectedClipId(project.tracks.find((t) => t.id === id)?.clips[0]?.id ?? null);

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import type { ReactNode } from 'react';
 
 import type { ClipId, Project, TrackId } from '../model/project.ts';
 import { countEditedNotes } from '../model/project.ts';
@@ -68,10 +69,16 @@ export interface TimelineProps {
   onSelectTrack: (trackId: TrackId) => void;
   /** 트랙 레벨 미터. 없으면 미터를 그리지 않는다 */
   readLevel?: (trackId: TrackId | null) => { peak: number; rms: number } | null;
+  /**
+   * 고른 클립·트랙에 대한 조작 버튼. **트랙 영역 바로 위에 둔다** — 위쪽 도구
+   * 줄은 음 편집용이고 이미 꽉 차서, 거기 넣으면 글자가 두 줄로 접힌다.
+   * 커서 위치를 알아야 해서(나누기) 버튼은 `App` 이 만든다
+   */
+  tools?: ReactNode;
 }
 
 export function Timeline({
-  editor, selectedTrackId, selectedClipId, playheadTick, onSelect, onSelectTrack, readLevel,
+  editor, selectedTrackId, selectedClipId, playheadTick, onSelect, onSelectTrack, readLevel, tools,
 }: TimelineProps) {
   const { project } = editor;
   // 이 곡이 쓰는 악기만 불러온다. 이름은 카탈로그에 있어 목록은 안 기다린다
@@ -178,6 +185,7 @@ export function Timeline({
             ＋ 트랙 추가
           </button>
         </div>
+        {tools && <div className="flex shrink-0 items-center gap-1.5">{tools}</div>}
         <span className="min-w-0 truncate text-[11px] text-ink-3">
           빈 곳을 클릭해 클립 추가 · 클립을 클릭해 편집 · 끝을 끌어 길이 조절
         </span>

@@ -20,11 +20,18 @@ export function projectFileName(project: Project): string {
   return `${base || 'project'}.json`;
 }
 
-export function saveAutosave(project: Project): void {
+/**
+ * 성공 여부를 돌려준다. **실패를 삼키지 않는다** — 저장이 안 되고 있는데 화면이
+ * "저장됨"이라고 하면 사용자는 새로고침 한 번에 곡을 잃는다. 편집을 막지는 않되
+ * 알리는 것은 호출한 쪽의 몫이다.
+ */
+export function saveAutosave(project: Project): boolean {
   try {
     localStorage.setItem(AUTOSAVE_KEY, serializeProject(project));
+    return true;
   } catch {
-    // 용량 초과 등. 자동 저장 실패로 편집을 막지는 않는다
+    // 용량 초과, 저장소 차단(사생활 보호 창) 등
+    return false;
   }
 }
 

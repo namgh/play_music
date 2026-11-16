@@ -27,6 +27,14 @@ export class History<T> {
   private past: T[] = [];
   private future: T[] = [];
   private current: T;
+  /**
+   * 미리보기(`replace`)가 시작되기 **직전** 상태. 미리보기가 없으면 null.
+   *
+   * 이게 없던 때에는 `replace` 가 드래그 전 상태를 덮어써서, 드래그를 끝내고
+   * 커밋하면 "옮긴 뒤"가 두 번 쌓였다 — 되돌리기를 눌러도 아무 일이 없고
+   * 원래 자리는 영영 사라졌다 (2026-11-16 브라우저 검증에서 발견).
+   */
+  private previewBase: T | null = null;
 
   constructor(initial: T, options: HistoryOptions = {}) {
     this.limit = options.limit ?? DEFAULT_LIMIT;
@@ -38,7 +46,7 @@ export class History<T> {
   }
 
   get canUndo(): boolean {
-    return this.past.length > 0;
+    return this.past.length > 0 || this.previewBase !== null;
   }
 
   get canRedo(): boolean {
@@ -51,11 +59,35 @@ export class History<T> {
 
   /** 되돌릴 수 있는 한 단계로 커밋한다 */
   commit(next: T): T {
-    this.past.push(this.current);
-    if (this.past.length > this.limit) this.past.shift();
-    this.future = []; // 새 편집을 하면 리두 가지는 버린다
+    // 끝나지 않은 미리보기가 있으면 그 **시작점**에서 이어 붙인다
+    this.push(this.previewBase ?? this.current);
+    this.previewBase = null;
     this.current = clone(next);
     return this.current;
+  }
+
+  /**
+   * 미리보기를 되돌릴 수 있는 한 단계로 확정한다 (드래그·슬라이더를 놓을 때).
+   *
+   * 미리보기가 없었거나 결국 제자리로 돌아왔으면 **아무것도 쌓지 않는다** —
+   * 음을 그냥 한 번 누른 것까지 언두 단계가 되면 되돌리기가 헛돈다.
+   */
+  commitPreview(): T {
+    const base = this.previewBase;
+    if (base === null) return this.current;
+    this.previewBase = null;
+    if (same(base, this.current)) {
+      this.current = base;
+      return this.current;
+    }
+    this.push(base);
+    return this.current;
+  }
+
+  private push(from: T): void {
+    this.past.push(from);
+    if (this.past.length > this.limit) this.past.shift();
+    this.future = []; // 새 편집을 하면 리두 가지는 버린다
   }
 
   /**
@@ -63,11 +95,14 @@ export class History<T> {
    * 드래그 중간 상태처럼 "아직 끝나지 않은 동작"에 쓴다.
    */
   replace(next: T): T {
+    this.previewBase ??= this.current;
     this.current = clone(next);
     return this.current;
   }
 
   undo(): T {
+    // 끝나지 않은 미리보기도 편집이다 — 먼저 한 단계로 확정한 뒤 되돌린다
+    this.commitPreview();
     const previous = this.past.pop();
     if (previous === undefined) return this.current;
     this.future.push(this.current);
@@ -76,12 +111,18 @@ export class History<T> {
   }
 
   redo(): T {
+    this.commitPreview(); // 확정되면 리두 가지가 비므로 아래는 아무 일도 안 한다
     const next = this.future.pop();
     if (next === undefined) return this.current;
     this.past.push(this.current);
     this.current = next;
     return this.current;
   }
+}
+
+/** 프로젝트는 직렬화 가능한 값뿐이라 문자열로 견줄 수 있다 (`plan.md` 5-4) */
+function same<T>(a: T, b: T): boolean {
+  return a === b || JSON.stringify(a) === JSON.stringify(b);
 }
 
 function clone<T>(value: T): T {

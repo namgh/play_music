@@ -31,8 +31,8 @@ export function useProjectEditor(initial: Project) {
 
   /** 드래그처럼 중간 상태를 미리 보여준 뒤 마지막에 한 번만 커밋하는 흐름 */
   const commitCurrent = useCallback(() => {
-    // replace 로 바뀐 현재 상태를 되돌릴 수 있는 한 단계로 만든다
-    sync(history.commit(history.state));
+    // 미리보기 **시작 전** 상태를 되돌릴 지점으로 남긴다. 바뀐 것이 없으면 안 쌓는다
+    sync(history.commitPreview());
   }, [history, sync]);
 
   const undo = useCallback(() => {

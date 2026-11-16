@@ -11,7 +11,7 @@
 import type {
   AutomationPoint, Clip, ClipId, LoopRegion, MusicalKey, Note, NoteId, Project, Track, TrackId,
 } from '../model/project.ts';
-import { createClip, createNote, createTrack, newNoteId } from '../model/factory.ts';
+import { createClip, createNote, createTrack, newClipId, newNoteId, newTrackId } from '../model/factory.ts';
 import type { Pitch } from '../model/pitch.ts';
 import { detune, normalizePitch, transpose } from '../model/pitch.ts';
 import type { Ticks } from '../model/time.ts';
@@ -68,6 +68,32 @@ function mapNotes(project: Project, ids: readonly NoteId[], fn: (note: Note) => 
       return { ...clip, notes: clip.notes.map((n) => (set.has(n.id) ? fn(n) : n)) };
     }),
   }));
+}
+
+/**
+ * 음을 **새 id 로, 깊이** 복사한다.
+ *
+ * 필드를 하나씩 옮겨 적지 않는다 — 전에 복제가 그렇게 돼 있어서 나중에 생긴
+ * `expression`(팜뮤트)이 복제본에서 조용히 빠졌다. 통째로 복제하면 필드가 늘어도
+ * 따라온다. 얕은 복사는 안 된다: 복제본의 곡선을 고칠 때 원본도 바뀐다
+ * (`HANDOFF.md` 16번).
+ */
+function cloneNote(note: Note, startTick: Ticks = note.startTick): Note {
+  return { ...structuredClone(note), id: newNoteId(), startTick };
+}
+
+/** 클립을 새 id 로 깊이 복사해 `startTick` 에 놓는다 */
+function cloneClip(clip: Clip, startTick: Ticks): Clip {
+  return {
+    ...structuredClone(clip),
+    id: newClipId(),
+    startTick,
+    notes: clip.notes.map((note) => cloneNote(note)),
+  };
+}
+
+function overlapsAny(clips: readonly Clip[], startTick: Ticks, lengthTick: Ticks): boolean {
+  return clips.some((c) => startTick < c.startTick + c.lengthTick && c.startTick < startTick + lengthTick);
 }
 
 // --- 노트 -------------------------------------------------------------------
@@ -452,34 +478,7 @@ export function duplicateClip(
   );
   if (collides) throw new EditError('뒤에 놓을 자리가 없다');
 
-  const copy = createClip({
-    startTick,
-    lengthTick: clip.lengthTick,
-    label: clip.label,
-  });
-  const duplicated: Clip = {
-    ...copy,
-    locked: clip.locked,
-    origin: clip.origin,
-    notes: clip.notes.map((note) => ({
-      ...createNote({
-        startTick: note.startTick,
-        lengthTick: note.lengthTick,
-        midi: note.pitch.midi,
-        cents: note.pitch.cents,
-      }),
-      velocity: note.velocity,
-      origin: note.origin,
-      // **깊이 복사한다.** 얕게 두면 복제본의 곡선을 고칠 때 원본도 바뀐다
-      pitchCurve: note.pitchCurve === null ? null : {
-        glide: note.pitchCurve.glide === null ? null : { ...note.pitchCurve.glide },
-        vibrato: note.pitchCurve.vibrato === null ? null : { ...note.pitchCurve.vibrato },
-        points: note.pitchCurve.points === null
-          ? null
-          : note.pitchCurve.points.map((point) => ({ ...point })),
-      },
-    })),
-  };
+  const duplicated = cloneClip(clip, startTick);
 
   return {
     project: mapTracks(project, (t) => (
@@ -487,6 +486,181 @@ export function duplicateClip(
     )),
     clipId: duplicated.id,
   };
+}
+
+/**
+ * 클립을 `atTick`(곡 기준)에서 둘로 나눈다 — Logic 의 "재생 헤드에서 나누기".
+ *
+ * 경계에 걸친 음은 **왼쪽에 길이 그대로 둔다.** 자르지 않는다 — 스케줄러가 클립
+ * 끝에서 끊어 주므로 소리는 같고(`resizeClip` 과 같은 규칙), 다시 합치면 원래
+ * 음이 그대로 돌아온다. 여기서 길이를 깎으면 나누기-합치기가 왕복이 안 된다.
+ */
+export function splitClip(
+  project: Project,
+  clipId: ClipId,
+  atTick: Ticks,
+): { project: Project; leftId: ClipId; rightId: ClipId } {
+  const found = findClip(project, clipId);
+  if (!found) throw new EditError(`클립 ${clipId} 없음`);
+  const { track, clip } = found;
+
+  const offset = Math.round(atTick) - clip.startTick;
+  if (offset <= 0 || offset >= clip.lengthTick) throw new EditError('나눌 위치가 클립 안에 있어야 한다');
+
+  const left: Clip = {
+    ...clip,
+    lengthTick: offset,
+    notes: clip.notes.filter((n) => n.startTick < offset),
+  };
+  const right: Clip = {
+    ...clip,
+    id: newClipId(),
+    startTick: clip.startTick + offset,
+    lengthTick: clip.lengthTick - offset,
+    // 오른쪽 음은 **id 를 유지한다** — 나눴다고 선택·언두가 끊기면 안 된다
+    notes: clip.notes
+      .filter((n) => n.startTick >= offset)
+      .map((n) => ({ ...n, startTick: n.startTick - offset })),
+  };
+
+  return {
+    project: mapTracks(project, (t) => (
+      t.id === track.id
+        ? { ...t, clips: t.clips.flatMap((c) => (c.id === clipId ? [left, right] : [c])) }
+        : t
+    )),
+    leftId: left.id,
+    rightId: right.id,
+  };
+}
+
+/**
+ * 같은 트랙의 클립 여럿을 하나로 합친다 — Logic 의 "합치기(Join)".
+ *
+ * 맨 앞 클립이 남고(id·이름·잠금) 나머지의 음이 그 안으로 들어온다. 사이가 떠
+ * 있으면 빈 채로 이어 붙는다. **고르지 않은 클립이 그 사이에 끼어 있으면 실패** —
+ * 합친 클립이 그 위를 덮게 된다.
+ */
+export function joinClips(
+  project: Project,
+  clipIds: readonly ClipId[],
+): { project: Project; clipId: ClipId } {
+  const ids = new Set(clipIds);
+  if (ids.size < 2) throw new EditError('합치려면 클립이 둘 이상이어야 한다');
+
+  const track = project.tracks.find((t) => t.clips.some((c) => ids.has(c.id)));
+  if (!track) throw new EditError('클립을 찾을 수 없다');
+  const picked = track.clips.filter((c) => ids.has(c.id)).sort((a, b) => a.startTick - b.startTick);
+  if (picked.length !== ids.size) throw new EditError('다른 트랙의 클립은 합칠 수 없다');
+  if (picked.some((c) => c.locked)) throw new EditError('잠긴 클립은 합칠 수 없다');
+
+  const first = picked[0]!;
+  const start = first.startTick;
+  const end = Math.max(...picked.map((c) => c.startTick + c.lengthTick));
+  const between = track.clips.some(
+    (c) => !ids.has(c.id) && c.startTick < end && start < c.startTick + c.lengthTick,
+  );
+  if (between) throw new EditError('사이에 다른 클립이 있다');
+
+  const merged: Clip = {
+    ...first,
+    lengthTick: end - start,
+    notes: picked
+      .flatMap((c) => c.notes.map((n) => ({ ...n, startTick: n.startTick + (c.startTick - start) })))
+      .sort((a, b) => a.startTick - b.startTick),
+  };
+
+  return {
+    project: mapTracks(project, (t) => (
+      t.id === track.id
+        ? { ...t, clips: t.clips.flatMap((c) => (c.id === first.id ? [merged] : ids.has(c.id) ? [] : [c])) }
+        : t
+    )),
+    clipId: merged.id,
+  };
+}
+
+/** 같은 트랙에서 바로 다음에 오는 클립. 없으면 null */
+export function nextClipOnTrack(project: Project, clipId: ClipId): Clip | null {
+  const found = findClip(project, clipId);
+  if (!found) return null;
+  const after = found.track.clips
+    .filter((c) => c.startTick > found.clip.startTick)
+    .sort((a, b) => a.startTick - b.startTick);
+  return after[0] ?? null;
+}
+
+/**
+ * 클립을 뒤로 `count` 번 되풀이한다 — Logic 의 "반복(Repeat)".
+ *
+ * `untilTick` 을 주면 거기를 넘지 않는 만큼만 놓는다(곡 끝까지 채우기). 자리가
+ * 모자라면 **들어가는 데까지만** 놓고 몇 개 놓았는지 돌려준다. 하나도 못 놓으면 실패.
+ */
+export function repeatClip(
+  project: Project,
+  clipId: ClipId,
+  options: { count?: number; untilTick?: Ticks },
+): { project: Project; clipIds: ClipId[] } {
+  const found = findClip(project, clipId);
+  if (!found) throw new EditError(`클립 ${clipId} 없음`);
+  const { track, clip } = found;
+
+  const limit = Math.max(0, Math.floor(options.count ?? Number.MAX_SAFE_INTEGER));
+  const until = options.untilTick ?? Number.POSITIVE_INFINITY;
+  if (options.count === undefined && options.untilTick === undefined) {
+    throw new EditError('횟수나 끝 위치를 정해야 한다');
+  }
+
+  const copies: Clip[] = [];
+  let startTick = clip.startTick + clip.lengthTick;
+  while (copies.length < limit && startTick + clip.lengthTick <= until) {
+    if (overlapsAny(track.clips, startTick, clip.lengthTick)) break;
+    copies.push(cloneClip(clip, startTick));
+    startTick += clip.lengthTick;
+  }
+  if (copies.length === 0) throw new EditError('뒤에 놓을 자리가 없다');
+
+  return {
+    project: mapTracks(project, (t) => (t.id === track.id ? { ...t, clips: [...t.clips, ...copies] } : t)),
+    clipIds: copies.map((c) => c.id),
+  };
+}
+
+/**
+ * 트랙을 통째로 복제해 **바로 아래**에 놓는다. 악기·음색·이펙트·오토메이션·클립 전부.
+ * 겹쳐 쌓거나(더블링) 한 옥타브 올린 성부를 만들 때 쓰는 기본 동작이다.
+ */
+export function duplicateTrack(
+  project: Project,
+  trackId: TrackId,
+): { project: Project; trackId: TrackId } {
+  const index = project.tracks.findIndex((t) => t.id === trackId);
+  const track = project.tracks[index];
+  if (!track) throw new EditError(`트랙 ${trackId} 없음`);
+
+  const copy: Track = {
+    ...structuredClone(track),
+    id: newTrackId(),
+    name: `${track.name} 복사`,
+    // 솔로까지 따라오면 복제하는 순간 다른 트랙이 전부 꺼진 것처럼 들린다
+    solo: false,
+    clips: track.clips.map((clip) => cloneClip(clip, clip.startTick)),
+  };
+  const tracks = [...project.tracks];
+  tracks.splice(index + 1, 0, copy);
+  return { project: { ...project, tracks }, trackId: copy.id };
+}
+
+/** 트랙 순서를 바꾼다. `toIndex` 는 옮긴 뒤의 자리이고 범위 밖이면 끝에 붙인다 */
+export function moveTrack(project: Project, trackId: TrackId, toIndex: number): Project {
+  const from = project.tracks.findIndex((t) => t.id === trackId);
+  if (from < 0) throw new EditError(`트랙 ${trackId} 없음`);
+  const to = Math.max(0, Math.min(project.tracks.length - 1, Math.round(toIndex)));
+  if (to === from) return project;
+  const tracks = [...project.tracks];
+  const [moved] = tracks.splice(from, 1);
+  tracks.splice(to, 0, moved!);
+  return { ...project, tracks };
 }
 
 export function deleteClip(project: Project, clipId: ClipId): Project {
