@@ -16,7 +16,9 @@ import type { ClipId, MusicalKey, Note, Project, StackId, TrackId } from './mode
 import { NOTE_NAMES } from './model/pitch.ts';
 import { PPQ, ticksPerBar, ticksPerBeat, ticksToSeconds } from './model/time.ts';
 import { positionAt } from './model/meter.ts';
-import { adjacentMarkerTick, tapTempo } from './editor/arrangement.ts';
+import { adjacentMarkerTick, keyAt, tapTempo } from './editor/arrangement.ts';
+import { extractVoice, forceLegato, humanize, removeOverlaps, scaleQuantize, scaleVelocity } from './editor/noteTools.ts';
+import type { NoteColorMode } from './ui/PianoRoll.tsx';
 import { createStack, setTrackFlag, setTrackStack } from './editor/tracks.ts';
 import type { GlobalSelection } from './ui/GlobalTracks.tsx';
 import { INSTRUMENT_CATALOG, playableInstrumentIds } from './instruments/definitions.ts';
@@ -144,6 +146,8 @@ export function App() {
   const [metronome, setMetronome] = useState(false);
   /** 카운트인 — 메트로놈처럼 도구 설정이다 */
   const [countIn, setCountIn] = useState(false);
+  /** 음 색 — 보기 설정 */
+  const [noteColor, setNoteColor] = useState<NoteColorMode>('edit');
   /**
    * **클립별** 표시 음역. **곡이 아니라 보기 설정**이라 프로젝트에 저장하지 않는다
    * (`plan.md` 5-4 — 프로젝트 데이터는 곡 자체다).
@@ -852,6 +856,59 @@ export function App() {
             onClick={() => editor.commit(quantizeNotes(project, selection, gridTicks))}
             className={TOOL_BTN}
           >퀀타이즈</button>
+          {/* 음 기능 — Logic 피아노 롤 "기능" 메뉴. 고르면 바로 실행하고 제자리로 돌아온다 */}
+          <select
+            aria-label="음 기능"
+            value=""
+            disabled={selection.length === 0}
+            onChange={(e) => {
+              const action = e.target.value;
+              runEdit(() => {
+                switch (action) {
+                  case 'scale': {
+                    if (!project.key) throw new Error('조성을 먼저 정하세요 (LCD 의 조성 칸)');
+                    editor.commit(scaleQuantize(project, selection, keyAt(project, (clip?.startTick ?? 0) + cursorTick) ?? project.key));
+                    break;
+                  }
+                  case 'legato': editor.commit(forceLegato(project, selection)); break;
+                  case 'overlap': editor.commit(removeOverlaps(project, selection)); break;
+                  case 'louder': editor.commit(scaleVelocity(project, selection, 1.1)); break;
+                  case 'softer': editor.commit(scaleVelocity(project, selection, 0.9)); break;
+                  case 'human': editor.commit(humanize(project, selection, { timingTicks: PPQ / 32, velocity: 0.06, seed: Date.now() })); break;
+                  case 'top':
+                  case 'bottom': {
+                    const r = extractVoice(project, selection, action);
+                    editor.commit(r.project);
+                    setNotice(`${r.moved}개를 새 트랙으로 옮겼습니다`);
+                    break;
+                  }
+                  default: break;
+                }
+              });
+            }}
+            className={FIELD}
+          >
+            <option value="">기능…</option>
+            <option value="scale">스케일에 맞추기</option>
+            <option value="legato">레가토 (다음 음까지)</option>
+            <option value="overlap">겹침 없애기</option>
+            <option value="louder">세기 +10%</option>
+            <option value="softer">세기 −10%</option>
+            <option value="human">사람처럼 (조금 흔들기)</option>
+            <option value="top">윗성부 떼어내기</option>
+            <option value="bottom">아랫성부 떼어내기</option>
+          </select>
+          <select
+            aria-label="음 색"
+            value={noteColor}
+            onChange={(e) => setNoteColor(e.target.value as NoteColorMode)}
+            className={FIELD}
+            title="음을 무엇으로 칠할지 — 음정 손댄 것 / 세기 / 음이름"
+          >
+            <option value="edit">색: 손댄 음</option>
+            <option value="velocity">색: 세기</option>
+            <option value="pitch">색: 음이름</option>
+          </select>
           {/* 선택한 음을 다른 트랙으로 — 드럼에 잘못 찍었을 때 지우고 다시 찍지 않아도 된다 */}
           {selection.length > 0 && project.tracks.length > 1 && (
             <select
@@ -1096,6 +1153,7 @@ export function App() {
                     onMoveCursor={setCursorTick}
                     musicalKey={project.key}
                     onAudition={audition}
+                    colorMode={noteColor}
                   />
                   {/* **레인이 양보한다.** 화면이 짧으면 여기가 먼저 줄고, 필요하면
                       안에서 스크롤한다 — 롤이 먼저 줄면 편집 자체를 못 한다 */}

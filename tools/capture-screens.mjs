@@ -69,6 +69,23 @@ export const SCREENS = [
       await b.clickEl(byTitle('고른 트랙을 목록에서 숨깁니다'));
     },
   },
+  {
+    name: 'a03-pianoroll-pitch-color', area: 3, title: '피아노 롤 — 음이름 색 · 기능 메뉴(스케일·레가토·성부 떼기)',
+    run: async (b) => {
+      await b.clickEl(byLabel('로즈 선택'));
+      await b.choose(byLabel('음 색'), 'pitch');
+      await sleep(200);
+    },
+  },
+  {
+    name: 'a03-pianoroll-velocity-color', area: 3, title: '피아노 롤 — 세기 색 · 음 고름',
+    run: async (b) => {
+      await b.clickEl(byLabel('어쿠스틱 기타 선택'));
+      await b.choose(byLabel('음 색'), 'velocity');
+      await sleep(200);
+      await b.clickEl(`document.querySelectorAll('.cursor-crosshair [role=button]')[3]`);
+    },
+  },
 ];
 
 async function capture(b, screen) {

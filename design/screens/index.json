@@ -23,5 +23,15 @@
     "name": "a02-track-stack-collapsed",
     "area": 2,
     "title": "트랙 — 스택 접힘 · 숨긴 트랙 보기"
+  },
+  {
+    "name": "a03-pianoroll-pitch-color",
+    "area": 3,
+    "title": "피아노 롤 — 음이름 색 · 기능 메뉴(스케일·레가토·성부 떼기)"
+  },
+  {
+    "name": "a03-pianoroll-velocity-color",
+    "area": 3,
+    "title": "피아노 롤 — 세기 색 · 음 고름"
   }
 ]

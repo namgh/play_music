@@ -38,7 +38,14 @@ const MIN_NOTE_TICKS = PPQ / 16;
 /** 이만큼 움직이면 "끈 것"으로 본다. 손떨림으로 범위 선택이 시작되지 않게 */
 const DRAG_THRESHOLD_PX = 4;
 
+/** 음 색 — 음정 손댄 음을 구분 / 세기 진하기 / 음이름(피치 클래스)별 */
+export type NoteColorMode = 'edit' | 'velocity' | 'pitch';
+
+/** 음이름 12개를 트랙 색 6개에 — 반음 이웃끼리 다른 색이 되게 5도 순서로 */
+const PITCH_TOKENS = ['t1', 't4', 't2', 't5', 't3', 't6'];
+
 export interface PianoRollProps {
+  colorMode?: NoteColorMode;
   editor: ProjectEditor;
   clip: Clip;
   /**
@@ -126,7 +133,7 @@ const snap = (ticks: number, gridTicks: number, free: boolean): number =>
   (free ? Math.max(0, Math.round(ticks)) : quantize(ticks, gridTicks));
 
 export function PianoRoll({
-  editor, clip, range, instrumentRange, zoomX, zoomY, velocity, gridTicks, noteLengthTicks,
+  colorMode = 'edit', editor, clip, range, instrumentRange, zoomX, zoomY, velocity, gridTicks, noteLengthTicks,
   playheadTick, cursorTick, onMoveCursor, musicalKey, fold, ghosts, onAudition,
   className = '',
 }: PianoRollProps) {
@@ -548,11 +555,14 @@ export function PianoRoll({
                   left: tickToLeft(note.startTick),
                   width: Math.max(4, note.lengthTick * pxPerTick - 1),
                   height: ROW_HEIGHT - 2,
+                  ...(!selected && colorMode !== 'edit' ? noteFill(note, colorMode) : {}),
                 }}
                 className={`absolute flex items-center rounded-[3px] border text-[9px] ${
                   selected
                     ? 'border-acc-2 bg-acc text-acc-ink'
-                    : edited
+                    : colorMode !== 'edit'
+                      ? 'text-screen'
+                      : edited
                       // 음정을 손본 음 — 트랙 색 2(따뜻한 색)로 구분한다
                       ? 'border-t2 bg-t2/85 text-screen'
                       : 'border-t3 bg-t3/70 text-sink'
@@ -579,4 +589,15 @@ export function PianoRoll({
       </div>
     </div>
   );
+}
+
+/** 세기·음이름 색칠 — 색은 테마 토큰에서만 가져온다 (색값을 직접 쓰면 테마를 바꿀 때 어긋난다) */
+function noteFill(note: { velocity: number; pitch: { midi: number } }, mode: NoteColorMode): React.CSSProperties {
+  if (mode === 'velocity') {
+    const pct = Math.round(25 + note.velocity * 75);
+    return { backgroundColor: `color-mix(in srgb, var(--color-acc) ${pct}%, var(--color-screen))`, borderColor: 'var(--color-acc-2)' };
+  }
+  const pc = ((note.pitch.midi % 12) + 12) % 12;
+  const token = PITCH_TOKENS[(pc * 7) % 12 % 6]!;
+  return { backgroundColor: `color-mix(in srgb, var(--color-${token}) 85%, transparent)`, borderColor: `var(--color-${token})` };
 }
