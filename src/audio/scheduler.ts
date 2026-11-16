@@ -12,9 +12,10 @@
 import type {
   Project, Note, PitchCurve, TrackId, ClipId, NoteId, LoopRegion,
 } from '../model/project.ts';
-import { audibleTracks } from '../model/project.ts';
+import { audibleTracks, isClipAudible } from '../model/project.ts';
+import { beatsBetween } from '../model/meter.ts';
 import type { Ticks } from '../model/time.ts';
-import { PPQ, secondsToTicks, ticksPerBar, ticksPerBeat, ticksToSeconds } from '../model/time.ts';
+import { PPQ, secondsToTicks, ticksToSeconds } from '../model/time.ts';
 import type { Tuning } from '../model/pitch.ts';
 import { pitchToHz } from '../model/pitch.ts';
 
@@ -43,6 +44,7 @@ export function collectNoteEvents(project: Project, fromTick: Ticks, toTick: Tic
 
   for (const track of audibleTracks(project)) {
     for (const clip of track.clips) {
+      if (!isClipAudible(clip)) continue;
       // 클립이 구간과 겹치지 않으면 음을 볼 필요가 없다
       if (clip.startTick >= toTick || clip.startTick + clip.lengthTick <= fromTick) continue;
 
@@ -225,14 +227,10 @@ export function collectBeatEvents(
   const out: ScheduledClick[] = [];
   if (toTick <= fromTick) return out;
 
-  const beat = ticksPerBeat(project.timeSignature);
-  const bar = ticksPerBar(project.timeSignature);
-  if (beat <= 0) return out;
-
+  // 박자 변화가 있으면 박 길이와 강박 위치가 마디마다 다르다 — 박자 지도가 정한다.
   // fromTick 이 박 위에 정확히 있으면 그 박을 포함한다 (반열린 구간의 왼쪽 끝)
-  const first = Math.ceil(fromTick / beat) * beat;
-  for (let tick = first; tick < toTick; tick += beat) {
-    out.push({ startTick: tick, accent: tick % bar === 0 });
+  for (const beat of beatsBetween(project, fromTick, toTick)) {
+    out.push({ startTick: beat.tick, accent: beat.accent });
   }
   return out;
 }

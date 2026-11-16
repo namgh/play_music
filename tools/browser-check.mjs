@@ -248,6 +248,48 @@ try {
   const stop12 = await centerOf(byTitle('정지')); if (stop12) await click(stop12.x, stop12.y);
   record('조작 뒤에도 재생됨', peak12 > 0.001 && problems.length === n12, `피크 ${peak12.toFixed(4)}, 새 오류 ${problems.length - n12}건`);
   await shot('08-clips-tracks');
+
+  // 13. 글로벌 트랙 — 구간·마커·코드·박자 변화, 마커 이동, 클립 뮤트, LCD 모드
+  const saved13 = () => ev(`(() => { const p = JSON.parse(localStorage.getItem('project-autosave-v1')); return p.project ?? p; })()`);
+  const laneAt = async (row, fx) => { const r = await ev(`(() => { const e = document.querySelector('[data-global=${row}] > div:last-child'); const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; })()`); await click(r.x + r.w * fx, r.y + r.h / 2); await sleep(300); };
+  await laneAt('sections', 0.05);
+  await laneAt('markers', 0.3);
+  await laneAt('markers', 0.6);
+  await laneAt('chords', 0.05);
+  let d13 = await saved13();
+  record('구간·마커·코드 추가', d13.sections?.length === 1 && d13.markers?.length === 2 && d13.chords?.length === 1,
+    `구간 ${d13.sections?.length} · 마커 ${d13.markers?.length} · 코드 ${d13.chords?.length}`);
+  await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape' });
+  await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape' });
+  await sleep(150);
+  await clickEl(byText('음에서 찾기')); await sleep(300);
+  d13 = await saved13();
+  record('음에서 코드 찾기', (d13.chords?.length ?? 0) >= 1, (d13.chords ?? []).map((c) => c.root + c.quality).join(' '));
+  await clickEl(`document.querySelector('[data-global=sections] [data-item]')`);
+  await clickEl(byTitle('안의 음악째 복제')); await sleep(300);
+  d13 = await saved13();
+  record('구간 복제', d13.sections?.length === 2, (d13.sections ?? []).map((x) => x.name + '@' + x.startTick).join(' '));
+  await clickEl(`document.querySelector('[data-bar="2"]')`);
+  const sigSel = `document.querySelector('[aria-label="박자 변화"]')`;
+  await ev(`(() => { const e = ${sigSel}; Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(e, '3/4'); e.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+  await sleep(300);
+  d13 = await saved13();
+  record('박자 변화', d13.signatureChanges?.[0]?.bar === 1 && d13.signatureChanges[0].timeSignature.num === 3, JSON.stringify(d13.signatureChanges));
+  await clickEl(byTitle('맨 앞으로'));
+  await clickEl(`document.querySelector('[aria-label="다음 마커"]')`);
+  const lcdPos = await ev(`document.querySelector('[aria-label="재생 위치"]').textContent`);
+  record('다음 마커로 이동', lcdPos !== '1.1.00', `LCD ${lcdPos}`);
+  await clickEl(`document.querySelector('[aria-label="재생 위치"]')`);
+  const lcdTime = await ev(`document.querySelector('[aria-label="재생 위치"]').textContent`);
+  record('LCD 분:초 전환', /^\d+:\d\d\.\d$/.test(lcdTime), lcdTime);
+  await clickEl(byText('클립 뮤트')); await sleep(300);
+  d13 = await saved13();
+  record('클립 뮤트', d13.tracks.some((t) => t.clips.some((c) => c.muted === true)), '');
+  await send('Page.reload'); await sleep(2500);
+  const d13b = await saved13();
+  record('글로벌 트랙 새로고침 뒤 유지', d13b.sections?.length === 2 && d13b.signatureChanges?.length === 1 && d13b.markers?.length >= 2,
+    `구간 ${d13b.sections?.length} · 박자 변화 ${d13b.signatureChanges?.length} · 마커 ${d13b.markers?.length}`);
+  await shot('09-global');
 } catch (err) {
   record('스크립트 실행', false, String(err.stack ?? err).slice(0, 500));
 } finally {

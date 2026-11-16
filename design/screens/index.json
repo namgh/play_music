@@ -1,0 +1,17 @@
+[
+  {
+    "name": "a01-arrange-section",
+    "area": 1,
+    "title": "편곡 — 구간 고름 (복제·이동·삭제)"
+  },
+  {
+    "name": "a01-arrange-chord",
+    "area": 1,
+    "title": "편곡 — 코드 고름"
+  },
+  {
+    "name": "a01-global-bar",
+    "area": 1,
+    "title": "글로벌 트랙 — 마디 박자·조성 변화"
+  }
+]

@@ -11,12 +11,14 @@
  * 반드시 동반한다. Phase 3 에서 AI 가 이 스키마로 파라미터를 생성하므로 요구가 더 높다.
  */
 
-import { SCHEMA_VERSION } from './project.ts';
+import { CHORD_QUALITIES, SCHEMA_VERSION } from './project.ts';
 import type {
-  AutomationLane, AutomationPoint, Clip, ClipId, EffectSpec, LoopRegion, MusicalKey, Note, NoteId,
-  Origin, PitchCurve, Project, ProjectId, Track, TrackId,
+  AutomationLane, AutomationPoint, ChordId, ChordQuality, Clip, ClipId, EffectSpec, LoopRegion,
+  MarkerId, MusicalKey, Note, NoteId, Origin, PitchCurve, Project, ProjectId, SectionId, Track, TrackId,
 } from './project.ts';
+import { normalizeSignatureChanges } from './meter.ts';
 import { DEFAULT_TEMPO, DEFAULT_TIME_SIGNATURE, PPQ } from './time.ts';
+import type { TimeSignature } from './time.ts';
 import { DEFAULT_TUNING, normalizePitch } from './pitch.ts';
 
 export class ProjectLoadError extends Error {}
@@ -169,6 +171,8 @@ function parseClip(value: unknown, seen: Set<string>): Clip {
     label: str(raw.label, ''),
     origin: origin(raw.origin),
     locked: bool(raw.locked, false),
+    ...(raw.muted == null ? {} : { muted: bool(raw.muted, false) }),
+    ...(raw.color == null ? {} : { color: str(raw.color, 'j1') }),
     notes: asArray(raw.notes ?? [], '음 목록').map((note) => parseNote(note, seen)),
   };
 }
@@ -250,6 +254,84 @@ function parseLoop(value: unknown): LoopRegion | null {
   return { startTick, endTick, enabled: bool(raw.enabled, false) };
 }
 
+/**
+ * 템포와 템포 변화.
+ *
+ * **예전에는 `bpm` 만 읽어서 템포 변화가 저장·새로고침에서 사라졌다** (스윙도 같았다
+ * — 2026-11-17 발견). 변화는 틱 오름차순, 같은 틱은 마지막 것.
+ */
+function parseTempo(value: unknown): Project['tempo'] {
+  const raw = asRecord(value ?? {}, '템포');
+  const tempo: Project['tempo'] = { bpm: num(raw.bpm, DEFAULT_TEMPO.bpm, 20, 300) };
+  if (raw.changes != null) {
+    const byTick = new Map<number, number>();
+    for (const entry of asArray(raw.changes, '템포 변화')) {
+      const change = asRecord(entry, '템포 변화');
+      byTick.set(num(change.tick, 0, 0), num(change.bpm, tempo.bpm, 20, 300));
+    }
+    tempo.changes = [...byTick.entries()].sort((a, b) => a[0] - b[0]).map(([tick, bpm]) => ({ tick, bpm }));
+  }
+  return tempo;
+}
+
+function parseTimeSignature(value: unknown, what: string): TimeSignature {
+  const raw = asRecord(value ?? {}, what);
+  return {
+    num: Math.round(num(raw.num, DEFAULT_TIME_SIGNATURE.num, 1, 32)),
+    den: Math.round(num(raw.den, DEFAULT_TIME_SIGNATURE.den, 1, 32)),
+  };
+}
+
+/** 글로벌 트랙 필드 — 있을 때만 싣는다. 없는 키를 `[]` 로 만들면 옛 파일과 왕복이 안 맞는다 */
+function optionalGlobals(raw: Record<string, unknown>, seen: Set<string>): Partial<Project> {
+  const out: Partial<Project> = {};
+  if (raw.markers != null) {
+    out.markers = asArray(raw.markers, '마커').map((entry) => {
+      const m = asRecord(entry, '마커');
+      return { id: id<MarkerId>(m.id, 'mrk', seen), tick: num(m.tick, 0, 0), name: str(m.name, '마커') };
+    }).sort((a, b) => a.tick - b.tick);
+  }
+  if (raw.sections != null) {
+    out.sections = asArray(raw.sections, '편곡 마커').map((entry) => {
+      const m = asRecord(entry, '편곡 마커');
+      return {
+        id: id<SectionId>(m.id, 'sec', seen),
+        startTick: num(m.startTick, 0, 0),
+        lengthTick: num(m.lengthTick, 4 * PPQ, 1),
+        name: str(m.name, '구간'),
+      };
+    }).sort((a, b) => a.startTick - b.startTick);
+  }
+  if (raw.chords != null) {
+    out.chords = asArray(raw.chords, '코드').map((entry) => {
+      const c = asRecord(entry, '코드');
+      return {
+        id: id<ChordId>(c.id, 'chd', seen),
+        tick: num(c.tick, 0, 0),
+        root: str(c.root, 'C'),
+        quality: (CHORD_QUALITIES as readonly string[]).includes(String(c.quality))
+          ? c.quality as ChordQuality
+          : 'maj',
+        bass: c.bass == null ? null : str(c.bass, 'C'),
+      };
+    }).sort((a, b) => a.tick - b.tick);
+  }
+  if (raw.signatureChanges != null) {
+    out.signatureChanges = normalizeSignatureChanges(asArray(raw.signatureChanges, '박자 변화').map((entry) => {
+      const c = asRecord(entry, '박자 변화');
+      return { bar: Math.round(num(c.bar, 1, 1)), timeSignature: parseTimeSignature(c.timeSignature, '박자') };
+    }));
+  }
+  if (raw.keyChanges != null) {
+    out.keyChanges = asArray(raw.keyChanges, '조성 변화').flatMap((entry) => {
+      const c = asRecord(entry, '조성 변화');
+      const key = parseKey(c.key);
+      return key ? [{ tick: num(c.tick, 0, 0), key }] : [];
+    }).sort((a, b) => a.tick - b.tick);
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // 불러오기
 // ---------------------------------------------------------------------------
@@ -291,26 +373,24 @@ export function deserializeProject(text: string): Project {
   const raw = migrate(asRecord(parsed, '프로젝트'));
   const seen = new Set<string>();
 
-  const tsRaw = asRecord(raw.timeSignature ?? {}, '박자');
   const project: Project = {
     schemaVersion: SCHEMA_VERSION,
     id: id<ProjectId>(raw.id, 'prj', seen),
     name: str(raw.name, '이름 없는 프로젝트'),
-    tempo: { bpm: num(asRecord(raw.tempo ?? {}, '템포').bpm, DEFAULT_TEMPO.bpm, 20, 300) },
-    timeSignature: {
-      num: Math.round(num(tsRaw.num, DEFAULT_TIME_SIGNATURE.num, 1, 32)),
-      den: Math.round(num(tsRaw.den, DEFAULT_TIME_SIGNATURE.den, 1, 32)),
-    },
+    tempo: parseTempo(raw.tempo),
+    timeSignature: parseTimeSignature(raw.timeSignature, '박자'),
     key: parseKey(raw.key),
     tuning: { a4Hz: num(asRecord(raw.tuning ?? {}, '조율').a4Hz, DEFAULT_TUNING.a4Hz, 380, 500) },
     loop: parseLoop(raw.loop),
     lengthBars: Math.round(num(raw.lengthBars, 16, 1, 2000)),
+    ...optionalGlobals(raw, seen),
     tracks: asArray(raw.tracks ?? [], '트랙 목록').map((track) => parseTrack(track, seen)),
     master: {
       gain: num(asRecord(raw.master ?? {}, '마스터').gain, 1, 0, 2),
       effects: parseEffects(asRecord(raw.master ?? {}, '마스터').effects),
     },
   };
+  if (raw.swing != null) project.swing = num(raw.swing, 0, 0, 0.75);
 
   return project;
 }

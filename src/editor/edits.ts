@@ -663,6 +663,22 @@ export function moveTrack(project: Project, trackId: TrackId, toIndex: number): 
   return { ...project, tracks };
 }
 
+/** 클립 이름·뮤트·색·잠금을 바꾼다 */
+export function updateClip(
+  project: Project,
+  clipId: ClipId,
+  patch: Partial<Pick<Clip, 'label' | 'muted' | 'color' | 'locked'>>,
+): Project {
+  if (!findClip(project, clipId)) throw new EditError(`클립 ${clipId} 없음`);
+  return mapClip(project, clipId, (clip) => {
+    const next: Clip = { ...clip, ...patch };
+    // 꺼진 뮤트·기본 색은 키를 지운다 — 옛 파일과 같은 모양으로 저장된다
+    if (next.muted === false) delete next.muted;
+    if (next.color === null) delete next.color;
+    return next;
+  });
+}
+
 export function deleteClip(project: Project, clipId: ClipId): Project {
   return mapTracks(project, (track) => ({ ...track, clips: track.clips.filter((c) => c.id !== clipId) }));
 }

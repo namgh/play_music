@@ -4,7 +4,7 @@ import { CloudPanel } from './ui/CloudPanel.tsx';
 import { BRAND } from './brand.ts';
 import {
   addClip, addTrack, copyNotes, deleteNotes, duplicateNotes, duplicateTrack, joinClips, moveNotes,
-  moveTrack, nextClipOnTrack, pasteNotes, repeatClip, splitClip,
+  moveTrack, nextClipOnTrack, pasteNotes, repeatClip, splitClip, updateClip,
   moveNotesToTrack, quantizeNotes, setKey, setLoop, setLoopEnabled, setSwing, setTempo,
   setTempoChange,
 } from './editor/edits.ts';
@@ -14,7 +14,10 @@ import { decodeMidi, encodeMidi } from './model/midi.ts';
 import { createEmptyProject, projectLengthTicks } from './model/factory.ts';
 import type { ClipId, MusicalKey, Note, Project, TrackId } from './model/project.ts';
 import { NOTE_NAMES } from './model/pitch.ts';
-import { PPQ, ticksPerBar, ticksToBarBeat } from './model/time.ts';
+import { PPQ, ticksPerBar, ticksPerBeat, ticksToSeconds } from './model/time.ts';
+import { positionAt } from './model/meter.ts';
+import { adjacentMarkerTick, tapTempo } from './editor/arrangement.ts';
+import type { GlobalSelection } from './ui/GlobalTracks.tsx';
 import { INSTRUMENT_CATALOG, playableInstrumentIds } from './instruments/definitions.ts';
 import { useInstruments } from './instruments/useInstruments.ts';
 import { resolveInstrument } from './instruments/resolve.ts';
@@ -114,6 +117,11 @@ export function App() {
   const [inputVelocity, setInputVelocity] = useState(0.8);
   const [view, setView] = useState<View>('editor');
   const [notice, setNotice] = useState<string | null>(null);
+  /** 글로벌 트랙(구간·마커·코드·마디)에서 고른 것 — 보기 상태라 저장하지 않는다 */
+  const [globalSelection, setGlobalSelection] = useState<GlobalSelection>(null);
+  /** LCD 위치 표시 — 마디.박 또는 분:초 */
+  const [lcdMode, setLcdMode] = useState<'bars' | 'time'>('bars');
+  const taps = useRef<number[]>([]);
   /** 상단 바에서 열린 띄움 창. 한 번에 하나만 */
   const [menu, setMenu] = useState<'file' | 'theme' | null>(null);
   const theme = useThemeState();
@@ -328,6 +336,8 @@ export function App() {
       }
       if (event.key === 'Escape') {
         editor.select([]);
+        // 글로벌 트랙에서 고른 것도 놓는다 — 그래야 그 줄의 도구(코드 찾기 등)가 돌아온다
+        setGlobalSelection(null);
         return;
       }
       if (selection.length === 0) return;
@@ -408,14 +418,50 @@ export function App() {
     setGhostModes((prev) => ({ ...prev, [trackId]: mode }));
   }, []);
 
-  const barTicks = ticksPerBar(project.timeSignature);
-
-  const position = engine.playheadTick === null
-    ? '1.1.00'
+  /** 곡 기준 커서 — 재생 중이면 재생 헤드, 멈춰 있으면 편집 커서 */
+  const songCursor = Math.max(0, engine.playheadTick ?? cursorTick + (clip?.startTick ?? 0));
+  const here = positionAt(project, songCursor);
+  const position = lcdMode === 'bars'
+    ? `${here.bar + 1}.${here.beat + 1}.${Math.floor((here.tickInBeat / ticksPerBeat(here.timeSignature)) * 100).toString().padStart(2, '0')}`
     : (() => {
-        const bb = ticksToBarBeat(Math.max(0, engine.playheadTick), project.timeSignature);
-        return `${bb.bar}.${bb.beat}.${Math.floor(bb.fraction * 100).toString().padStart(2, '0')}`;
+        const sec = ticksToSeconds(songCursor, project.tempo);
+        return `${Math.floor(sec / 60)}:${Math.floor(sec % 60).toString().padStart(2, '0')}.${Math.floor((sec % 1) * 10)}`;
       })();
+  const barLabel = (tick: number) => {
+    const p = positionAt(project, tick);
+    return `${p.bar + 1}.${p.beat + 1}`;
+  };
+
+  /**
+   * 커서를 곡 기준 틱으로 옮긴다. 커서는 **클립 기준**이라(붙여넣기와 공유 —
+   * `WORKPLAN.md` 2-6) 그 자리를 품은 클립을 먼저 고른다: 지금 트랙에서 찾고,
+   * 없으면 다른 트랙에서. 아무 클립도 없으면 지금 클립 기준으로 둔다.
+   */
+  const seek = (tick: number) => {
+    const t = Math.max(0, Math.round(tick));
+    const contains = (c: { startTick: number; lengthTick: number }) => t >= c.startTick && t < c.startTick + c.lengthTick;
+    const own = track?.clips.find(contains);
+    const other = own ? null : project.tracks.flatMap((tr) => tr.clips.map((c) => ({ tr, c }))).find((x) => contains(x.c));
+    if (own) {
+      setSelectedClipId(own.id);
+      setCursorTick(t - own.startTick);
+    } else if (other) {
+      setSelectedTrackId(other.tr.id);
+      setSelectedClipId(other.c.id);
+      setCursorTick(t - other.c.startTick);
+    } else {
+      setCursorTick(Math.max(0, t - (clip?.startTick ?? 0)));
+    }
+    if (engine.state === 'playing') void engine.play(t);
+  };
+  const jumpMarker = (direction: 1 | -1) => {
+    const target = adjacentMarkerTick(project, songCursor + (direction === -1 ? -1 : 0), direction);
+    if (target === null) {
+      setNotice(direction === 1 ? '뒤에 마커가 없습니다' : '앞에 마커가 없습니다');
+      return;
+    }
+    seek(target);
+  };
 
   const keyLabel = project.key === null ? '없음' : `${project.key.tonic} ${project.key.mode === 'major' ? '장조' : '단조'}`;
   /** 편집 함수가 거절하면(겹침·자리 없음) 조용히 넘기지 않고 이유를 보여 준다 */
@@ -502,6 +548,12 @@ export function App() {
             <button type="button" title="맨 앞으로" onClick={() => { engine.stop(); setCursorTick(0); }} className={ROUND_BTN}>
               <IconRewind />
             </button>
+            <button type="button" title="이전 마커로" aria-label="이전 마커" onClick={() => jumpMarker(-1)} className={ROUND_BTN}>
+              <span className="text-[11px] font-semibold">◂M</span>
+            </button>
+            <button type="button" title="다음 마커로" aria-label="다음 마커" onClick={() => jumpMarker(1)} className={ROUND_BTN}>
+              <span className="text-[11px] font-semibold">M▸</span>
+            </button>
             <button
               type="button"
               onClick={togglePlay}
@@ -532,7 +584,13 @@ export function App() {
 
         {/* LCD — 위치 · 템포 · 조성 · 박자. 여기서 바로 바꾼다 */}
         <div className="flex h-11 shrink-0 items-center gap-4 rounded-[10px] bg-screen px-3.5 text-sink">
-          <span className="w-[104px] font-num text-[28px] leading-none text-acc-2">{position}</span>
+          <button
+            type="button"
+            onClick={() => setLcdMode((m) => (m === 'bars' ? 'time' : 'bars'))}
+            title={lcdMode === 'bars' ? '마디.박 — 눌러서 분:초로' : '분:초 — 눌러서 마디.박으로'}
+            aria-label="재생 위치"
+            className="w-[104px] text-left font-num text-[28px] leading-none text-acc-2"
+          >{position}</button>
           <span className="h-6 w-px bg-grid-2" />
           <label className="flex flex-col gap-0.5">
             <input
@@ -543,7 +601,20 @@ export function App() {
               onChange={(e) => editor.commit(setTempo(project, Number(e.target.value)))}
               className="w-12 bg-transparent font-num text-[17px] leading-none text-sink outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none"
             />
-            <span className="text-[9px] text-sink-3">템포</span>
+            <span className="flex items-center gap-1 text-[9px] text-sink-3">
+              템포
+              <button
+                type="button"
+                onClick={() => {
+                  const now = performance.now();
+                  taps.current = [...taps.current.slice(-7), now];
+                  const bpm = tapTempo(taps.current);
+                  if (bpm !== null) editor.commit(setTempo(project, bpm));
+                }}
+                title="박자에 맞춰 여러 번 누르면 템포를 잽니다"
+                className="rounded-sm bg-grid-2 px-1 leading-tight text-sink-2 hover:text-sink"
+              >탭</button>
+            </span>
           </label>
           <label className="flex flex-col gap-0.5">
             <select
@@ -569,7 +640,7 @@ export function App() {
             <span className="text-[9px] text-sink-3">조성</span>
           </label>
           <span className="flex flex-col gap-0.5">
-            <b className="font-num text-[17px] font-normal leading-none">{project.timeSignature.num}/{project.timeSignature.den}</b>
+            <b className="font-num text-[17px] font-normal leading-none">{here.timeSignature.num}/{here.timeSignature.den}</b>
             <span className="text-[9px] text-sink-3">박자</span>
           </span>
           {project.loop && (
@@ -577,7 +648,7 @@ export function App() {
               <span className="h-6 w-px bg-grid-2" />
               <span className="flex flex-col gap-0.5">
                 <b className={`font-num text-[15px] font-normal leading-none ${project.loop.enabled ? 'text-acc-2' : 'text-sink-2'}`}>
-                  {(project.loop.startTick / barTicks + 1).toFixed(2)}–{(project.loop.endTick / barTicks + 1).toFixed(2)}
+                  {barLabel(project.loop.startTick)}–{barLabel(project.loop.endTick)}
                 </b>
                 <button
                   type="button"
@@ -858,6 +929,10 @@ export function App() {
                 playheadTick={engine.playheadTick}
                 onSelect={(trackId, clipId) => { setSelectedTrackId(trackId); setSelectedClipId(clipId); }}
                 readLevel={engine.readLevel}
+                globalSelection={globalSelection}
+                onGlobalSelect={setGlobalSelection}
+                onSeek={seek}
+                onNotice={setNotice}
                 tools={<>
           {/* 클립·트랙 조작 — 고른 클립과 트랙에 대해 (`LOGIC_PARITY.md` 3-1 편곡·트랙) */}
           <button
@@ -893,6 +968,25 @@ export function App() {
             title="고른 클립을 곡 끝(또는 다음 클립)까지 되풀이합니다"
             className={TOOL_BTN}
           >반복</button>
+          <button
+            type="button"
+            disabled={!clip}
+            aria-pressed={clip?.muted === true}
+            onClick={() => editor.commit(updateClip(project, clip!.id, { muted: !clip!.muted }))}
+            title="고른 클립을 지우지 않고 소리만 뺍니다"
+            className={`${TOOL_BTN} ${clip?.muted ? 'border-ink bg-ink text-body' : ''}`}
+          >{clip?.muted ? '뮤트됨' : '클립 뮤트'}</button>
+          <select
+            aria-label="클립 색"
+            disabled={!clip}
+            value={clip?.color ?? ''}
+            onChange={(e) => editor.commit(updateClip(project, clip!.id, { color: e.target.value || null }))}
+            className={FIELD}
+            title="고른 클립만 다른 색으로"
+          >
+            <option value="">트랙 색</option>
+            {['j1', 'j2', 'j3', 'j4', 'j5', 'j6'].map((c, i) => <option key={c} value={c}>색 {i + 1}</option>)}
+          </select>
           <button
             type="button"
             disabled={!track}

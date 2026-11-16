@@ -1,9 +1,13 @@
 import { useState } from 'react';
 import type { ReactNode } from 'react';
 
+import { GlobalTracks } from './GlobalTracks.tsx';
+import type { GlobalSelection } from './GlobalTracks.tsx';
+import { barLines } from '../model/meter.ts';
+import { projectLengthTicks } from '../model/factory.ts';
+
 import type { ClipId, Project, TrackId } from '../model/project.ts';
 import { countEditedNotes } from '../model/project.ts';
-import { ticksPerBar } from '../model/time.ts';
 import { addClip, addTrack, deleteClip, deleteTrack, duplicateClip, moveClip, resizeClip, updateTrack }
   from '../editor/edits.ts';
 import type { ProjectEditor } from '../editor/useProjectEditor.ts';
@@ -75,10 +79,17 @@ export interface TimelineProps {
    * 커서 위치를 알아야 해서(나누기) 버튼은 `App` 이 만든다
    */
   tools?: ReactNode;
+  /** 글로벌 트랙(구간·마커·코드·박자/조성)에서 고른 것 */
+  globalSelection: GlobalSelection;
+  onGlobalSelect: (selection: GlobalSelection) => void;
+  /** 커서를 곡 기준 틱으로 옮긴다 */
+  onSeek: (tick: number) => void;
+  onNotice: (message: string) => void;
 }
 
 export function Timeline({
   editor, selectedTrackId, selectedClipId, playheadTick, onSelect, onSelectTrack, readLevel, tools,
+  globalSelection, onGlobalSelect, onSeek, onNotice,
 }: TimelineProps) {
   const { project } = editor;
   // 이 곡이 쓰는 악기만 불러온다. 이름은 카탈로그에 있어 목록은 안 기다린다
@@ -91,15 +102,19 @@ export function Timeline({
     const withClip = addClip(added.project, {
       trackId: added.trackId,
       startTick: 0,
-      lengthTick: project.lengthBars * ticksPerBar(project.timeSignature),
+      lengthTick: totalTicks,
       label: instrumentName(instrumentId),
     });
     editor.commit(withClip.project);
     onSelectTrack(added.trackId);
   };
-  const barTicks = ticksPerBar(project.timeSignature);
-  const totalTicks = project.lengthBars * barTicks;
+  // 박자 변화가 있으면 마디 길이가 제각각이다 — 마디 경계는 전부 박자 지도에서 온다
+  const lines = barLines(project, project.lengthBars);
+  const totalTicks = projectLengthTicks(project);
   const pct = (ticks: number) => `${(ticks / totalTicks) * 100}%`;
+  /** 가장 가까운 마디 경계로 */
+  const snapToBar = (tick: number) => [...lines.map((l) => l.tick), totalTicks]
+    .reduce((best, t) => (Math.abs(t - tick) < Math.abs(best - tick) ? t : best), 0);
 
   /**
    * 클립 끌기 (`ROADMAP.md` P1). **마디 단위로 스냅한다** — 곡 구조를 짜는
@@ -129,7 +144,7 @@ export function Timeline({
     if (width <= 0) return;
 
     const deltaTicks = ((event.clientX - clipDrag.startX) / width) * totalTicks;
-    const snapped = Math.round((clipDrag.originTick + deltaTicks) / barTicks) * barTicks;
+    const snapped = snapToBar(clipDrag.originTick + deltaTicks);
     if (snapped === clipDrag.originTick) {
       editor.preview(clipDrag.origin);
       return;
@@ -152,14 +167,15 @@ export function Timeline({
   const onLaneClick = (trackId: TrackId, event: React.MouseEvent<HTMLDivElement>) => {
     if ((event.target as HTMLElement).closest('[data-clip]')) return;
     const rect = event.currentTarget.getBoundingClientRect();
-    const ratio = (event.clientX - rect.left) / rect.width;
-    const bar = Math.max(0, Math.min(project.lengthBars - 1, Math.floor(ratio * project.lengthBars)));
+    const tick = ((event.clientX - rect.left) / rect.width) * totalTicks;
+    const line = lines.reduce((found, l) => (l.tick <= tick ? l : found), lines[0]!);
+    const bar = line.bar;
 
-    const length = Math.min(4, project.lengthBars - bar) * barTicks;
+    const length = (lines[Math.min(lines.length, bar + 4)]?.tick ?? totalTicks) - line.tick;
     try {
       const { project: next, clipId } = addClip(project, {
         trackId,
-        startTick: bar * barTicks,
+        startTick: line.tick,
         lengthTick: length,
         label: `${bar + 1}마디`,
       });
@@ -196,17 +212,47 @@ export function Timeline({
         <div className="relative flex h-7 border-b border-grid">
           <div className={`${NAME_COL} shrink-0 border-r border-rule bg-body`} />
           <div className="relative flex-1 bg-screen">
-            {Array.from({ length: project.lengthBars }, (_, bar) => (
-              <span
-                key={bar}
-                style={{ left: pct(bar * barTicks) }}
-                className="absolute inset-y-0 flex items-center border-l border-grid pl-1.5 font-num text-[13px] text-sink-2"
-              >
-                {bar + 1}
-              </span>
-            ))}
+            {lines.map((line) => {
+              const keyChange = (project.keyChanges ?? []).find((k) => k.tick === line.tick);
+              const picked = globalSelection?.kind === 'bar' && globalSelection.bar === line.bar;
+              return (
+                <button
+                  key={line.bar}
+                  type="button"
+                  data-bar={line.bar + 1}
+                  onClick={() => { onGlobalSelect(picked ? null : { kind: 'bar', bar: line.bar }); onSeek(line.tick); }}
+                  title={`${line.bar + 1}마디 — 눌러서 이 마디부터의 박자·조성을 바꿉니다`}
+                  style={{ left: pct(line.tick), width: pct(line.lengthTick) }}
+                  className={`absolute inset-y-0 flex items-center gap-1 overflow-hidden border-l border-grid pl-1.5 text-left font-num text-[13px] ${
+                    picked ? 'bg-acc/25 text-sink' : 'text-sink-2 hover:text-sink'}`}
+                >
+                  {line.bar + 1}
+                  {(line.changed || (line.bar === 0 && (project.signatureChanges?.length ?? 0) > 0)) && (
+                    <span className="rounded-sm bg-grid-2 px-1 text-[10px] text-acc-2">
+                      {line.timeSignature.num}/{line.timeSignature.den}
+                    </span>
+                  )}
+                  {keyChange && (
+                    <span className="rounded-sm bg-grid-2 px-1 text-[10px] text-sink">
+                      {keyChange.key.tonic}{keyChange.key.mode === 'minor' ? 'm' : ''}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
         </div>
+
+        <GlobalTracks
+          editor={editor}
+          lines={lines}
+          totalTicks={totalTicks}
+          nameCol={NAME_COL}
+          selection={globalSelection}
+          onSelect={onGlobalSelect}
+          onSeek={onSeek}
+          onNotice={onNotice}
+        />
 
         {project.tracks.length === 0 && (
           <p className="bg-body p-4 text-sm text-ink-3">
@@ -318,11 +364,12 @@ export function Timeline({
                     key={clip.id}
                     data-clip
                     style={{ left: pct(clip.startTick), width: pct(clip.lengthTick) }}
+                    data-muted={clip.muted ? 'true' : undefined}
                     className={`absolute inset-y-1 flex items-center overflow-hidden rounded-md pl-1.5 pt-2 text-[10px] ${
-                      (TRACK_COLORS[track.color] ?? FALLBACK_COLOR).clip
-                    } ${selected ? 'ring-[1.5px] ring-acc' : ''}`}
+                      (TRACK_COLORS[clip.color ?? track.color] ?? FALLBACK_COLOR).clip
+                    } ${selected ? 'ring-[1.5px] ring-acc' : ''} ${clip.muted ? 'opacity-40' : ''}`}
                   >
-                    <i className={`pointer-events-none absolute inset-x-0 top-0 h-1.5 ${(TRACK_COLORS[track.color] ?? FALLBACK_COLOR).head}`} />
+                    <i className={`pointer-events-none absolute inset-x-0 top-0 h-1.5 ${(TRACK_COLORS[clip.color ?? track.color] ?? FALLBACK_COLOR).head}`} />
                     <button
                       type="button"
                       onClick={() => onSelect(track.id, clip.id)}
@@ -333,7 +380,7 @@ export function Timeline({
                       title="끌어서 옮깁니다"
                       className="min-w-0 flex-1 cursor-grab truncate text-left font-semibold text-sink"
                     >
-                      {clip.label || '클립'}
+                      <span className={clip.muted ? 'line-through' : ''}>{clip.label || '클립'}</span>
                       <span className="ml-1 font-normal text-sink-2">
                         {clip.notes.length}음{edited > 0 ? ` · ${edited} 수정` : ''}
                       </span>
@@ -378,8 +425,9 @@ export function Timeline({
                         const move = (e: PointerEvent) => {
                           const ratio = (e.clientX - rect.left) / rect.width;
                           const endTick = ratio * totalTicks;
-                          const bars = Math.max(1, Math.round((endTick - clip.startTick) / barTicks));
-                          editor.preview(resizeClip(origin, clip.id, bars * barTicks));
+                          // 끝을 가장 가까운 마디 경계에 — 박자가 바뀌어도 마디 단위로 맞는다
+                          const end = Math.max(snapToBar(endTick), lines.find((l) => l.tick > clip.startTick)?.tick ?? totalTicks);
+                          editor.preview(resizeClip(origin, clip.id, end - clip.startTick));
                         };
                         const up = () => {
                           window.removeEventListener('pointermove', move);

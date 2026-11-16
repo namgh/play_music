@@ -25,6 +25,9 @@ export type ProjectId = `prj_${string}`;
 export type TrackId = `trk_${string}`;
 export type ClipId = `clp_${string}`;
 export type NoteId = `not_${string}`;
+export type MarkerId = `mrk_${string}`;
+export type SectionId = `sec_${string}`;
+export type ChordId = `chd_${string}`;
 
 /** 스키마 버전. 필드 추가는 자유, 제거·개명은 마이그레이션 함수 동반 (`sound.md` 9-8) */
 export const SCHEMA_VERSION = 1;
@@ -120,6 +123,13 @@ export interface Clip {
   origin: Origin;
   /** true = AI가 이 안의 음을 건드리지 못한다 — 차별점 ② */
   locked: boolean;
+  /**
+   * 클립 뮤트 (Logic 리전 뮤트). 지우지 않고 잠깐 빼 들을 때 쓴다.
+   * 필드 추가라 마이그레이션이 필요 없다 — 옛 파일은 `undefined` = 들린다
+   */
+  muted?: boolean;
+  /** 클립만 다른 색으로. 없으면 트랙 색 — 색값이 아니라 토큰(`j1`…)이다 */
+  color?: string | null;
   notes: Note[];
 }
 
@@ -182,6 +192,66 @@ export interface Track {
 }
 
 // ---------------------------------------------------------------------------
+// 글로벌 트랙 — 마커 · 편곡 마커 · 코드 · 박자/조성 변화 (LOGIC_PARITY 1-11)
+//
+// 전부 **선택 필드**다. 옛 파일은 `undefined` 로 읽히고 그러면 예전과 똑같이 돈다
+// (`sound.md` 9-8: 필드 추가는 자유, 제거·개명은 마이그레이션 동반).
+// ---------------------------------------------------------------------------
+
+/** 마커 — 곡 안의 한 지점에 붙인 이름. 이동·찾기용이고 소리에는 영향이 없다 */
+export interface Marker {
+  id: MarkerId;
+  tick: Ticks;
+  name: string;
+}
+
+/**
+ * 편곡 마커 (Logic Arrangement marker) — **길이가 있는 구간**(인트로·벌스·코러스).
+ * 구간을 옮기거나 복제하면 그 안의 클립·마커·코드·오토메이션이 함께 간다.
+ * 서로 겹치지 않는다 (편집 함수가 지킨다).
+ */
+export interface Section {
+  id: SectionId;
+  startTick: Ticks;
+  lengthTick: Ticks;
+  name: string;
+}
+
+export const CHORD_QUALITIES = [
+  'maj', 'min', 'dim', 'aug', 'sus2', 'sus4', '7', 'maj7', 'min7', 'm7b5', 'dim7', '6', 'min6', 'add9',
+] as const;
+export type ChordQuality = typeof CHORD_QUALITIES[number];
+
+/**
+ * 코드 기호 하나. 다음 코드가 나올 때까지 유지된다 (Logic 코드 트랙과 같다).
+ * 소리는 내지 않는다 — 표시, 그리고 앞으로 AI·세션 연주자가 따라갈 진행이다.
+ */
+export interface ChordSymbol {
+  id: ChordId;
+  tick: Ticks;
+  /** 'C', 'F#' … — `NOTE_NAMES` 표기 */
+  root: string;
+  quality: ChordQuality;
+  /** 슬래시 코드의 베이스음. 없으면 근음 */
+  bass: string | null;
+}
+
+/**
+ * 박자 변화. **마디 번호(0부터)로 건다** — 틱으로 걸면 앞 박자를 바꿀 때
+ * 변화 지점이 마디 중간으로 밀려 들어간다. 마디 단위면 항상 마디 경계다.
+ */
+export interface SignatureChange {
+  bar: number;
+  timeSignature: TimeSignature;
+}
+
+/** 조성 변화. 표시·스케일 판정용이고 소리에는 영향이 없다 (`key` 와 같다) */
+export interface KeyChange {
+  tick: Ticks;
+  key: MusicalKey;
+}
+
+// ---------------------------------------------------------------------------
 // 프로젝트
 // ---------------------------------------------------------------------------
 
@@ -220,6 +290,16 @@ export interface Project {
   /** 반복 재생 구간. `null` 이면 처음부터 끝까지 한 번 */
   loop: LoopRegion | null;
   lengthBars: number;
+  /** 마커 — 틱 오름차순 */
+  markers?: Marker[];
+  /** 편곡 마커 — 시작 오름차순, 겹치지 않는다 */
+  sections?: Section[];
+  /** 코드 트랙 — 틱 오름차순 */
+  chords?: ChordSymbol[];
+  /** 박자 변화 — 마디 오름차순. 0번 마디는 `timeSignature` 가 맡는다 */
+  signatureChanges?: SignatureChange[];
+  /** 조성 변화 — 틱 오름차순. 곡 시작은 `key` 가 맡는다 */
+  keyChanges?: KeyChange[];
   tracks: Track[];
   master: {
     gain: number;
@@ -244,6 +324,11 @@ export function countEditedNotes(clip: Clip): number {
 
 export function clipEndTick(clip: Clip): Ticks {
   return clip.startTick + clip.lengthTick;
+}
+
+/** 소리가 나는 클립인가 — 클립 뮤트를 한 곳에서 판정한다 */
+export function isClipAudible(clip: Clip): boolean {
+  return clip.muted !== true;
 }
 
 /** 솔로가 하나라도 켜져 있으면 솔로가 아닌 트랙은 들리지 않는다 */

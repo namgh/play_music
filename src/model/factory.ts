@@ -3,11 +3,12 @@
  * ID 규칙이 흩어지면 언두·AI 지시("이 음을 A→B로")가 대상을 잃는다.
  */
 
-import { DEFAULT_TEMPO, DEFAULT_TIME_SIGNATURE, PPQ, ticksPerBar } from './time.ts';
+import { DEFAULT_TEMPO, DEFAULT_TIME_SIGNATURE, PPQ } from './time.ts';
+import { barStartTick } from './meter.ts';
 import { DEFAULT_TUNING, pitch } from './pitch.ts';
 import { SCHEMA_VERSION } from './project.ts';
 import type {
-  Clip, ClipId, Note, NoteId, Origin, Project, ProjectId, Track, TrackId,
+  ChordId, Clip, ClipId, MarkerId, Note, NoteId, Origin, Project, ProjectId, SectionId, Track, TrackId,
 } from './project.ts';
 
 function randomId(): string {
@@ -21,6 +22,9 @@ export const newProjectId = (): ProjectId => `prj_${randomId()}`;
 export const newTrackId = (): TrackId => `trk_${randomId()}`;
 export const newClipId = (): ClipId => `clp_${randomId()}`;
 export const newNoteId = (): NoteId => `not_${randomId()}`;
+export const newMarkerId = (): MarkerId => `mrk_${randomId()}`;
+export const newSectionId = (): SectionId => `sec_${randomId()}`;
+export const newChordId = (): ChordId => `chd_${randomId()}`;
 
 export function createNote(opts: {
   startTick: number;
@@ -113,5 +117,6 @@ export function createEmptyProject(name: string): Project {
 
 /** 프로젝트 전체 길이(틱) */
 export function projectLengthTicks(project: Project): number {
-  return project.lengthBars * ticksPerBar(project.timeSignature);
+  // 박자 변화가 있으면 마디 길이가 제각각이다 — 박자 지도에 묻는다
+  return barStartTick(project, project.lengthBars);
 }
