@@ -66,7 +66,7 @@ const ev = async (expression) => {
 const mouse = (type, x, y, extra = {}) => send('Input.dispatchMouseEvent', { type, x, y, button: 'left', buttons: type === 'mouseReleased' ? 0 : 1, clickCount: 1, ...extra });
 const click = async (x, y) => { await mouse('mouseMoved', x, y, { buttons: 0 }); await mouse('mousePressed', x, y); await mouse('mouseReleased', x, y); await sleep(120); };
 const shot = async (name) => { const r = await send('Page.captureScreenshot', { format: 'png' }); writeFileSync(join(OUT, name + '.png'), Buffer.from(r.data, 'base64')); };
-const centerOf = (sel) => ev(`(() => { const e = ${sel}; if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+const centerOf = (sel) => ev(`(() => { const e = ${sel}; if (!e) return null; e.scrollIntoView({ block: 'nearest', inline: 'nearest' }); const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
 const clickEl = async (sel) => { const p = await centerOf(sel); if (!p) throw new Error('요소 없음: ' + sel); await click(p.x, p.y); };
 const byText = (t) => `[...document.querySelectorAll('button')].find((b) => b.textContent.trim().includes(${JSON.stringify(t)}))`;
 const byTitle = (t) => `[...document.querySelectorAll('button')].find((b) => (b.title || '').includes(${JSON.stringify(t)}))`;
@@ -290,6 +290,30 @@ try {
   record('글로벌 트랙 새로고침 뒤 유지', d13b.sections?.length === 2 && d13b.signatureChanges?.length === 1 && d13b.markers?.length >= 2,
     `구간 ${d13b.sections?.length} · 박자 변화 ${d13b.signatureChanges?.length} · 마커 ${d13b.markers?.length}`);
   await shot('09-global');
+
+  // 14. 트랙 보호·카운트인·스택
+  const notes14 = await noteCount();
+  await clickEl(byTitle('고른 트랙을 보호합니다'));
+  const g14 = await ev(`(() => { const r = document.querySelector('.cursor-crosshair').getBoundingClientRect(); return { x: r.x, y: r.y }; })()`);
+  await click(g14.x + 100, g14.y + 40);
+  const blockedMsg = await ev(`document.body.innerText.includes('보호돼 있습니다')`);
+  record('보호된 트랙은 음을 못 찍는다', (await noteCount()) === notes14 && blockedMsg, `음 ${notes14} → ${await noteCount()}, 알림 ${blockedMsg}`);
+  await clickEl(byTitle('고른 트랙을 보호합니다'));
+  await clickEl(`document.querySelector('[aria-label="카운트인"]')`);
+  await clickEl(byTitle('맨 앞으로'));
+  await clickEl(byTitle('커서부터 재생'));
+  await sleep(900);
+  const during = await ev(`document.querySelector('[aria-label="재생 위치"]').textContent`);
+  await sleep(2600);
+  const after14 = await ev(`document.querySelector('[aria-label="재생 위치"]').textContent`);
+  const stop14 = await centerOf(byTitle('정지')); if (stop14) await click(stop14.x, stop14.y);
+  record('카운트인 — 한 마디 센 뒤 시작', during.startsWith('0:00') || during.startsWith('1.1.'), `0.9초 ${during} → 3.5초 ${after14}`);
+  await clickEl(`document.querySelector('[aria-label="카운트인"]')`);
+  await ev(`(() => { const e = document.querySelector('[aria-label="트랙 스택"]'); Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(e, 'new'); e.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+  await sleep(300);
+  const d14 = await ev(`(() => { const p = JSON.parse(localStorage.getItem('project-autosave-v1')); const d = p.project ?? p; return { stacks: (d.stacks ?? []).length, member: d.tracks.some((t) => t.stackId) }; })()`);
+  record('트랙 스택 만들기', d14.stacks === 1 && d14.member, JSON.stringify(d14));
+  await shot('10-tracks');
 } catch (err) {
   record('스크립트 실행', false, String(err.stack ?? err).slice(0, 500));
 } finally {

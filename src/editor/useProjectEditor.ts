@@ -2,6 +2,7 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 
 import type { NoteId, Project } from '../model/project.ts';
 import { History } from './history.ts';
+import { protectedChange } from './tracks.ts';
 
 /**
  * 편집 상태를 한 곳에 모은다. 컴포넌트는 프로젝트를 직접 고치지 않고 여기를 통한다.
@@ -12,7 +13,9 @@ import { History } from './history.ts';
  *
  * 이걸 구분하지 않으면 드래그 한 번에 언두 단계가 수십 개 생긴다.
  */
-export function useProjectEditor(initial: Project) {
+export function useProjectEditor(initial: Project, options: { onBlocked?: (reason: string) => void } = {}) {
+  const onBlocked = useRef(options.onBlocked);
+  onBlocked.current = options.onBlocked;
   const historyRef = useRef<History<Project> | null>(null);
   historyRef.current ??= new History(initial);
   const history = historyRef.current;
@@ -26,8 +29,16 @@ export function useProjectEditor(initial: Project) {
     setRevision((r) => r + 1);
   }, []);
 
-  const commit = useCallback((next: Project) => sync(history.commit(next)), [history, sync]);
-  const preview = useCallback((next: Project) => sync(history.replace(next)), [history, sync]);
+  /** 보호된 트랙을 고치는 편집은 여기서 거른다 (`tracks.ts` protectedChange) */
+  const allowed = useCallback((next: Project) => {
+    const blocked = protectedChange(history.state, next);
+    if (blocked === null) return true;
+    onBlocked.current?.(`"${blocked}" 트랙은 보호돼 있습니다 — 트랙의 자물쇠를 풀고 고치세요`);
+    return false;
+  }, [history]);
+
+  const commit = useCallback((next: Project) => { if (allowed(next)) sync(history.commit(next)); }, [allowed, history, sync]);
+  const preview = useCallback((next: Project) => { if (allowed(next)) sync(history.replace(next)); }, [allowed, history, sync]);
 
   /** 드래그처럼 중간 상태를 미리 보여준 뒤 마지막에 한 번만 커밋하는 흐름 */
   const commitCurrent = useCallback(() => {

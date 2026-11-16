@@ -2,11 +2,12 @@ import { useState } from 'react';
 import type { ReactNode } from 'react';
 
 import { GlobalTracks } from './GlobalTracks.tsx';
+import { toggleStackFlag, ungroupStack, updateStack } from '../editor/tracks.ts';
 import type { GlobalSelection } from './GlobalTracks.tsx';
 import { barLines } from '../model/meter.ts';
 import { projectLengthTicks } from '../model/factory.ts';
 
-import type { ClipId, Project, TrackId } from '../model/project.ts';
+import type { ClipId, Project, Track, TrackId, TrackStack } from '../model/project.ts';
 import { countEditedNotes } from '../model/project.ts';
 import { addClip, addTrack, deleteClip, deleteTrack, duplicateClip, moveClip, resizeClip, updateTrack }
   from '../editor/edits.ts';
@@ -112,6 +113,25 @@ export function Timeline({
   const lines = barLines(project, project.lengthBars);
   const totalTicks = projectLengthTicks(project);
   const pct = (ticks: number) => `${(ticks / totalTicks) * 100}%`;
+  // 스택은 머리 줄 하나 + (펼쳤으면) 멤버. 숨긴 트랙은 "숨긴 트랙" 을 켰을 때만
+  const [showHidden, setShowHidden] = useState(false);
+  /** 글로벌 트랙 줄 (Logic 의 G) — 보기 설정이라 저장하지 않는다 */
+  const [showGlobals, setShowGlobals] = useState(true);
+  const hiddenCount = project.tracks.filter((t) => t.hidden).length;
+  const visibleRows: ({ kind: 'track'; track: Track } | { kind: 'stack'; stack: TrackStack; members: Track[] })[] = [];
+  {
+    const seenStacks = new Set<string>();
+    for (const track of project.tracks) {
+      const stack = track.stackId ? project.stacks?.find((s) => s.id === track.stackId) : undefined;
+      if (stack && !seenStacks.has(stack.id)) {
+        seenStacks.add(stack.id);
+        visibleRows.push({ kind: 'stack', stack, members: project.tracks.filter((t) => t.stackId === stack.id) });
+      }
+      if (stack?.collapsed) continue;
+      if (track.hidden && !showHidden) continue;
+      visibleRows.push({ kind: 'track', track });
+    }
+  }
   /** 가장 가까운 마디 경계로 */
   const snapToBar = (tick: number) => [...lines.map((l) => l.tick), totalTicks]
     .reduce((best, t) => (Math.abs(t - tick) < Math.abs(best - tick) ? t : best), 0);
@@ -188,11 +208,19 @@ export function Timeline({
 
   return (
     <section>
-      <div className="mb-2 flex items-center gap-3">
+      <div className="mb-2 flex min-w-0 items-center gap-3">
         <div className={`flex ${NAME_COL} shrink-0 items-center justify-between gap-2 pr-2`}>
           <h2 className="font-disp text-lg leading-none text-ink">
             트랙 <span className="text-ink-3">{project.tracks.length}</span>
           </h2>
+          {hiddenCount > 0 && (
+            <button
+              type="button"
+              aria-pressed={showHidden}
+              onClick={() => setShowHidden((v) => !v)}
+              className={`h-6 rounded border px-1.5 text-[11px] ${showHidden ? 'border-ink bg-ink text-body' : 'border-rule bg-panel text-ink-2'}`}
+            >숨긴 트랙 {hiddenCount}</button>
+          )}
           <button
             type="button"
             onClick={onAddTrack}
@@ -201,8 +229,16 @@ export function Timeline({
             ＋ 트랙 추가
           </button>
         </div>
-        {tools && <div className="flex shrink-0 items-center gap-1.5">{tools}</div>}
-        <span className="min-w-0 truncate text-[11px] text-ink-3">
+        {/* 도구는 넘치면 옆으로 스크롤한다 — 줄바꿈하면 트랙 영역이 밀려 내려간다 */}
+        {tools && <div className="flex min-w-0 shrink items-center gap-1.5 overflow-x-auto [scrollbar-width:none]">{tools}</div>}
+        <button
+          type="button"
+          aria-pressed={showGlobals}
+          onClick={() => setShowGlobals((v) => !v)}
+          title="구간·마커·코드 줄을 보이거나 숨깁니다"
+          className={`h-7 shrink-0 rounded-md border px-2 text-xs ${showGlobals ? 'border-ink bg-ink text-body' : 'border-rule bg-panel text-ink-2'}`}
+        >글로벌</button>
+        <span className="hidden min-w-0 truncate text-[11px] text-ink-3 2xl:block">
           빈 곳을 클릭해 클립 추가 · 클립을 클릭해 편집 · 끝을 끌어 길이 조절
         </span>
       </div>
@@ -243,7 +279,7 @@ export function Timeline({
           </div>
         </div>
 
-        <GlobalTracks
+        {showGlobals && <GlobalTracks
           editor={editor}
           lines={lines}
           totalTicks={totalTicks}
@@ -252,7 +288,7 @@ export function Timeline({
           onSelect={onGlobalSelect}
           onSeek={onSeek}
           onNotice={onNotice}
-        />
+        />}
 
         {project.tracks.length === 0 && (
           <p className="bg-body p-4 text-sm text-ink-3">
@@ -260,8 +296,42 @@ export function Timeline({
           </p>
         )}
 
-        {project.tracks.map((track) => (
-          <div key={track.id} className="flex border-b border-grid last:border-b-0">
+        {visibleRows.map((row) => row.kind === 'stack' ? (
+          <div key={row.stack.id} data-stack={row.stack.id} className="flex border-b border-grid">
+            <div style={{ height: 32 }} className={`flex ${NAME_COL} shrink-0 items-center gap-1.5 border-r border-rule bg-panel px-2`}>
+              <button
+                type="button"
+                aria-label={row.stack.collapsed ? `${row.stack.name} 펼치기` : `${row.stack.name} 접기`}
+                onClick={() => editor.commit(updateStack(project, row.stack.id, { collapsed: !row.stack.collapsed }))}
+                className="h-6 w-6 shrink-0 rounded border border-rule bg-body text-[11px] text-ink-2"
+              >{row.stack.collapsed ? '▸' : '▾'}</button>
+              <input
+                aria-label="스택 이름"
+                value={row.stack.name}
+                onChange={(e) => editor.preview(updateStack(project, row.stack.id, { name: e.target.value || ' ' }))}
+                onBlur={() => editor.commitCurrent()}
+                className="h-6 w-36 min-w-0 rounded border border-transparent bg-transparent px-1 text-xs font-semibold text-ink hover:border-rule"
+              />
+              <span className="text-[11px] text-ink-3">{row.members.length}트랙</span>
+              <span className="flex-1" />
+              <button type="button" title="스택 전체 뮤트" onClick={() => editor.commit(toggleStackFlag(project, row.stack.id, 'mute'))}
+                className={`${TOGGLE_BASE} ${row.members.every((t) => t.mute) ? MUTE_ON : TOGGLE_OFF}`}>M</button>
+              <button type="button" title="스택 전체 솔로" onClick={() => editor.commit(toggleStackFlag(project, row.stack.id, 'solo'))}
+                className={`${TOGGLE_BASE} ${row.members.every((t) => t.solo) ? SOLO_ON : TOGGLE_OFF}`}>S</button>
+              <button type="button" title="스택을 풀고 트랙을 그대로 둡니다"
+                onClick={() => editor.commit(ungroupStack(project, row.stack.id))}
+                className="h-6 shrink-0 rounded border border-rule bg-body px-1.5 text-[11px] text-ink-2 hover:border-ink-3">풀기</button>
+            </div>
+            {/* 접혔을 때도 어디에 음악이 있는지는 보여 준다 — 멤버 클립을 겹쳐 그린다 */}
+            <div style={{ height: 32 }} className="relative flex-1 bg-screen-2">
+              {row.members.flatMap((t) => t.clips.map((c) => (
+                <span key={c.id} style={{ left: pct(c.startTick), width: pct(c.lengthTick) }}
+                  className={`absolute inset-y-2 rounded-sm opacity-60 ${(TRACK_COLORS[c.color ?? t.color] ?? FALLBACK_COLOR).head}`} />
+              )))}
+            </div>
+          </div>
+        ) : ((track) => (
+          <div key={track.id} data-track={track.name} className={`flex border-b border-grid last:border-b-0 ${track.hidden ? 'opacity-50' : ''}`}>
             {/* 왼쪽 칸 = 이 트랙의 설정. 오른쪽 레인과 **같은 행**이라 눈이 오가지 않는다 */}
             <div
               style={{ height: LANE_HEIGHT }}
@@ -277,6 +347,8 @@ export function Timeline({
                   (TRACK_COLORS[track.color] ?? FALLBACK_COLOR).strip
                 } ${track.id === selectedTrackId ? 'w-2 ring-2 ring-ink ring-offset-1 ring-offset-panel' : 'w-1.5'}`}
               />
+              {track.stackId && <span aria-hidden="true" className="-ml-1 h-7 w-1.5 shrink-0 border-l border-dashed border-ink-3" />}
+              {track.locked && <span title="보호됨 — 고칠 수 없습니다" className="shrink-0 text-[11px]">🔒</span>}
               <select
                 value={track.instrumentId}
                 aria-label={`${track.name} 악기`}
@@ -444,7 +516,7 @@ export function Timeline({
               })}
             </div>
           </div>
-        ))}
+        ))(row.track))}
 
         {playheadTick !== null && (
           <div className="relative">

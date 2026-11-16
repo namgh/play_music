@@ -13,9 +13,9 @@ import type {
   Project, Note, PitchCurve, TrackId, ClipId, NoteId, LoopRegion,
 } from '../model/project.ts';
 import { audibleTracks, isClipAudible } from '../model/project.ts';
-import { beatsBetween } from '../model/meter.ts';
-import type { Ticks } from '../model/time.ts';
-import { PPQ, secondsToTicks, ticksToSeconds } from '../model/time.ts';
+import { beatsBetween, positionAt } from '../model/meter.ts';
+import type { Ticks, TimeSignature } from '../model/time.ts';
+import { PPQ, secondsToTicks, ticksPerBeat, ticksToSeconds } from '../model/time.ts';
 import type { Tuning } from '../model/pitch.ts';
 import { pitchToHz } from '../model/pitch.ts';
 
@@ -219,6 +219,32 @@ const DEFAULT_LOOKAHEAD_SEC = 0.12;
  *
  * `collectNoteEvents` 와 같은 규약(반열린 구간)이라 루프 랩어라운드 처리를 함께 탈 수 있다.
  */
+/**
+ * 카운트인 길이(초) — `fromTick` 자리의 박자·템포로 `bars` 마디.
+ * 마디 중간에서 시작해도 **온 마디**를 센다 (Logic 과 같다 — 반 마디 카운트인은 셀 수 없다).
+ */
+export function countInSeconds(project: Project, fromTick: Ticks, bars: number): number {
+  if (bars <= 0) return 0;
+  const ts = positionAt(project, fromTick).timeSignature;
+  const beats = bars * ts.num;
+  return beats * beatSeconds(project, fromTick, ts);
+}
+
+function beatSeconds(project: Project, fromTick: Ticks, ts: TimeSignature): number {
+  const beat = ticksPerBeat(ts);
+  return ticksToSeconds(fromTick + beat, project.tempo) - ticksToSeconds(fromTick, project.tempo);
+}
+
+/** 카운트인 동안의 박 — 시작부터의 초와 강박 여부 */
+export function countInClicks(project: Project, fromTick: Ticks, preRollSec: number): { atSec: number; accent: boolean }[] {
+  const ts = positionAt(project, fromTick).timeSignature;
+  const sec = beatSeconds(project, fromTick, ts);
+  if (!(sec > 0)) return [];
+  const out: { atSec: number; accent: boolean }[] = [];
+  for (let i = 0; i * sec < preRollSec - 1e-6; i++) out.push({ atSec: i * sec, accent: i % ts.num === 0 });
+  return out;
+}
+
 export function collectBeatEvents(
   project: Project,
   fromTick: Ticks,
@@ -270,10 +296,20 @@ export class LookaheadScheduler {
     this.lookaheadSec = options.lookaheadSec ?? DEFAULT_LOOKAHEAD_SEC;
   }
 
-  start(project: Project, fromTick: Ticks = 0): void {
+  /**
+   * `preRollSec` 만큼 뒤에 곡이 시작한다 — 카운트인. 그 사이에는 **메트로놈 켜짐과
+   * 상관없이** 박을 친다 (카운트인을 켰다는 것 자체가 박을 듣겠다는 뜻이다).
+   */
+  start(project: Project, fromTick: Ticks = 0, preRollSec = 0): void {
     this.project = project;
-    this.startTime = this.host.now();
+    const now = this.host.now();
+    this.startTime = now + Math.max(0, preRollSec);
     this.startTick = fromTick;
+    if (preRollSec > 0 && this.host.scheduleClick) {
+      for (const click of countInClicks(project, fromTick, preRollSec)) {
+        this.host.scheduleClick({ startTick: fromTick, accent: click.accent }, now + click.atSec);
+      }
+    }
     this.scheduledUpToRaw = fromTick;
     // 되감으면 "직전 음"도 없던 것이 된다. 안 지우면 재생을 다시 시작한 첫 음이
     // 멈추기 전 마지막 음에서 미끄러져 들어온다
@@ -302,10 +338,11 @@ export class LookaheadScheduler {
     this.project = project;
   }
 
-  /** 현재 재생 위치 (곡 기준, 루프 안으로 감긴 값) */
+  /** 현재 재생 위치 (곡 기준, 루프 안으로 감긴 값). 카운트인 중에는 시작 위치 */
   positionTicks(): Ticks {
     if (!this.running || !this.project) return this.startTick;
     const elapsed = this.host.now() - this.startTime;
+    if (elapsed < 0) return this.startTick;
     return this.wrap(this.startTick + this.secondsToTicks(elapsed));
   }
 

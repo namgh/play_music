@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import type { PlayOptions } from './renderer.ts';
 import type { Project, TrackId } from '../model/project.ts';
 import { createNote, projectLengthTicks } from '../model/factory.ts';
 import type { InstrumentDefinition } from '../instruments/types.ts';
@@ -128,11 +129,11 @@ export function useAudioEngine(
     setPlayheadTick(null);
   }, []);
 
-  const play = useCallback(async (fromTick = 0) => {
+  const play = useCallback(async (fromTick = 0, options: PlayOptions = {}) => {
     try {
       const renderer = await ensure();
       renderer.setProject(projectRef.current);
-      renderer.play(fromTick);
+      renderer.play(fromTick, options);
       setState('playing');
       setError(null);
     } catch (err) {

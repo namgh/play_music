@@ -305,3 +305,39 @@ test('옛 파일(새 필드 없음)은 그대로 읽힌다', () => {
   assert.equal('swing' in back, false);
   assert.deepEqual(back, old);
 });
+
+// --- 카운트인 ---------------------------------------------------------------------
+
+test('카운트인 — 시작 자리의 박자·템포로 한 마디', async () => {
+  const { countInClicks, countInSeconds } = await import('../audio/scheduler.ts');
+  let p = song(4);
+  p = { ...p, tempo: { bpm: 120 } };
+  assert.equal(countInSeconds(p, 0, 1), 2, '120BPM 4/4 한 마디 = 2초');
+  assert.equal(countInSeconds(p, 0, 0), 0);
+  p = setSignatureChange(p, 2, { num: 3, den: 4 });
+  assert.equal(countInSeconds(p, 2 * BAR, 1), 1.5, '3/4 마디에서 시작하면 세 박');
+  const clicks = countInClicks(p, 2 * BAR, 1.5);
+  assert.deepEqual(clicks.map((c) => c.accent), [true, false, false]);
+  assert.deepEqual(clicks.map((c) => c.atSec), [0, 0.5, 1]);
+});
+
+test('카운트인 동안 음은 곡 시작 뒤로 밀리고 박은 메트로놈 꺼져도 울린다', async () => {
+  const { LookaheadScheduler: Scheduler } = await import('../audio/scheduler.ts');
+  let now = 10;
+  const notes: number[] = [];
+  const clicks: number[] = [];
+  const host = {
+    now: () => now,
+    scheduleNote: (_e: unknown, at: number) => { notes.push(at); },
+    scheduleClick: (_c: unknown, at: number) => { clicks.push(at); },
+  };
+  const s = new Scheduler(host as never, { lookaheadSec: 0.2 });
+  const p = { ...song(2), tempo: { bpm: 120 } };
+  s.start(p, 0, 2);
+  assert.deepEqual(clicks, [10, 10.5, 11, 11.5]);
+  assert.equal(notes.length, 0, '카운트인 중에는 아직 음을 예약하지 않는다');
+  assert.equal(s.positionTicks(), 0);
+  now = 11.9;
+  s.pump();
+  assert.equal(notes[0], 12, '첫 음은 카운트인이 끝나는 순간');
+});

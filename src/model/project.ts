@@ -28,6 +28,7 @@ export type NoteId = `not_${string}`;
 export type MarkerId = `mrk_${string}`;
 export type SectionId = `sec_${string}`;
 export type ChordId = `chd_${string}`;
+export type StackId = `stk_${string}`;
 
 /** 스키마 버전. 필드 추가는 자유, 제거·개명은 마이그레이션 함수 동반 (`sound.md` 9-8) */
 export const SCHEMA_VERSION = 1;
@@ -189,6 +190,22 @@ export interface Track {
   /** 비어 있으면 예전과 같은 소리 — 자동으로 켜지는 트랙이 없다 */
   automation: AutomationLane[];
   clips: Clip[];
+  /** 숨김 (Logic Hide). 목록에서만 빠지고 **소리는 그대로 난다** */
+  hidden?: boolean;
+  /** 보호 (Logic Protect). 켜져 있으면 클립·음·오토메이션을 고칠 수 없다 */
+  locked?: boolean;
+  /** 속한 트랙 스택. 스택 멤버는 목록에서 붙어 있다 */
+  stackId?: StackId;
+}
+
+/**
+ * 트랙 스택 (Logic Folder Stack). 여러 트랙을 하나로 접고, 한 번에 뮤트·솔로한다.
+ * 합 스택(Summing Stack — 버스로 합치기)은 믹서 버스가 생긴 뒤에 `kind` 로 늘린다.
+ */
+export interface TrackStack {
+  id: StackId;
+  name: string;
+  collapsed: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -300,6 +317,8 @@ export interface Project {
   signatureChanges?: SignatureChange[];
   /** 조성 변화 — 틱 오름차순. 곡 시작은 `key` 가 맡는다 */
   keyChanges?: KeyChange[];
+  /** 트랙 스택 */
+  stacks?: TrackStack[];
   tracks: Track[];
   master: {
     gain: number;

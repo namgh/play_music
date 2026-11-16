@@ -12,11 +12,12 @@ import { useProjectEditor } from './editor/useProjectEditor.ts';
 import { downloadProject, loadAutosave, readProjectFile, saveAutosave } from './editor/projectStorage.ts';
 import { decodeMidi, encodeMidi } from './model/midi.ts';
 import { createEmptyProject, projectLengthTicks } from './model/factory.ts';
-import type { ClipId, MusicalKey, Note, Project, TrackId } from './model/project.ts';
+import type { ClipId, MusicalKey, Note, Project, StackId, TrackId } from './model/project.ts';
 import { NOTE_NAMES } from './model/pitch.ts';
 import { PPQ, ticksPerBar, ticksPerBeat, ticksToSeconds } from './model/time.ts';
 import { positionAt } from './model/meter.ts';
 import { adjacentMarkerTick, tapTempo } from './editor/arrangement.ts';
+import { createStack, setTrackFlag, setTrackStack } from './editor/tracks.ts';
 import type { GlobalSelection } from './ui/GlobalTracks.tsx';
 import { INSTRUMENT_CATALOG, playableInstrumentIds } from './instruments/definitions.ts';
 import { useInstruments } from './instruments/useInstruments.ts';
@@ -97,7 +98,10 @@ function starterProject(): Project {
 
 export function App() {
   // 자동 저장이 있으면 그것으로 시작한다 — 새로고침으로 작업이 사라지면 안 된다
-  const editor = useProjectEditor(useMemo(() => loadAutosave() ?? starterProject(), []));
+  const editor = useProjectEditor(
+    useMemo(() => loadAutosave() ?? starterProject(), []),
+    { onBlocked: (reason) => setNotice(reason) },
+  );
   const { project, selection } = editor;
 
   const [selectedTrackId, setSelectedTrackId] = useState<TrackId | null>(project.tracks[0]?.id ?? null);
@@ -138,6 +142,8 @@ export function App() {
   const [clipboardSize, setClipboardSize] = useState(0);
   /** 메트로놈은 곡이 아니라 도구다 — 프로젝트에 저장하지 않고 내보내기에도 안 섞인다 */
   const [metronome, setMetronome] = useState(false);
+  /** 카운트인 — 메트로놈처럼 도구 설정이다 */
+  const [countIn, setCountIn] = useState(false);
   /**
    * **클립별** 표시 음역. **곡이 아니라 보기 설정**이라 프로젝트에 저장하지 않는다
    * (`plan.md` 5-4 — 프로젝트 데이터는 곡 자체다).
@@ -331,7 +337,7 @@ export function App() {
         // **커서부터 재생한다.** 예전에는 항상 0 이라 8마디 곡의 7마디를 고치려면
         // 매번 앞 6마디를 다 들어야 했다
         if (engine.state === 'playing') engine.stop();
-        else void engine.play(cursorTick + (clip?.startTick ?? 0));
+        else void engine.play(cursorTick + (clip?.startTick ?? 0), { countInBars: countIn ? 1 : 0 });
         return;
       }
       if (event.key === 'Escape') {
@@ -372,7 +378,7 @@ export function App() {
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [
-    clip, cursorTick, doCopy, doDuplicate, doPaste, editor, engine, gridTicks,
+    clip, countIn, cursorTick, doCopy, doDuplicate, doPaste, editor, engine, gridTicks,
     loopFromSelection, project, selection,
   ]);
 
@@ -475,7 +481,7 @@ export function App() {
 
   const togglePlay = () => (engine.state === 'playing'
     ? engine.stop()
-    : void engine.play(cursorTick + (clip?.startTick ?? 0)));
+    : void engine.play(cursorTick + (clip?.startTick ?? 0), { countInBars: countIn ? 1 : 0 }));
 
   const exportMidi = () => {
     const { bytes, droppedCents } = encodeMidi(project);
@@ -536,7 +542,7 @@ export function App() {
                 view === id ? 'border-ink bg-ink text-body' : 'border-rule bg-panel text-ink-2 hover:border-ink-3'
               }`}
             >
-              <Icon size={15} />{label}
+              <Icon size={15} /><span className="hidden 2xl:inline">{label}</span>
             </button>
           ))}
         </nav>
@@ -569,6 +575,14 @@ export function App() {
               title="메트로놈"
               className={`${ROUND_BTN} ${metronome ? ROUND_ON : ''}`}
             ><IconMetronome /></button>
+            <button
+              type="button"
+              onClick={() => setCountIn((on) => !on)}
+              aria-pressed={countIn}
+              aria-label="카운트인"
+              title="재생 전에 한 마디를 세고 시작합니다"
+              className={`${ROUND_BTN} ${countIn ? ROUND_ON : ''}`}
+            ><span className="font-num text-[13px]">1·2</span></button>
             <button
               type="button"
               onClick={() => {
@@ -921,7 +935,7 @@ export function App() {
               남는 높이는 전부 피아노롤이 가져간다 */}
           <div className="flex min-h-0 min-w-0 flex-col gap-3">
             {/* 편곡 영역 — 한 행에 트랙 하나 (왼쪽 설정 · 오른쪽 클립 레인) */}
-            <div className="shrink-0 overflow-y-auto pr-1 lg:max-h-[30vh]">
+            <div className="shrink-0 overflow-y-auto pr-1 lg:max-h-[42vh]">
               <Timeline
                 editor={editor}
                 selectedTrackId={track?.id ?? null}
@@ -986,6 +1000,38 @@ export function App() {
           >
             <option value="">트랙 색</option>
             {['j1', 'j2', 'j3', 'j4', 'j5', 'j6'].map((c, i) => <option key={c} value={c}>색 {i + 1}</option>)}
+          </select>
+          <button
+            type="button"
+            disabled={!track}
+            aria-pressed={track?.locked === true}
+            onClick={() => editor.commit(setTrackFlag(project, track!.id, 'locked', !track!.locked))}
+            title="고른 트랙을 보호합니다 — 클립·음·오토메이션을 고칠 수 없게"
+            className={`${TOOL_BTN} ${track?.locked ? 'border-ink bg-ink text-body' : ''}`}
+          >{track?.locked ? '보호됨' : '보호'}</button>
+          <button
+            type="button"
+            disabled={!track}
+            aria-pressed={track?.hidden === true}
+            onClick={() => editor.commit(setTrackFlag(project, track!.id, 'hidden', !track!.hidden))}
+            title="고른 트랙을 목록에서 숨깁니다 — 소리는 그대로 납니다"
+            className={`${TOOL_BTN} ${track?.hidden ? 'border-ink bg-ink text-body' : ''}`}
+          >{track?.hidden ? '숨김' : '숨기기'}</button>
+          <select
+            aria-label="트랙 스택"
+            disabled={!track}
+            value={track?.stackId ?? ''}
+            onChange={(e) => runEdit(() => {
+              const v = e.target.value;
+              if (v === 'new') editor.commit(createStack(project, track!.id).project);
+              else editor.commit(setTrackStack(project, track!.id, (v || null) as StackId | null));
+            })}
+            className={FIELD}
+            title="고른 트랙을 스택에 넣습니다 — 스택은 접고 한꺼번에 뮤트·솔로합니다"
+          >
+            <option value="">스택 없음</option>
+            {(project.stacks ?? []).map((st) => <option key={st.id} value={st.id}>{st.name}</option>)}
+            <option value="new">＋ 새 스택</option>
           </select>
           <button
             type="button"

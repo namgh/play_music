@@ -39,6 +39,8 @@ import { voiceKindIndex } from '../instruments/types.ts';
 import { buildEffectChain } from './effectGraph.ts';
 import type { EffectChain } from './effectGraph.ts';
 import { scheduleClick } from './metronome.ts';
+import { countInSeconds } from './scheduler.ts';
+import type { PlayOptions } from './renderer.ts';
 import { renderOfflineWithWorklet } from './offlineExport.ts';
 
 const PUMP_INTERVAL_MS = 25;
@@ -239,11 +241,13 @@ export class WorkletRenderer implements AudioRenderer {
     await Promise.all(this.readyPromises);
   }
 
-  play(fromTick: Ticks = 0): void {
+  play(fromTick: Ticks = 0, options: PlayOptions = {}): void {
     if (!this.project) throw new WorkletRendererError('setProject 가 먼저 호출돼야 한다');
     this.stop();
-    const anchorTime = this.ctx.currentTime;
-    this.scheduler.start(this.project, fromTick);
+    // 카운트인이 있으면 곡(과 오토메이션)이 그만큼 뒤에서 시작한다
+    const preRoll = countInSeconds(this.project, fromTick, options.countInBars ?? 0);
+    const anchorTime = this.ctx.currentTime + preRoll;
+    this.scheduler.start(this.project, fromTick, preRoll);
     this.pumpTimer = setInterval(() => this.scheduler.pump(), PUMP_INTERVAL_MS);
     this.scheduleTrackAutomation(fromTick, anchorTime);
   }

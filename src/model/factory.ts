@@ -8,7 +8,7 @@ import { barStartTick } from './meter.ts';
 import { DEFAULT_TUNING, pitch } from './pitch.ts';
 import { SCHEMA_VERSION } from './project.ts';
 import type {
-  ChordId, Clip, ClipId, MarkerId, Note, NoteId, Origin, Project, ProjectId, SectionId, Track, TrackId,
+  ChordId, Clip, ClipId, MarkerId, Note, NoteId, Origin, Project, ProjectId, SectionId, StackId, Track, TrackId,
 } from './project.ts';
 
 function randomId(): string {
@@ -25,6 +25,7 @@ export const newNoteId = (): NoteId => `not_${randomId()}`;
 export const newMarkerId = (): MarkerId => `mrk_${randomId()}`;
 export const newSectionId = (): SectionId => `sec_${randomId()}`;
 export const newChordId = (): ChordId => `chd_${randomId()}`;
+export const newStackId = (): StackId => `stk_${randomId()}`;
 
 export function createNote(opts: {
   startTick: number;

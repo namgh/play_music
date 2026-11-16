@@ -14,7 +14,7 @@
 import { CHORD_QUALITIES, SCHEMA_VERSION } from './project.ts';
 import type {
   AutomationLane, AutomationPoint, ChordId, ChordQuality, Clip, ClipId, EffectSpec, LoopRegion,
-  MarkerId, MusicalKey, Note, NoteId, Origin, PitchCurve, Project, ProjectId, SectionId, Track, TrackId,
+  MarkerId, MusicalKey, Note, NoteId, Origin, PitchCurve, Project, ProjectId, SectionId, StackId, Track, TrackId,
 } from './project.ts';
 import { normalizeSignatureChanges } from './meter.ts';
 import { DEFAULT_TEMPO, DEFAULT_TIME_SIGNATURE, PPQ } from './time.ts';
@@ -226,6 +226,9 @@ function parseTrack(value: unknown, seen: Set<string>): Track {
     effects: parseEffects(raw.effects),
     automation: parseAutomation(raw.automation),
     clips: asArray(raw.clips ?? [], '클립 목록').map((clip) => parseClip(clip, seen)),
+    ...(raw.hidden == null ? {} : { hidden: bool(raw.hidden, false) }),
+    ...(raw.locked == null ? {} : { locked: bool(raw.locked, false) }),
+    ...(typeof raw.stackId === 'string' && raw.stackId.startsWith('stk_') ? { stackId: raw.stackId as StackId } : {}),
   };
 }
 
@@ -321,6 +324,12 @@ function optionalGlobals(raw: Record<string, unknown>, seen: Set<string>): Parti
       const c = asRecord(entry, '박자 변화');
       return { bar: Math.round(num(c.bar, 1, 1)), timeSignature: parseTimeSignature(c.timeSignature, '박자') };
     }));
+  }
+  if (raw.stacks != null) {
+    out.stacks = asArray(raw.stacks, '트랙 스택').map((entry) => {
+      const st = asRecord(entry, '트랙 스택');
+      return { id: id<StackId>(st.id, 'stk', seen), name: str(st.name, '스택'), collapsed: bool(st.collapsed, false) };
+    });
   }
   if (raw.keyChanges != null) {
     out.keyChanges = asArray(raw.keyChanges, '조성 변화').flatMap((entry) => {

@@ -13,5 +13,15 @@
     "name": "a01-global-bar",
     "area": 1,
     "title": "글로벌 트랙 — 마디 박자·조성 변화"
+  },
+  {
+    "name": "a02-track-stack",
+    "area": 2,
+    "title": "트랙 — 스택(드럼) · 보호(베이스) · 카운트인"
+  },
+  {
+    "name": "a02-track-stack-collapsed",
+    "area": 2,
+    "title": "트랙 — 스택 접힘 · 숨긴 트랙 보기"
   }
 ]

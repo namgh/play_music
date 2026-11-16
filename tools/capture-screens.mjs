@@ -39,6 +39,36 @@ export const SCREENS = [
       await b.clickEl(`document.querySelector('[data-bar="13"]')`);
     },
   },
+  {
+    name: 'a02-track-stack', area: 2, title: '트랙 — 스택(드럼) · 보호(베이스) · 카운트인',
+    run: async (b) => {
+      await b.clickEl(byLabel('킥 선택'));
+      await b.choose(byLabel('트랙 스택'), 'new');
+      await sleep(200);
+      await b.clickEl(byLabel('스네어 선택'));
+      const stackId = await b.ev(`document.querySelector('[data-stack]').dataset.stack`);
+      await b.choose(byLabel('트랙 스택'), stackId);
+      await sleep(200);
+      await b.clickEl(byLabel('베이스 선택'));
+      await b.clickEl(byTitle('고른 트랙을 보호합니다'));
+      await b.clickEl(byLabel('카운트인'));
+    },
+  },
+  {
+    name: 'a02-track-stack-collapsed', area: 2, title: '트랙 — 스택 접힘 · 숨긴 트랙 보기',
+    run: async (b) => {
+      await b.clickEl(byLabel('킥 선택'));
+      await b.choose(byLabel('트랙 스택'), 'new');
+      await sleep(200);
+      await b.clickEl(byLabel('스네어 선택'));
+      const stackId = await b.ev(`document.querySelector('[data-stack]').dataset.stack`);
+      await b.choose(byLabel('트랙 스택'), stackId);
+      await sleep(200);
+      await b.clickEl(`document.querySelector('[aria-label$="접기"]')`);
+      await b.clickEl(byLabel('패드 선택'));
+      await b.clickEl(byTitle('고른 트랙을 목록에서 숨깁니다'));
+    },
+  },
 ];
 
 async function capture(b, screen) {
@@ -66,7 +96,13 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   try {
     for (const screen of list) {
       try {
-        const bytes = await capture(b, screen);
+        // 화면 하나가 멈추면 나머지를 못 뜬다 — 30초에 끊는다
+        const once = () => Promise.race([
+          capture(b, screen),
+          sleep(30000).then(() => { throw new Error('30초 안에 끝나지 않음'); }),
+        ]);
+        // 헤드리스 Chrome 이 가끔 탐색에 답하지 않는다 — 한 번 더 해 본다
+        const bytes = await once().catch((err) => { console.log(`  … ${screen.name} 다시 (${err.message})`); return once(); });
         console.log(`✓ ${screen.name}  ${(bytes / 1024).toFixed(0)}KB  ${screen.title}`);
       } catch (err) {
         failed++;

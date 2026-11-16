@@ -14,6 +14,12 @@ import type { Ticks } from '../model/time.ts';
 
 export type TransportState = 'stopped' | 'playing';
 
+/** 재생 옵션 */
+export interface PlayOptions {
+  /** 몇 마디 카운트인 후 시작하나. 0 이면 바로 */
+  countInBars?: number;
+}
+
 export interface TransportPosition {
   tick: Ticks;
   state: TransportState;
@@ -58,7 +64,7 @@ export interface AudioRenderer {
   /** 트랙 하나만 바뀐 경우 — 전체 재구성을 피하기 위한 경로 */
   updateTrack(track: Track): void;
 
-  play(fromTick: Ticks): void;
+  play(fromTick: Ticks, options?: PlayOptions): void;
   stop(): void;
   seek(tick: Ticks): void;
   getPosition(): TransportPosition;

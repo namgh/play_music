@@ -44,9 +44,14 @@ export async function launch({ port = 9334, width = 1440, height = 900 } = {}) {
     }
     if (msg.method === 'Runtime.exceptionThrown') errors.push(msg.params.exceptionDetails.exception?.description ?? msg.params.exceptionDetails.text);
   };
-  const send = (method, params = {}) => new Promise((res, rej) => {
+  // 답이 안 오는 호출을 영원히 기다리지 않는다 — 어느 단계에서 멈췄는지 알 수 있게
+  const send = (method, params = {}, timeoutMs = 15000) => new Promise((res, rej) => {
     const id = ++seq;
-    pending.set(id, { res, rej });
+    const timer = setTimeout(() => {
+      pending.delete(id);
+      rej(new Error(`${method} 가 ${timeoutMs / 1000}초 안에 답하지 않음 ${JSON.stringify(params).slice(0, 160)}`));
+    }, timeoutMs);
+    pending.set(id, { res: (v) => { clearTimeout(timer); res(v); }, rej: (e) => { clearTimeout(timer); rej(e); } });
     ws.send(JSON.stringify({ id, method, params }));
   });
   await send('Runtime.enable');
