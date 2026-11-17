@@ -353,6 +353,115 @@ export const RUST_EFFECT_SPECS = {
       mix: unit('섞기', 0.5),
     },
   },
+  // --- 3단계: 디스토션·앰프 (비선형은 4배 오버샘플링 → 지연 16) ---
+  overdrive: {
+    label: '오버드라이브', category: 'distortion', latency: 16,
+    params: { driveDb: db('드라이브', 0, 48, 18), toneHz: hz('톤', 500, 12000, 4000), mix: unit('섞기', 1), outputDb: db('출력', -40, 24, -6) },
+  },
+  fuzz: {
+    label: '퍼즈', category: 'distortion', latency: 16,
+    params: { fuzz: unit('퍼즈', 0.6), bias: unit('바이어스', 0, 0.5, -0.5), toneHz: hz('톤', 300, 12000, 3000), mix: unit('섞기', 1), outputDb: db('출력', -40, 24, -10) },
+  },
+  fuzzwah: {
+    label: '퍼즈-와우', category: 'distortion', latency: 16,
+    params: {
+      pedal: unit('페달', 0.4),
+      auto: unit('오토 와우', 0),
+      resonance: { label: '공명', min: 1, max: 15, default: 5, curve: 'log' },
+      fuzz: unit('퍼즈', 0.3),
+      order: choice('순서', ['와우 → 퍼즈', '퍼즈 → 와우'], 0),
+      outputDb: db('출력', -40, 24, -4),
+    },
+  },
+  bitcrusher: {
+    label: '비트크러셔', category: 'distortion',
+    params: {
+      bits: { label: '비트', min: 1, max: 24, default: 8 },
+      downsample: { label: '다운샘플', min: 1, max: 64, default: 4, unit: '×', curve: 'log' },
+      driveDb: db('드라이브', 0, 36, 0),
+      mix: unit('섞기', 1),
+      outputDb: db('출력', -40, 24, 0),
+    },
+  },
+  clipdist: {
+    label: '클립 디스토션', category: 'distortion', latency: 16,
+    params: {
+      driveDb: db('드라이브', 0, 48, 18),
+      mode: choice('클립', ['부드럽게', '딱딱하게', '접기'], 0),
+      symmetry: unit('대칭', 0, 1, -1),
+      preHighpassHz: hz('앞 하이패스', 20, 2000, 60),
+      postLowpassHz: hz('뒤 로우패스', 500, 20000, 9000),
+      mix: unit('섞기', 1),
+      outputDb: db('출력', -40, 24, -8),
+    },
+  },
+  chromaglow: {
+    label: '크로마글로 (포화)', category: 'distortion', latency: 16,
+    params: {
+      model: choice('모델', ['모던 튜브', '실키 튜브', '브라이트 튜브', '테이프', '트랜지스터'], 0),
+      driveDb: db('드라이브', 0, 36, 8),
+      tone: unit('톤', 0, 1, -1),
+      mix: unit('섞기', 1),
+      outputDb: db('출력', -40, 24, -2),
+    },
+  },
+  ampdesigner: {
+    label: '앰프 디자이너', category: 'distortion', latency: 16,
+    params: {
+      amp: choice('앰프', ['클린 아메리칸', '브리티시 크런치', '모던 하이게인', '브리티시 클래스 A'], 1),
+      gain: unit('게인', 0.5),
+      bass: unit('저역', 0, 1, -1),
+      mid: unit('중역', 0, 1, -1),
+      treble: unit('고역', 0, 1, -1),
+      presence: unit('프레즌스', 0, 1, -1),
+      master: unit('마스터', 0.4),
+      cabinet: choice('캐비닛', ['끔', '1×12 오픈백', '2×12', '4×12 클로즈드'], 2),
+      mic: unit('마이크 위치', 0.3),
+      outputDb: db('출력', -40, 24, -6),
+    },
+  },
+  bassamp: {
+    label: '베이스 앰프', category: 'distortion', latency: 16,
+    params: {
+      amp: choice('앰프', ['클래식 튜브', '모던', '플립톱'], 0),
+      gain: unit('게인', 0.3),
+      bass: unit('저역', 0, 1, -1),
+      mid: unit('중역', 0, 1, -1),
+      treble: unit('고역', 0, 1, -1),
+      master: unit('마스터', 0.4),
+      cabinet: choice('캐비닛', ['끔', '8×10', '1×15', '4×10'], 1),
+      blend: unit('DI ↔ 앰프', 0.6),
+      outputDb: db('출력', -40, 24, -3),
+    },
+  },
+  cabinet: {
+    label: '캐비닛', category: 'distortion',
+    params: {
+      kind: choice('종류', ['1×12 오픈백', '2×12', '4×12 클로즈드', '베이스 8×10', '베이스 1×15', '베이스 4×10'], 2),
+      mic: unit('마이크 위치', 0.3),
+      mix: unit('섞기', 1),
+      outputDb: db('출력', -40, 24, 0),
+    },
+  },
+  exciter: {
+    label: '익사이터', category: 'distortion', latency: 16,
+    params: {
+      freqHz: hz('시작', 1000, 12000, 4000),
+      harmonics: unit('배음', 0.5),
+      color: unit('색 (짝수 ↔ 홀수)', 0.4),
+      amount: unit('섞기', 0.3),
+      outputDb: db('출력', -24, 24, 0),
+    },
+  },
+  subbass: {
+    label: '서브베이스', category: 'distortion',
+    params: {
+      keyHz: hz('감지 상한', 60, 400, 180),
+      sub: unit('서브', 0.6, 2),
+      subLowpassHz: hz('서브 로우패스', 30, 200, 90),
+      dry: unit('원음', 1),
+    },
+  },
 } satisfies Record<string, RustEffectDecl>;
 
 export type RustEffectType = keyof typeof RUST_EFFECT_SPECS;

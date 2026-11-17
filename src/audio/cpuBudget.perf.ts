@@ -241,7 +241,8 @@ test('Rust 이펙트 — 하나하나가 실시간의 몇 배인가', async () =
   const { createEffect, resolveEffectParams } = await import('./effects.ts');
   const bytes = await readFile(fileURLToPath(new URL('../generated/fx.wasm', import.meta.url)));
   const module = new WebAssembly.Module(bytes);
-  const HEAVY = new Set(['spacedesigner', 'linearphaseeq']);
+  // 앰프는 비선형 3단 + 톤 스택을 4배 속도에서 돌린다 — 무거운 쪽
+  const HEAVY = new Set(['spacedesigner', 'linearphaseeq', 'ampdesigner', 'bassamp']);
   const seconds = 2;
   const n = 48000 * seconds;
   const x = Float32Array.from({ length: n }, (_, i) => 0.3 * Math.sin(i * 0.031) + 0.1 * Math.sin(i * 0.47));

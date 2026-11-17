@@ -3,6 +3,7 @@
 //! 찾지만, 테스트가 이름 목록 전체를 비교하므로 어디에 붙여도 어긋나면 깨진다).
 
 pub mod delays;
+pub mod distortion;
 pub mod dynamics;
 pub mod eq;
 pub mod filters;
@@ -90,6 +91,28 @@ pub const KINDS: &[(&str, Factory)] = &[
     ("phaser12", |sr, p| {
         Box::new(modulation::Phaser12::new(sr, p))
     }),
+    // 3단계 — 디스토션·앰프
+    ("overdrive", |sr, p| {
+        Box::new(distortion::Overdrive::new(sr, p))
+    }),
+    ("fuzz", |sr, p| Box::new(distortion::Fuzz::new(sr, p))),
+    ("fuzzwah", |sr, p| Box::new(distortion::FuzzWah::new(sr, p))),
+    ("bitcrusher", |sr, p| {
+        Box::new(distortion::Bitcrusher::new(sr, p))
+    }),
+    ("clipdist", |sr, p| {
+        Box::new(distortion::ClipDist::new(sr, p))
+    }),
+    ("chromaglow", |sr, p| {
+        Box::new(distortion::ChromaGlow::new(sr, p))
+    }),
+    ("ampdesigner", |sr, p| {
+        Box::new(distortion::AmpDesigner::new(sr, p))
+    }),
+    ("bassamp", |sr, p| Box::new(distortion::BassAmp::new(sr, p))),
+    ("cabinet", |sr, p| Box::new(distortion::Cabinet::new(sr, p))),
+    ("exciter", |sr, p| Box::new(distortion::Exciter::new(sr, p))),
+    ("subbass", |sr, p| Box::new(distortion::SubBass::new(sr, p))),
 ];
 
 pub fn create(kind: usize, sample_rate: f32, params: &Params) -> Option<Box<dyn Effect>> {
