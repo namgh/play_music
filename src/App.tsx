@@ -25,6 +25,7 @@ import { StepSequencer } from './ui/StepSequencer.tsx';
 import { SmartControls } from './ui/SmartControls.tsx';
 import { ProjectPanel } from './ui/ProjectPanel.tsx';
 import { LiveLoops } from './ui/LiveLoops.tsx';
+import { Assistant } from './ui/Assistant.tsx';
 import { ScoreView } from './ui/ScoreView.tsx';
 import { AudioEditor } from './ui/AudioEditor.tsx';
 import { VideoPanel } from './ui/VideoPanel.tsx';
@@ -59,7 +60,7 @@ import { Timeline } from './ui/Timeline.tsx';
 import { Mixer } from './ui/Mixer.tsx';
 import { ThemePanel, useThemeState } from './ui/ThemePanel.tsx';
 import {
-  IconEditor, IconExport, IconFolder, IconLoop, IconMetronome, IconMixer, IconPalette, IconPlay, IconRedo,
+  IconEditor, IconExport, IconFolder, IconGrid, IconLoop, IconSpark, IconMetronome, IconMixer, IconPalette, IconPlay, IconRedo,
   IconRewind, IconStop, IconTuning, IconUndo,
 } from './ui/icons.tsx';
 
@@ -94,7 +95,8 @@ const GRID_OPTIONS: { label: string; ticks: number }[] = [
 const VIEWS = [
   ['editor', '편집기', IconEditor],
   ['mixer', '믹서', IconMixer],
-  ['live', '라이브 루프', IconLoop],
+  ['live', '라이브 루프', IconGrid],
+  ['assistant', '도우미', IconSpark],
   ['tuning', '튜닝 도구', IconTuning],
 ] as const;
 type View = (typeof VIEWS)[number][0];
@@ -626,7 +628,7 @@ export function App() {
     // 몇 개든 항상 보여야 한다 — 문서처럼 아래로 쌓으면 16트랙에서 화면 밖으로 밀린다
     <div className="flex h-dvh flex-col overflow-hidden bg-body text-ink">
       {/* 상단 바 — 몸체. 가운데 LCD 만 작은 검은 화면이다 (시안 v4 ②) */}
-      <header className="relative flex h-16 shrink-0 items-center gap-4 border-b border-rule px-5">
+      <header className="relative flex h-16 shrink-0 items-center gap-3 border-b 2xl:gap-4 border-rule px-5">
         <div className="min-w-0 w-48 shrink-0">
           <div className="flex items-baseline gap-1.5">
             <span className="font-disp text-[15px] font-semibold tracking-wide">{BRAND.name}</span>
@@ -672,7 +674,7 @@ export function App() {
         {/* 재생 — 튜닝 도구에서는 걷는다. 그 화면은 자체 엔진으로 소리를 내서 곡이
             겹쳐 나면 음색을 판정할 수 없다 */}
         {view !== 'tuning' && (
-          <div className="flex shrink-0 items-center gap-1.5">
+          <div className="flex shrink-0 items-center gap-1 2xl:gap-1.5">
             <button type="button" title="맨 앞으로" onClick={() => { engine.stop(); setCursorTick(0); }} className={ROUND_BTN}>
               <IconRewind />
             </button>
@@ -745,7 +747,7 @@ export function App() {
         )}
 
         {/* LCD — 위치 · 템포 · 조성 · 박자. 여기서 바로 바꾼다 */}
-        <div className="flex h-11 shrink-0 items-center gap-4 rounded-[10px] bg-screen px-3.5 text-sink">
+        <div className="flex h-11 shrink-0 items-center gap-3 rounded-[10px] bg-screen px-3 2xl:gap-4 2xl:px-3.5 text-sink">
           <button
             type="button"
             onClick={() => setLcdMode((m) => (m === 'bars' ? 'time' : 'bars'))}
@@ -830,7 +832,7 @@ export function App() {
           </span>
         )}
 
-        <div className="flex shrink-0 items-center gap-1.5">
+        <div className="flex shrink-0 items-center gap-1 2xl:gap-1.5">
           <button type="button" title="되돌리기 (⌘Z)" disabled={!editor.canUndo} onClick={editor.undo} className={ROUND_BTN}><IconUndo /></button>
           <button type="button" title="다시 실행 (⇧⌘Z)" disabled={!editor.canRedo} onClick={editor.redo} className={ROUND_BTN}><IconRedo /></button>
           <button
@@ -862,7 +864,8 @@ export function App() {
           </button>
         </div>
 
-        {project.video && view !== 'tuning' && (
+        {/* 영상 창은 편집기·라이브 루프에서만 — 믹서·도우미에서는 아래쪽 단추를 덮는다 */}
+        {project.video && (view === 'editor' || view === 'live') && (
           <VideoPanel editor={editor} songTick={songCursor} playing={engine.state === 'playing'} onNotice={setNotice} />
         )}
         {settingsOpen && (
@@ -1196,6 +1199,11 @@ export function App() {
       {view === 'tuning' && (
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
           <div className="scope-screen rounded-2xl bg-screen p-5"><TuningLab /></div>
+        </div>
+      )}
+      {view === 'assistant' && (
+        <div className="scope-body min-h-0 flex-1 overflow-y-auto p-5">
+          <Assistant editor={editor} exporting={engine.exporting} renderMix={engine.renderMix} onNotice={setNotice} />
         </div>
       )}
       {view === 'live' && (

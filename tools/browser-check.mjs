@@ -700,11 +700,30 @@ try {
   const scene30 = await ev(`(() => { const p = JSON.parse(localStorage.getItem('project-autosave-v1')); const d = p.project ?? p; return (d.markers ?? []).filter((m) => m.name.startsWith('장면')).length; })()`);
   record('장면 마커', scene30 >= 1, `${scene30}개`);
   await shot('26-video');
-  await clickEl(`[...document.querySelectorAll('[aria-label="편집기 보기"] button')][0]`);
+
+  // 31. 도우미 — 세션 건반 연주자(코드 따라), 마스터링 도우미(재고 적용)
+  await clickEl(`[...document.querySelectorAll('nav[aria-label="화면"] button')].find((b) => b.title === '도우미')`);
+  await sleep(300);
+  const keysTrack = await ev(`document.querySelector('[aria-label="건반 트랙"] option:nth-child(2)').value`);
+  await ev(`(() => { const e = document.querySelector('[aria-label="건반 트랙"]'); Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(e, ${JSON.stringify(keysTrack)}); e.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+  const before31 = await totalNotes();
+  await clickEl(byText('건반 만들기'));
+  await sleep(400);
+  const after31 = await totalNotes();
+  const msg31 = await ev(`document.body.innerText.match(/[^\\n]*(만들었습니다|코드 트랙이 비었다)[^\\n]*/)?.[0] ?? ''`);
+  record('세션 건반 연주자', after31 > before31, `${before31} → ${after31} · ${msg31}`);
+  await clickEl(byText('믹스 재기'));
+  for (let i = 0; i < 60 && !(await ev(`!![...document.querySelectorAll('button')].find((b) => b.textContent.startsWith('마스터에 적용'))`)); i++) await sleep(500);
+  await sleep(400); // 결과가 뜨며 배치가 움직인다 — 자리 잡은 뒤에 누른다
+  const lufs31 = await ev(`document.querySelector('[data-mastering] dl')?.innerText.replace(/\\n/g, ' ') ?? ''`);
+  await clickEl(`[...document.querySelectorAll('button')].find((b) => b.textContent.startsWith('마스터에 적용'))`);
+  await sleep(400);
+  const master31 = await ev(`(() => { const p = JSON.parse(localStorage.getItem('project-autosave-v1')); return (p.project ?? p).master.effects.map((e) => e.type).join('+'); })()`);
+  record('마스터링 도우미 — 재고 적용', master31 === 'eq+compressor+limiter' && /LUFS/.test(lufs31), `${lufs31} · 마스터 ${master31}`);
+  await shot('27-assistant');
+  // 앞 단계들이 남긴 정리 — 편집기로 돌아와 기본 보기로
   await clickEl(`[...document.querySelectorAll('nav[aria-label="화면"] button')][0]`);
   await clickEl(`[...document.querySelectorAll('[role=tab]')].find((b) => b.textContent.includes('음 편집'))`);
-  await clickEl(`[...document.querySelectorAll('[aria-label="편집기 보기"] button')][0]`);
-  await clickEl(`[...document.querySelectorAll('[aria-label="편집기 보기"] button')][0]`);
 } catch (err) {
   record('스크립트 실행', false, String(err.stack ?? err).slice(0, 500));
 } finally {

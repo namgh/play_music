@@ -272,6 +272,22 @@ export function useAudioEngine(
    * 바운스 (Logic Bounce, `LOGIC_PARITY.md` 1-13). 렌더는 언제나 곡 전체를 그리고
    * 범위·노멀라이즈·디더는 그 결과를 다듬는다 (`bounce.ts`). 스템이면 ZIP 하나로.
    */
+  /** 곡 전체를 48kHz 로 그려 채널을 돌려준다 — 마스터링 도우미가 잰다 (파일로 내리지 않는다) */
+  const renderMix = useCallback(async (): Promise<Float32Array[] | null> => {
+    setExporting(true);
+    try {
+      const renderer = await ensure();
+      renderer.setProject(projectRef.current);
+      const result = await renderer.exportAudio({ sampleRate: 48000, stems: false });
+      return result.buffers[0]?.channels ?? null;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      return null;
+    } finally {
+      setExporting(false);
+    }
+  }, [ensure]);
+
   const bounce = useCallback(async (options: BounceOptions = DEFAULT_BOUNCE): Promise<BounceReport | null> => {
     setExporting(true);
     try {
@@ -330,6 +346,6 @@ export function useAudioEngine(
 
   return {
     state, playheadTick, error, exporting, engineKind, clip, readLevel,
-    play, stop, audition, previewInstrument, perform, exportWav, bounce, setMetronome,
+    play, stop, audition, previewInstrument, perform, exportWav, bounce, renderMix, setMetronome,
   };
 }

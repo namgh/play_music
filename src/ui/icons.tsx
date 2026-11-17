@@ -50,3 +50,13 @@ export const IconMixer = ({ size = 16 }: { size?: number }) => (
 export const IconTuning = ({ size = 16 }: { size?: number }) => (
   <Line size={size}><path d="M3 12c3-6 6 6 9 0s6 6 9 0" /></Line>
 );
+
+/** 도우미 — 반짝임 (세션 연주자·마스터링) */
+export const IconSpark = ({ size = 16 }: { size?: number }) => (
+  <Line size={size}><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M6 18l2.5-2.5M15.5 8.5 18 6" /></Line>
+);
+
+/** 라이브 루프 — 격자 */
+export const IconGrid = ({ size = 16 }: { size?: number }) => (
+  <Line size={size}><rect x="4" y="4" width="6" height="6" rx="1" /><rect x="14" y="4" width="6" height="6" rx="1" /><rect x="4" y="14" width="6" height="6" rx="1" /><rect x="14" y="14" width="6" height="6" rx="1" /></Line>
+);

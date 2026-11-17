@@ -301,7 +301,7 @@ export const SCREENS = [
     },
   },
   {
-    name: 'a19-spatial-video', area: 19, title: '서라운드·영상 — 3D 패너(바이노럴, 방향 오토메이션) · 영상 창(재생 따라감·장면 마커·소리 꺼내기)',
+    name: 'a19-video', area: 19, title: '영상 — 영상 창(재생 따라감·곡과 어긋남·장면 마커·소리 꺼내기)',
     run: async (b) => {
       const b64 = await b.ev(`(async () => {
         const c = document.createElement('canvas'); c.width = 640; c.height = 360; const g = c.getContext('2d');
@@ -317,12 +317,27 @@ export const SCREENS = [
       const node = await b.send('DOM.querySelector', { nodeId: doc.root.nodeId, selector: 'input[aria-label="영상 파일"]' });
       await b.send('DOM.setFileInputFiles', { nodeId: node.nodeId, files: [path] });
       for (let i = 0; i < 20 && !(await b.ev(`!!document.querySelector('[data-video-panel] video')`)); i++) await sleep(300);
+      await b.ev(`(() => { const v = document.querySelector('[data-video-panel] video'); if (v) v.currentTime = 0.8; })()`);
+      await sleep(400);
+    },
+  },
+  {
+    name: 'a19-spatial', area: 19, title: '서라운드 — 3D 패너(바이노럴 HRTF: 방향·높이·거리, 방향 오토메이션)',
+    run: async (b) => {
       await b.clickEl(`[...document.querySelectorAll('nav[aria-label="화면"] button')][1]`);
       await sleep(300);
       await b.choose(`document.querySelector('[data-strip="패드"] [aria-label="이펙트 추가"]')`, 'spatial');
       await sleep(400);
-      await b.ev(`(() => { const v = document.querySelector('[data-video-panel] video'); if (v) v.currentTime = 0.8; })()`);
-      await sleep(400);
+    },
+  },
+  {
+    name: 'a20-assistant', area: 20, title: '도우미 — 세션 연주자(드러머·베이시스트·건반) · 마스터링 도우미 · 대화형 도우미 자리',
+    run: async (b) => {
+      await b.clickEl(`[...document.querySelectorAll('nav[aria-label="화면"] button')].find((x) => x.title === '도우미')`);
+      await sleep(300);
+      await b.clickEl(`[...document.querySelectorAll('button')].find((x) => x.textContent === '믹스 재기')`);
+      for (let i = 0; i < 60 && !(await b.ev(`!![...document.querySelectorAll('button')].find((x) => x.textContent.startsWith('마스터에 적용'))`)); i++) await sleep(500);
+      await sleep(300);
     },
   },
 ];
