@@ -2,10 +2,12 @@
 //! 새 이펙트는 끝에 붙인다(가운데 끼우면 저장된 곡의 번호가 밀린다 — 사실 TS 는 이름으로
 //! 찾지만, 테스트가 이름 목록 전체를 비교하므로 어디에 붙여도 어긋나면 깨진다).
 
+pub mod delays;
 pub mod dynamics;
 pub mod eq;
 pub mod filters;
 pub mod gate;
+pub mod modulation;
 pub mod multipressor;
 pub mod spacedesigner;
 
@@ -64,6 +66,30 @@ pub const KINDS: &[(&str, Factory)] = &[
         Box::new(filters::EnvFilter::new(sr, p))
     }),
     ("tilteq", |sr, p| Box::new(eq::TiltEq::new(sr, p))),
+    // 2단계 — 딜레이·모듈레이션
+    ("tapedelay", |sr, p| Box::new(delays::TapeDelay::new(sr, p))),
+    ("stereodelay", |sr, p| {
+        Box::new(delays::StereoDelay::new(sr, p))
+    }),
+    ("delaydesigner", |sr, p| {
+        Box::new(delays::DelayDesigner::new(sr, p))
+    }),
+    ("ensemble", |sr, p| {
+        Box::new(modulation::Ensemble::new(sr, p))
+    }),
+    ("moddelay", |sr, p| {
+        Box::new(modulation::ModDelay::new(sr, p))
+    }),
+    ("rotor", |sr, p| Box::new(modulation::RotorCab::new(sr, p))),
+    ("autopan", |sr, p| Box::new(modulation::AutoPan::new(sr, p))),
+    ("ringmod", |sr, p| Box::new(modulation::RingMod::new(sr, p))),
+    ("freqshifter", |sr, p| {
+        Box::new(modulation::FreqShifter::new(sr, p))
+    }),
+    ("vibrato", |sr, p| Box::new(modulation::Vibrato::new(sr, p))),
+    ("phaser12", |sr, p| {
+        Box::new(modulation::Phaser12::new(sr, p))
+    }),
 ];
 
 pub fn create(kind: usize, sample_rate: f32, params: &Params) -> Option<Box<dyn Effect>> {

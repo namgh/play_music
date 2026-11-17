@@ -6,6 +6,7 @@ pub mod crossover;
 pub mod delay;
 pub mod env;
 pub mod fft;
+pub mod lfo;
 pub mod oversample;
 pub mod rng;
 pub mod smooth;
@@ -54,9 +55,19 @@ pub fn fast_exp2(x: f32) -> f32 {
     let f = x - i;
     // 2^f, f∈[0,1) — 5차
     let p = 1.0
-        + f * (0.693_147_2
+        + f * (std::f32::consts::LN_2
             + f * (0.240_226_5 + f * (0.055_504_1 + f * (0.009_618_1 + f * 0.001_333_6))));
     p * f32::from_bits(((i as i32 + 127) as u32) << 23)
+}
+
+/// 시간상수(ms) → 일차 스무딩 계수. 0 이면 즉시
+#[inline]
+pub fn time_coef(ms: f32, sample_rate: f32) -> f32 {
+    if ms <= 0.0 {
+        0.0
+    } else {
+        (-1.0 / (ms * 0.001 * sample_rate)).exp()
+    }
 }
 
 #[cfg(test)]
@@ -77,15 +88,5 @@ mod tests {
             );
             db += 0.37;
         }
-    }
-}
-
-/// 시간상수(ms) → 일차 스무딩 계수. 0 이면 즉시
-#[inline]
-pub fn time_coef(ms: f32, sample_rate: f32) -> f32 {
-    if ms <= 0.0 {
-        0.0
-    } else {
-        (-1.0 / (ms * 0.001 * sample_rate)).exp()
     }
 }

@@ -41,6 +41,15 @@ const unit = (label: string, def: number, max = 1, min = 0): EffectParamSpec => 
 const choice = (label: string, options: string[], def = 0): EffectParamSpec => ({ label, min: 0, max: options.length - 1, default: def, options, automatable: false });
 const GR = { label: '게인 감소', unit: 'dB', min: -40, max: 0 };
 
+/** 딜레이 디자이너 탭 하나 (Rust 순서: 시간·크기·좌우) */
+function tap(n: number, ms: number, level: number, pan: number): Record<string, EffectParamSpec> {
+  return {
+    [`tap${n}Ms`]: msec(`탭${n} 시간`, 1, 4000, ms),
+    [`tap${n}Level`]: unit(`탭${n} 크기`, level),
+    [`tap${n}Pan`]: unit(`탭${n} 좌우`, pan, 1, -1),
+  };
+}
+
 /** 채널 EQ · 리니어 페이즈 EQ 공통 손잡이 (Rust `eq_sections` 순서) */
 function eqParams(): Record<string, EffectParamSpec> {
   const peak = (n: number, f: number) => ({
@@ -227,6 +236,121 @@ export const RUST_EFFECT_SPECS = {
       centerHz: hz('중심', 100, 8000, 800),
       tiltDb: db('기울기', -12, 12, 0),
       outputDb: db('출력', -24, 24, 0),
+    },
+  },
+  // --- 2단계: 딜레이·모듈레이션 ---
+  tapedelay: {
+    label: '테이프 딜레이', category: 'delay',
+    params: {
+      timeMs: msec('시간', 10, 4000, 375),
+      feedback: unit('되먹임', 0.4, 1.1),
+      mix: unit('섞기', 0.3),
+      wow: unit('와우', 0.3),
+      flutter: unit('플러터', 0.2),
+      lowCutHz: hz('로우컷', 20, 2000, 120),
+      highCutHz: hz('하이컷', 500, 8000, 3500),
+      saturation: unit('포화', 0.3),
+    },
+  },
+  stereodelay: {
+    label: '스테레오 딜레이', category: 'delay',
+    params: {
+      leftMs: msec('왼쪽', 1, 4000, 375),
+      rightMs: msec('오른쪽', 1, 4000, 500),
+      feedback: unit('되먹임', 0.35, 0.98),
+      crossfeed: unit('교차 (핑퐁)', 0),
+      mix: unit('섞기', 0.3),
+      lowCutHz: hz('로우컷', 20, 2000, 80),
+      highCutHz: hz('하이컷', 500, 20000, 9000),
+    },
+  },
+  delaydesigner: {
+    label: '딜레이 디자이너 (6탭)', category: 'delay',
+    params: {
+      ...tap(1, 125, 0.8, -0.6), ...tap(2, 250, 0.6, 0.6), ...tap(3, 375, 0.45, -0.3),
+      ...tap(4, 500, 0, 0.3), ...tap(5, 625, 0, -0.8), ...tap(6, 750, 0, 0.8),
+      feedback: unit('되먹임', 0.2, 0.95),
+      mix: unit('섞기', 0.3),
+      lowCutHz: hz('로우컷', 20, 2000, 100),
+      highCutHz: hz('하이컷', 500, 20000, 8000),
+    },
+  },
+  ensemble: {
+    label: '앙상블', category: 'modulation',
+    params: {
+      voices: { label: '목소리', min: 2, max: 8, default: 4 },
+      rateHz: hz('속도', 0.02, 8, 0.6),
+      depthMs: msec('깊이', 0, 15, 4, false),
+      delayMs: msec('기본 지연', 3, 40, 12, false),
+      width: unit('폭', 0.9),
+      mix: unit('섞기', 0.5),
+    },
+  },
+  moddelay: {
+    label: '모듈레이션 딜레이', category: 'modulation',
+    params: {
+      delayMs: msec('지연', 0.2, 50, 6),
+      depthMs: msec('깊이', 0, 20, 2, false),
+      rateHz: hz('속도', 0.01, 20, 0.4),
+      feedback: unit('되먹임', 0.3, 0.95, -0.95),
+      shape: choice('LFO 모양', ['사인', '삼각'], 0),
+      stereoPhase: { label: '좌우 위상차', min: 0, max: 180, default: 90, unit: '°' },
+      mix: unit('섞기', 0.5),
+    },
+  },
+  rotor: {
+    label: '로터 캐비닛 (레슬리)', category: 'modulation',
+    params: {
+      speed: choice('속도', ['느림 (코랄)', '빠름 (트레몰로)', '정지'], 0),
+      balance: unit('혼 ↔ 드럼', 0, 1, -1),
+      distance: unit('마이크 거리', 0.4),
+      acceleration: { label: '가속', min: 0.25, max: 4, default: 1, curve: 'log' },
+    },
+  },
+  autopan: {
+    label: '오토팬', category: 'modulation',
+    params: {
+      rateHz: hz('속도', 0.02, 20, 1),
+      depth: unit('깊이', 0.7),
+      shape: choice('모양', ['사인', '삼각', '사각'], 0),
+    },
+  },
+  ringmod: {
+    label: '링 모듈레이터', category: 'modulation', latency: 16,
+    params: {
+      freqHz: hz('반송', 1, 5000, 220),
+      lfoRateHz: { label: 'LFO 속도', min: 0, max: 20, default: 0, unit: 'Hz' },
+      lfoOct: { label: 'LFO 깊이', min: 0, max: 4, default: 0, unit: '옥' },
+      mix: unit('섞기', 0.5),
+    },
+  },
+  freqshifter: {
+    label: '주파수 시프터', category: 'modulation',
+    params: {
+      shiftHz: { label: '이동', min: -2000, max: 2000, default: 30, unit: 'Hz' },
+      feedback: unit('되먹임', 0, 0.9),
+      mix: unit('섞기', 0.5),
+      mirror: choice('좌우', ['같은 방향', '반대 방향'], 0),
+    },
+  },
+  vibrato: {
+    label: '비브라토', category: 'modulation',
+    params: {
+      rateHz: hz('속도', 0.1, 14, 5.5),
+      depthCents: { label: '깊이', min: 0, max: 200, default: 25, unit: '¢' },
+      mix: unit('섞기', 1),
+    },
+  },
+  phaser12: {
+    label: '페이저 (다단)', category: 'modulation',
+    params: {
+      stages: choice('단 수', ['4', '6', '8', '12'], 2),
+      rateHz: hz('속도', 0.01, 10, 0.3),
+      depthOct: { label: '깊이', min: 0, max: 5, default: 2.5, unit: '옥' },
+      centerHz: hz('중심', 100, 8000, 900),
+      feedback: unit('되먹임', 0.4, 0.9, -0.9),
+      stereoPhase: { label: '좌우 위상차', min: 0, max: 180, default: 90, unit: '°' },
+      mix: unit('섞기', 0.5),
     },
   },
 } satisfies Record<string, RustEffectDecl>;
