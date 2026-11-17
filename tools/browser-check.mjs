@@ -396,7 +396,9 @@ try {
   const rust17 = await ev(`JSON.stringify(window.__rustFx ?? null)`);
   record('Rust 이펙트가 실제 워크렛 노드로 (통과로 떨어지지 않음)', /"created":[1-9]/.test(rust17) && /"passthrough":0/.test(rust17), rust17);
   const pdc17 = await ev(`document.querySelector('[data-pdc]')?.textContent ?? ''`);
-  record('지연 보정 표시 (컨볼루션 리버브 1024샘플)', /PDC 21\.3ms/.test(pdc17), pdc17 || '표시 없음');
+  // 지연 있는 이펙트(컨볼루션 1024·리니어 페이즈 3072·리미터 137·오버샘플링 16…)를 다 걸었다 — 그 합
+  const pdcMs = Number(/PDC ([\d.]+)ms/.exec(pdc17)?.[1] ?? 0);
+  record('지연 보정 표시 (지연 있는 이펙트의 합)', pdcMs > 21, pdc17 || '표시 없음');
   await shot('13-effects');
 
   // 18. 내보내기 창 — 16bit·44.1k·노멀라이즈, 측정값 표시, 스템 ZIP

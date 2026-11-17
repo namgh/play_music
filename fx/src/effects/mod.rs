@@ -2,6 +2,9 @@
 //! 새 이펙트는 끝에 붙인다(가운데 끼우면 저장된 곡의 번호가 밀린다 — 사실 TS 는 이름으로
 //! 찾지만, 테스트가 이름 목록 전체를 비교하므로 어디에 붙여도 어긋나면 깨진다).
 
+pub mod dynamics;
+pub mod eq;
+pub mod filters;
 pub mod gate;
 pub mod multipressor;
 pub mod spacedesigner;
@@ -37,6 +40,30 @@ pub const KINDS: &[(&str, Factory)] = &[
     ("spacedesigner", |sr, p| {
         Box::new(spacedesigner::SpaceDesigner::new(sr, p))
     }),
+    // 1단계 — 다이내믹스·EQ·필터
+    ("expander", |sr, p| Box::new(dynamics::Expander::new(sr, p))),
+    ("deesser", |sr, p| Box::new(dynamics::DeEsser::new(sr, p))),
+    ("enveloper", |sr, p| {
+        Box::new(dynamics::Enveloper::new(sr, p))
+    }),
+    ("compmodel", |sr, p| {
+        Box::new(dynamics::CompModel::new(sr, p))
+    }),
+    ("adaptivelimiter", |sr, p| {
+        Box::new(dynamics::AdaptiveLimiter::new(sr, p))
+    }),
+    ("channeleq", |sr, p| Box::new(eq::ChannelEq::new(sr, p))),
+    ("linearphaseeq", |sr, p| {
+        Box::new(eq::LinearPhaseEq::new(sr, p))
+    }),
+    ("vintageeq", |sr, p| Box::new(eq::VintageEq::new(sr, p))),
+    ("multifilter", |sr, p| {
+        Box::new(filters::MultiFilter::new(sr, p))
+    }),
+    ("envfilter", |sr, p| {
+        Box::new(filters::EnvFilter::new(sr, p))
+    }),
+    ("tilteq", |sr, p| Box::new(eq::TiltEq::new(sr, p))),
 ];
 
 pub fn create(kind: usize, sample_rate: f32, params: &Params) -> Option<Box<dyn Effect>> {

@@ -227,3 +227,38 @@ test('무음일 때는 거의 비용이 들지 않는다', async () => {
   console.log(`    무음: 실시간의 ${factor.toFixed(0)}배`);
   assert.ok(factor > 100, `무음인데 실시간의 ${factor.toFixed(0)}배뿐이다`);
 });
+
+// ---------------------------------------------------------------------------
+// Rust 이펙트 (`EFFECTS_PLAN.md` 4-3) — 이펙트 하나가 실시간의 몇 배로 도는가.
+// 트랙 32 × 이펙트 4 = 128 개를 한 오디오 스레드에 올려도 버티려면 **하나가 최소 200배**는 돼야 한다
+// (워크렛은 Node 보다 느리다 — 여유를 잡는다). 비선형 단계를 4배 오버샘플링하는 것(지연 16 샘플)은
+// 원칙상 비용이 크다 — 100배. 무거운 것(컨볼루션·FIR·피치)은 따로 40배.
+// ---------------------------------------------------------------------------
+
+test('Rust 이펙트 — 하나하나가 실시간의 몇 배인가', async () => {
+  const { FxWasm } = await import('./fxWasm.ts');
+  const { RUST_EFFECT_SPECS } = await import('./rustEffects.ts');
+  const { createEffect, resolveEffectParams } = await import('./effects.ts');
+  const bytes = await readFile(fileURLToPath(new URL('../generated/fx.wasm', import.meta.url)));
+  const module = new WebAssembly.Module(bytes);
+  const HEAVY = new Set(['spacedesigner', 'linearphaseeq']);
+  const seconds = 2;
+  const n = 48000 * seconds;
+  const x = Float32Array.from({ length: n }, (_, i) => 0.3 * Math.sin(i * 0.031) + 0.1 * Math.sin(i * 0.47));
+  const rows: string[] = [];
+  const failures: string[] = [];
+  for (const type of Object.keys(RUST_EFFECT_SPECS) as (keyof typeof RUST_EFFECT_SPECS)[]) {
+    const fx = await FxWasm.create(module, type, resolveEffectParams(createEffect(type)), 48000);
+    fx.process(x.subarray(0, 4800), x.subarray(0, 4800)); // 데우기
+    const t0 = performance.now();
+    fx.process(x, x);
+    const ms = performance.now() - t0;
+    const factor = (seconds * 1000) / ms;
+    rows.push(`${type.padEnd(18)} ${factor.toFixed(0).padStart(6)}배`);
+    const latency = (RUST_EFFECT_SPECS[type] as { latency?: number }).latency ?? 0;
+    const floor = HEAVY.has(type) ? 40 : latency === 16 ? 100 : 200;
+    if (factor <= floor) failures.push(`${type} 가 실시간의 ${factor.toFixed(0)}배 — 기준 ${floor}배`);
+  }
+  console.log(rows.join('\n'));
+  assert.deepEqual(failures, []);
+});
