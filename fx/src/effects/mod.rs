@@ -10,8 +10,10 @@ pub mod filters;
 pub mod gate;
 pub mod modulation;
 pub mod multipressor;
+pub mod pitchfx;
 pub mod reverbs;
 pub mod spacedesigner;
+pub mod spectral;
 
 pub const MAX_PARAMS: usize = 24;
 pub const MAX_METERS: usize = 16;
@@ -130,6 +132,27 @@ pub const KINDS: &[(&str, Factory)] = &[
     }),
     ("shimmer", |sr, p| Box::new(reverbs::Shimmer::new(sr, p))),
     ("enverb", |sr, p| Box::new(reverbs::EnVerb::new(sr, p))),
+    // 5단계 — 피치·스펙트럼
+    ("pitchshifter", |sr, p| {
+        Box::new(pitchfx::PitchShift::new(sr, p))
+    }),
+    ("pitchcorrection", |sr, p| {
+        Box::new(pitchfx::PitchCorrection::new(sr, p))
+    }),
+    ("vocaltransformer", |sr, p| {
+        Box::new(pitchfx::VocalTransformer::new(sr, p))
+    }),
+    ("harmonizer", |sr, p| {
+        Box::new(pitchfx::Harmonizer::new(sr, p))
+    }),
+    ("octaver", |sr, p| Box::new(pitchfx::Octaver::new(sr, p))),
+    ("vocoder", |sr, p| Box::new(pitchfx::Vocoder::new(sr, p))),
+    ("spectralgate", |sr, p| {
+        Box::new(spectral::SpectralGate::new(sr, p))
+    }),
+    ("denoiser", |sr, p| Box::new(spectral::Denoiser::new(sr, p))),
+    ("matcheq", |sr, p| Box::new(spectral::MatchEq::new(sr, p))),
+    ("freeze", |sr, p| Box::new(spectral::Freeze::new(sr, p))),
 ];
 
 pub fn create(kind: usize, sample_rate: f32, params: &Params) -> Option<Box<dyn Effect>> {

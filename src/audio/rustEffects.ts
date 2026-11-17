@@ -548,6 +548,113 @@ export const RUST_EFFECT_SPECS = {
       mix: unit('섞기', 0.3),
     },
   },
+  // --- 5단계: 피치·스펙트럼 (STFT 는 지연 2048) ---
+  pitchshifter: {
+    label: '피치 시프터', category: 'pitch',
+    params: {
+      semitones: { label: '반음', min: -24, max: 24, default: 0, unit: '반음' },
+      cents: { label: '센트', min: -100, max: 100, default: 0, unit: '¢' },
+      window: choice('창', ['드럼', '말', '노래', '패드'], 2),
+      mix: unit('섞기', 1),
+    },
+  },
+  pitchcorrection: {
+    label: '피치 보정', category: 'pitch',
+    meters: [{ label: '감지', unit: 'Hz', min: 0, max: 1000 }, { label: '목표', unit: 'Hz', min: 0, max: 1000 }, { label: '벗어남', unit: '¢', min: -50, max: 50 }],
+    params: {
+      root: choice('으뜸음', ['C', 'C♯', 'D', 'E♭', 'E', 'F', 'F♯', 'G', 'A♭', 'A', 'B♭', 'B'], 0),
+      scale: choice('음계', ['반음계', '장음계', '단음계', '펜타토닉', '블루스'], 0),
+      responseMs: msec('응답', 0, 400, 40, false),
+      amount: unit('보정 양', 1),
+      a4Hz: { label: '기준 A', min: 400, max: 480, default: 440, unit: 'Hz' },
+      mix: unit('섞기', 1),
+    },
+  },
+  vocaltransformer: {
+    label: '보컬 트랜스포머', category: 'pitch', latency: 2048,
+    params: {
+      pitch: { label: '음정', min: -24, max: 24, default: 0, unit: '반음' },
+      formant: { label: '포먼트', min: -12, max: 12, default: 0, unit: '반음' },
+      mix: unit('섞기', 1),
+    },
+  },
+  harmonizer: {
+    label: '하모나이저', category: 'pitch',
+    params: {
+      voice1Semis: { label: '목소리1 음정', min: -24, max: 24, default: 4, unit: '반음' },
+      voice1Level: unit('목소리1 크기', 0.6),
+      voice1Pan: unit('목소리1 좌우', -0.6, 1, -1),
+      voice2Semis: { label: '목소리2 음정', min: -24, max: 24, default: 7, unit: '반음' },
+      voice2Level: unit('목소리2 크기', 0.5),
+      voice2Pan: unit('목소리2 좌우', 0.6, 1, -1),
+      dry: unit('원음', 1),
+      window: choice('창', ['드럼', '말', '노래', '패드'], 2),
+    },
+  },
+  octaver: {
+    label: '옥타버', category: 'pitch',
+    params: {
+      down1: unit('−1 옥타브', 0.7, 1.5),
+      down2: unit('−2 옥타브', 0, 1.5),
+      up1: unit('+1 옥타브', 0, 1.5),
+      dry: unit('원음', 1, 1.5),
+      lowpassHz: hz('아래 소리 톤', 100, 4000, 1200),
+    },
+  },
+  vocoder: {
+    label: '보코더', category: 'pitch',
+    params: {
+      carrierNote: { label: '캐리어 음', min: 24, max: 96, default: 48, unit: 'MIDI' },
+      chord: choice('화음', ['단음', '5도', '장3화음', '단3화음'], 2),
+      noise: unit('노이즈', 0.1),
+      bands: { label: '대역 수', min: 8, max: 20, default: 16 },
+      q: { label: '대역 Q', min: 2, max: 30, default: 8, curve: 'log' },
+      attackMs: msec('어택', 0.5, 100, 4),
+      releaseMs: msec('릴리즈', 5, 1000, 60),
+      formantSemis: { label: '포먼트 이동', min: -12, max: 12, default: 0, unit: '반음' },
+      sibilance: unit('치찰음 통과', 0.3),
+      mix: unit('섞기', 1),
+    },
+  },
+  spectralgate: {
+    label: '스펙트럼 게이트', category: 'pitch', latency: 2048,
+    params: {
+      thresholdDb: db('스레숄드', -100, 0, -60),
+      reductionDb: db('줄임', -100, 0, -40),
+      lowHz: hz('구간 아래', 20, 20000, 20),
+      highHz: hz('구간 위', 20, 24000, 24000),
+      speed: unit('속도', 0.5),
+      mix: unit('섞기', 1),
+    },
+  },
+  denoiser: {
+    label: '디노이저', category: 'pitch', latency: 2048, meters: [{ label: '잡음 바닥', unit: 'dB', min: -120, max: 0 }],
+    params: {
+      reductionDb: db('줄임', -60, 0, -15),
+      sensitivityDb: db('민감도', 0, 20, 6),
+      smoothing: unit('매끄러움', 0.6, 0.95),
+      mix: unit('섞기', 1),
+    },
+  },
+  matcheq: {
+    label: '매치 EQ', category: 'eq',
+    meters: ['31', '63', '125', '250', '500', '1k', '2k', '4k', '8k', '16k'].map((label) => ({ label, unit: 'dB', min: -12, max: 12 })),
+    params: {
+      target: choice('목표 곡선', ['평탄 (핑크)', '팝 밝게', '따뜻하게', '힙합', '록', '어쿠스틱'], 0),
+      amount: unit('양', 0.5),
+      learn: choice('배우기', ['멈춤', '배우는 중'], 1),
+      maxDb: db('최대 보정', 1, 12, 6),
+      outputDb: db('출력', -24, 24, 0),
+    },
+  },
+  freeze: {
+    label: '프리즈 (스펙트럼 얼리기)', category: 'pitch', latency: 2048,
+    params: {
+      freeze: choice('얼리기', ['끔', '켬'], 0),
+      blur: unit('번짐', 0.2),
+      mix: unit('섞기', 1),
+    },
+  },
 } satisfies Record<string, RustEffectDecl>;
 
 export type RustEffectType = keyof typeof RUST_EFFECT_SPECS;

@@ -12,7 +12,9 @@ pub mod oversample;
 pub mod pitch;
 pub mod rng;
 pub mod smooth;
+pub mod stft;
 pub mod svf;
+pub mod yin;
 
 /// 비정규수를 0 으로 — wasm 에는 FTZ 플래그가 없다 (`dsp/src/denormal.rs`)
 #[inline(always)]
