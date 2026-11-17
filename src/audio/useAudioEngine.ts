@@ -189,11 +189,11 @@ export function useAudioEngine(
   }, [state]);
 
   /** 편집 중 즉시 들려주기 */
-  const audition = useCallback(async (trackId: TrackId, midi: number, cents: number) => {
+  const audition = useCallback(async (trackId: TrackId, midi: number, cents: number, velocity?: number) => {
     try {
       const renderer = await ensure();
       renderer.setProject(projectRef.current);
-      renderer.auditionNote(trackId, createNote({ startTick: 0, midi, cents }));
+      renderer.auditionNote(trackId, createNote({ startTick: 0, midi, cents, ...(velocity === undefined ? {} : { velocity }) }));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }

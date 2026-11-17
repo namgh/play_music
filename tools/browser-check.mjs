@@ -437,6 +437,32 @@ try {
   const patches = await ev(`JSON.parse(localStorage.getItem('user-patches-v1') ?? '[]').length`);
   record('패치 저장 (사용자 라이브러리)', patches === 1, `${patches}개`);
   await shot('15-browser');
+
+  // 20. 건반 — 자판 연주로 소리, 스텝 입력으로 커서 자리에 음과 화음
+  await clickEl(`[...document.querySelectorAll('[role=tab]')].find((b) => b.textContent.includes('음 편집'))`);
+  await clickEl(`document.querySelector('[aria-label="건반"]')`);
+  await ev(`document.activeElement?.blur(); 'ok'`);
+  const press = async (code, shift = false) => {
+    await send('Input.dispatchKeyEvent', { type: 'keyDown', code, key: code.replace('Key', '').toLowerCase(), modifiers: shift ? 8 : 0 });
+    await send('Input.dispatchKeyEvent', { type: 'keyUp', code, key: code.replace('Key', '').toLowerCase(), modifiers: shift ? 8 : 0 });
+    await sleep(160);
+  };
+  let peak20 = 0;
+  await press('KeyA');
+  for (let i = 0; i < 8; i++) { await sleep(100); peak20 = Math.max(peak20, await ev('window.__peak()')); }
+  record('자판으로 연주 (A = C4)', peak20 > 0.001, `피크 ${peak20.toFixed(4)}`);
+  const totalNotes = () => ev(`(() => { const p = JSON.parse(localStorage.getItem('project-autosave-v1')); const d = p.project ?? p; return d.tracks.reduce((n, t) => n + t.clips.reduce((m, c) => m + c.notes.length, 0), 0); })()`);
+  const before20 = await totalNotes();
+  await clickEl(`document.querySelector('[data-play-surface] button[aria-pressed]')`);
+  await ev(`document.activeElement?.blur(); 'ok'`);
+  await press('KeyA'); await press('KeyD', true); await press('KeyG');
+  await sleep(300);
+  const after20 = await totalNotes();
+  const starts = await ev(`(() => { const p = JSON.parse(localStorage.getItem('project-autosave-v1')); const d = p.project ?? p; const all = d.tracks.flatMap((t) => t.clips.flatMap((c) => c.notes.map((n) => c.startTick + n.startTick + ':' + n.pitch.midi))); return all.slice(-3).join(' '); })()`);
+  const note20 = await ev(`[...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "닫기" && b.parentElement?.textContent.length < 200)?.parentElement?.textContent ?? ""`);
+  record('스텝 입력 — 세 음 중 Shift 는 화음', after20 - before20 === 3, `${before20} → ${after20} · 마지막 셋 ${starts} · 알림 ${note20}`);
+  await clickEl(byText('스텝 입력 중'));
+  await shot('16-play-surface');
 } catch (err) {
   record('스크립트 실행', false, String(err.stack ?? err).slice(0, 500));
 } finally {

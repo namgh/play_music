@@ -3,7 +3,7 @@ import { CloudPanel } from './ui/CloudPanel.tsx';
 
 import { BRAND } from './brand.ts';
 import {
-  addClip, addTrack, copyNotes, deleteNotes, duplicateNotes, duplicateTrack, joinClips, moveNotes,
+  addClip, addNote, addTrack, copyNotes, resizeClip, deleteNotes, duplicateNotes, duplicateTrack, joinClips, moveNotes,
   moveTrack, nextClipOnTrack, pasteNotes, repeatClip, splitClip, updateClip,
   moveNotesToTrack, quantizeNotes, setKey, setLoop, setLoopEnabled, setSwing, setTempo,
   setTempoChange,
@@ -19,6 +19,7 @@ import { positionAt } from './model/meter.ts';
 import { adjacentMarkerTick, keyAt, tapTempo } from './editor/arrangement.ts';
 import { ExportPanel } from './ui/ExportPanel.tsx';
 import { SoundBrowser } from './ui/SoundBrowser.tsx';
+import { PlaySurface } from './ui/PlaySurface.tsx';
 import { extractVoice, forceLegato, humanize, removeOverlaps, scaleQuantize, scaleVelocity } from './editor/noteTools.ts';
 import type { NoteColorMode } from './ui/PianoRoll.tsx';
 import { createStack, setTrackFlag, setTrackStack } from './editor/tracks.ts';
@@ -152,6 +153,8 @@ export function App() {
   const [noteColor, setNoteColor] = useState<NoteColorMode>('edit');
   /** 오른쪽 칸 탭 — 보기 설정 */
   const [sideTab, setSideTab] = useState<'inspect' | 'browse'>('inspect');
+  /** 연주 칸(건반) — 보기 설정 */
+  const [playOpen, setPlayOpen] = useState(false);
   /**
    * **클립별** 표시 음역. **곡이 아니라 보기 설정**이라 프로젝트에 저장하지 않는다
    * (`plan.md` 5-4 — 프로젝트 데이터는 곡 자체다).
@@ -593,6 +596,14 @@ export function App() {
             ><span className="font-num text-[13px]">1·2</span></button>
             <button
               type="button"
+              onClick={() => setPlayOpen((on) => !on)}
+              aria-pressed={playOpen}
+              aria-label="건반"
+              title="화면 건반 · 자판으로 연주 · 스텝 입력"
+              className={`${ROUND_BTN} ${playOpen ? ROUND_ON : ''}`}
+            ><span className="text-[13px]">🎹</span></button>
+            <button
+              type="button"
               onClick={() => {
                 if (project.loop === null) loopFromSelection();
                 else editor.commit(setLoopEnabled(project, !project.loop.enabled));
@@ -685,7 +696,7 @@ export function App() {
 
         <span className="flex-1" />
         {engine.engineKind && (
-          <span className="hidden h-6 items-center gap-1.5 rounded-full border border-rule bg-panel px-2.5 text-[11px] text-ink-2 xl:flex">
+          <span className="hidden h-6 items-center gap-1.5 rounded-full border border-rule bg-panel px-2.5 text-[11px] text-ink-2 2xl:flex">
             <i className="h-1.5 w-1.5 rounded-full bg-ok" />{ENGINE_LABELS[engine.engineKind]}
           </span>
         )}
@@ -787,7 +798,7 @@ export function App() {
 
       {/* 찍고 고치는 것 — 입력 기본값과 편집 동작. 편집기에서만 */}
       {view === 'editor' && (
-        <div className="flex h-11 shrink-0 items-center gap-2 overflow-x-auto border-b border-rule px-5 text-xs">
+        <div className="flex h-11 shrink-0 items-center gap-2 overflow-x-auto whitespace-nowrap border-b border-rule px-5 text-xs [scrollbar-width:none] [&>label]:shrink-0">
           <label className="text-[11px] text-ink-3" htmlFor="grid">격자</label>
           <select id="grid" value={gridTicks} onChange={(e) => setGridTicks(Number(e.target.value))} className={FIELD}>
             {GRID_OPTIONS.map((option) => <option key={option.label} value={option.ticks}>{option.label}</option>)}
@@ -1170,7 +1181,8 @@ export function App() {
                     <PitchCurveLane editor={editor} clip={clip} onAudition={audition} />
                   </div>
                 </div>
-                <p className="mt-2 shrink-0 text-[11px] leading-relaxed text-ink-3">
+                {/* 건반 칸이 열리면 이 도움말이 피아노롤을 덮는다 — 그때는 건반 칸이 같은 몫의 도움말을 준다 */}
+                <p className={`mt-2 shrink-0 text-[11px] leading-relaxed text-ink-3 ${playOpen ? 'hidden' : ''}`}>
                   빈 곳 클릭 = 음 추가 · 끌기 = 범위 선택 · Shift+클릭 = 선택 추가 ·
                   눈금 클릭 = 재생 위치 · Space = 커서부터 재생 ·
                   ⌘C/⌘V 복사·붙여넣기 · ⌘D 복제 · ⌘A 전체 선택 · ⌘L 선택 구간 반복 ·
@@ -1220,6 +1232,29 @@ export function App() {
             {sideTab === 'inspect' && <NoteInspector editor={editor} onAudition={audition} />}
           </aside>
         </div>
+      )}
+      {view === 'editor' && playOpen && (
+        <PlaySurface
+          onPlay={(midi, velocity) => { if (track) void engine.audition(track.id, midi, 0, velocity); }}
+          onStep={(midi, velocity, chord) => {
+            if (!clip) { setNotice('찍을 클립이 없습니다 — 트랙 영역에서 클립을 고르세요'); return; }
+            runEdit(() => {
+              let { project: next, noteId } = addNote(project, { clipId: clip.id, startTick: cursorTick, lengthTick: noteLengthTicks, midi, velocity });
+              // 커서가 클립 끝을 넘었으면 클립을 마디 단위로 늘린다 — 안 늘리면 찍은 음이
+              // 클립 밖이라 안 보이고 안 들린다 (Logic 도 스텝 입력이 리전을 늘린다)
+              const need = cursorTick + noteLengthTicks;
+              if (need > clip.lengthTick) {
+                const bar = ticksPerBar(project.timeSignature);
+                next = resizeClip(next, clip.id, Math.ceil(need / bar) * bar);
+              }
+              editor.commit(next);
+              editor.select([noteId]);
+              if (!chord) setCursorTick((t) => t + noteLengthTicks);
+            });
+          }}
+          onRest={() => setCursorTick((t) => t + noteLengthTicks)}
+          onClose={() => setPlayOpen(false)}
+        />
       )}
     </div>
   );

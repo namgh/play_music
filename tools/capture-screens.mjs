@@ -162,6 +162,22 @@ export const SCREENS = [
       await sleep(200);
     },
   },
+  {
+    name: 'a09-play-surface', area: 9, title: '연주 — 화면 건반 · 자판 연주(A~\', Z/X 옥타브, C/V 세기) · 스텝 입력(Shift 화음, Tab 쉼표)',
+    run: async (b) => {
+      await b.clickEl(byLabel('패드 선택'));
+      await b.clickEl(byLabel('건반'));
+      await b.clickEl(`document.querySelector('[data-play-surface] button[aria-pressed]')`);
+      await b.ev(`document.activeElement?.blur(); 'ok'`);
+      for (const code of ['KeyA', 'KeyD', 'KeyG', 'KeyH']) {
+        await b.send('Input.dispatchKeyEvent', { type: 'keyDown', code, key: code.slice(3).toLowerCase() });
+        await b.send('Input.dispatchKeyEvent', { type: 'keyUp', code, key: code.slice(3).toLowerCase() });
+        await sleep(150);
+      }
+      await b.send('Input.dispatchKeyEvent', { type: 'keyDown', code: 'KeyJ', key: 'j' });
+      await sleep(200);
+    },
+  },
 ];
 
 async function capture(b, screen) {

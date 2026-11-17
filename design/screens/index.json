@@ -58,5 +58,10 @@
     "name": "a08-browser",
     "area": 8,
     "title": "브라우저 — 검색·분류·미리 듣기·이 트랙에/새 트랙·내 음색(패치)"
+  },
+  {
+    "name": "a09-play-surface",
+    "area": 9,
+    "title": "연주 — 화면 건반 · 자판 연주(A~', Z/X 옥타브, C/V 세기) · 스텝 입력(Shift 화음, Tab 쉼표)"
   }
 ]
