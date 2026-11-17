@@ -45,7 +45,8 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             dsp/target
-          key: cargo-${{ runner.os }}-${{ hashFiles('dsp/Cargo.toml', 'dsp/src/**') }}
+            fx/target
+          key: cargo-${{ runner.os }}-${{ hashFiles('dsp/Cargo.toml', 'dsp/src/**', 'fx/Cargo.toml', 'fx/src/**') }}
           restore-keys: cargo-${{ runner.os }}-
 
       - run: npm ci
@@ -53,16 +54,20 @@ jobs:
       # --- Rust 코어 ---------------------------------------------------------
 
       - name: Rust 포맷 검사
-        run: cargo fmt --manifest-path dsp/Cargo.toml --check
+        run: cargo fmt --manifest-path dsp/Cargo.toml --check && cargo fmt --manifest-path fx/Cargo.toml --check
 
       - name: Rust 린트
-        run: cargo clippy --manifest-path dsp/Cargo.toml --all-targets -- -D warnings
+        run: |
+          cargo clippy --manifest-path dsp/Cargo.toml --all-targets -- -D warnings
+          cargo clippy --manifest-path fx/Cargo.toml --all-targets -- -D warnings
 
       - name: Rust 단위 테스트 (필터 수식)
-        run: cargo test --manifest-path dsp/Cargo.toml
+        run: |
+          cargo test --manifest-path dsp/Cargo.toml
+          cargo test --release --manifest-path fx/Cargo.toml
 
       - name: Rust → wasm 빌드
-        run: npm run build:dsp
+        run: npm run build:dsp && npm run build:fx
 
       # --- TypeScript --------------------------------------------------------
 

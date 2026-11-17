@@ -390,8 +390,13 @@ try {
   await clickEl(byTitle('커서부터 재생'));
   let peak17 = 0; for (let i = 0; i < 12; i++) { await sleep(150); peak17 = Math.max(peak17, await ev('window.__peak()')); }
   const stop17 = await centerOf(byTitle('정지')); if (stop17) await click(stop17.x, stop17.y);
-  record(`이펙트 ${fxTypes.length}종을 한 트랙에 걸고 재생`, fxTypes.length === 14 && /\|\|14\b/.test(String(fxCount)) && peak17 > 0.0005 && problems.length === n17,
+  // Rust 이펙트(워크렛 노드)도 섞여 있다 — 실패하면 워크렛이 console.error 를 낸다
+  record(`이펙트 ${fxTypes.length}종을 한 트랙에 걸고 재생`, fxTypes.length >= 17 && new RegExp(`\\|\\|${fxTypes.length}\\b`).test(String(fxCount)) && peak17 > 0.0005 && problems.length === n17,
     `종류 ${fxTypes.length} · 걸린 수 ${fxCount} · 피크 ${peak17.toFixed(4)} · 새 오류 ${problems.length - n17}`);
+  const rust17 = await ev(`JSON.stringify(window.__rustFx ?? null)`);
+  record('Rust 이펙트가 실제 워크렛 노드로 (통과로 떨어지지 않음)', /"created":[1-9]/.test(rust17) && /"passthrough":0/.test(rust17), rust17);
+  const pdc17 = await ev(`document.querySelector('[data-pdc]')?.textContent ?? ''`);
+  record('지연 보정 표시 (컨볼루션 리버브 1024샘플)', /PDC 21\.3ms/.test(pdc17), pdc17 || '표시 없음');
   await shot('13-effects');
 
   // 18. 내보내기 창 — 16bit·44.1k·노멀라이즈, 측정값 표시, 스템 ZIP

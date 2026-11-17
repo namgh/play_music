@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import type { Bus, BusId, EffectSpec, Project, Track, TrackId, Vca } from '../model/project.ts';
 import { LevelMeter } from './LevelMeter.tsx';
@@ -9,7 +9,9 @@ import {
   setTrackOutput, updateBus, updateVca,
 } from '../editor/mixer.ts';
 import { createEffect, EFFECT_SPECS, isEffectType } from '../audio/effects.ts';
-import type { EffectType } from '../audio/effects.ts';
+import type { EffectParamSpec, EffectType } from '../audio/effects.ts';
+import { EFFECT_CATEGORIES } from '../audio/rustEffects.ts';
+import type { EffectCategory } from '../audio/rustEffects.ts';
 
 /**
  * 믹서 — 세로 채널 스트립 (Logic Mixer, `LOGIC_PARITY.md` 1-8).
@@ -23,11 +25,19 @@ import type { EffectType } from '../audio/effects.ts';
  */
 
 const EFFECT_TYPES = Object.keys(EFFECT_SPECS) as EffectType[];
+/** 추가 메뉴 — 분류별로 묶는다 (종류가 80개 가까이 된다) */
+const EFFECT_GROUPS = (Object.keys(EFFECT_CATEGORIES) as EffectCategory[])
+  .map((cat) => ({ cat, types: EFFECT_TYPES.filter((t) => EFFECT_SPECS[t].category === cat) }))
+  .filter((g) => g.types.length > 0);
 
 export interface MixerProps {
   editor: ProjectEditor;
   /** 레벨 미터 — 트랙 id, 버스 id, null(마스터). 대체 렌더러에는 없다 */
   readLevel?: (trackId: TrackId | null) => { peak: number; rms: number } | null;
+  /** Rust 이펙트 미터 — 소유자(트랙·버스 id 또는 null=마스터), 이펙트 자리 */
+  readEffectMeters?: (owner: string | null, index: number) => Float32Array | null;
+  /** 지연 보정 중인 가장 긴 지연(샘플) */
+  compensationSamples?: () => number;
 }
 
 /** 지금 열린 인서트 — 어느 스트립의 몇 번째 이펙트인가 */
@@ -43,7 +53,7 @@ const TOGGLE = 'h-6 flex-1 rounded border text-[11px] font-semibold';
 const panLabel = (v: number) => (Math.abs(v) < 0.01 ? 'C' : `${v < 0 ? 'L' : 'R'}${Math.round(Math.abs(v) * 100)}`);
 const dbLabel = (g: number) => (g <= 0.0001 ? '−∞' : `${(20 * Math.log10(g)).toFixed(1)}`);
 
-export function Mixer({ editor, readLevel }: MixerProps) {
+export function Mixer({ editor, readLevel, readEffectMeters, compensationSamples }: MixerProps) {
   const { project } = editor;
   const [opened, setOpened] = useState<OpenedInsert | null>(null);
   const buses = project.buses ?? [];
@@ -89,7 +99,11 @@ export function Mixer({ editor, readLevel }: MixerProps) {
           className={MINI_SELECT}
         >
           <option value="">＋ 인서트</option>
-          {EFFECT_TYPES.map((type) => <option key={type} value={type}>{EFFECT_SPECS[type].label}</option>)}
+          {EFFECT_GROUPS.map((g) => (
+            <optgroup key={g.cat} label={EFFECT_CATEGORIES[g.cat]}>
+              {g.types.map((type) => <option key={type} value={type}>{EFFECT_SPECS[type].label}</option>)}
+            </optgroup>
+          ))}
         </select>
       </div>
     );
@@ -274,6 +288,7 @@ export function Mixer({ editor, readLevel }: MixerProps) {
       <div className="flex items-center gap-2">
         <h2 className="font-disp text-lg leading-none text-ink">믹서</h2>
         <span className="text-[11px] text-ink-3">트랙 {project.tracks.length} · 버스 {buses.length} · VCA {vcas.length}</span>
+        <CompensationBadge read={compensationSamples} />
         <span className="flex-1" />
         <button type="button" onClick={() => editor.commit(addBus(project).project)}
           className="h-7 rounded-md border border-rule bg-panel px-2.5 text-xs text-ink hover:border-ink-3"
@@ -297,6 +312,7 @@ export function Mixer({ editor, readLevel }: MixerProps) {
         <EffectPanel
           owner={openedOwnerName}
           effect={openedEffect}
+          readMeters={readEffectMeters ? () => readEffectMeters(opened.owner === 'master' ? null : opened.id, opened.index) : undefined}
           onChange={(next, commit) => {
             const effects = [...openedEffects];
             effects[opened.index] = next;
@@ -313,12 +329,81 @@ export function Mixer({ editor, readLevel }: MixerProps) {
   );
 }
 
+/** 지연 보정 표시 — 지연 있는 이펙트를 쓰면 "PDC 21ms" */
+function CompensationBadge({ read }: { read?: (() => number) | undefined }) {
+  const [samples, setSamples] = useState(0);
+  useEffect(() => {
+    if (!read) return;
+    const timer = setInterval(() => setSamples(read()), 500);
+    return () => clearInterval(timer);
+  }, [read]);
+  if (samples <= 0) return null;
+  return (
+    <span className="rounded border border-rule px-1.5 font-num text-[12px] text-ink-2" data-pdc
+      title="지연 있는 이펙트에 맞춰 나머지 트랙을 늦춘다 (플러그인 지연 보정)">PDC {(samples / 48).toFixed(1)}ms</span>
+  );
+}
+
+/** 슬라이더 위치(0…1) ↔ 값 — 로그 곡선이면 주파수처럼 옥타브마다 같은 거리 */
+function toPos(spec: EffectParamSpec, v: number): number {
+  if (spec.curve === 'log' && spec.min > 0) return Math.log(v / spec.min) / Math.log(spec.max / spec.min);
+  return (v - spec.min) / (spec.max - spec.min || 1);
+}
+function fromPos(spec: EffectParamSpec, t: number): number {
+  if (spec.curve === 'log' && spec.min > 0) return spec.min * Math.pow(spec.max / spec.min, t);
+  return spec.min + t * (spec.max - spec.min);
+}
+function formatValue(spec: EffectParamSpec, v: number): string {
+  const digits = Math.abs(v) >= 100 ? 0 : Math.abs(v) >= 10 ? 1 : 2;
+  return `${v.toFixed(digits)}${spec.unit ?? ''}`;
+}
+
+/** 이펙트 미터 — 게인 감소는 위에서 아래로 차는 막대, 나머지는 값 */
+function EffectMeters({ type, read }: { type: EffectType; read: () => Float32Array | null }) {
+  const decl = EFFECT_SPECS[type].meters ?? [];
+  const [values, setValues] = useState<number[]>([]);
+  const raf = useRef(0);
+  useEffect(() => {
+    let last = 0;
+    const tick = (t: number) => {
+      if (t - last > 60) {
+        last = t;
+        const m = read();
+        if (m) setValues(Array.from(m.subarray(0, decl.length)));
+      }
+      raf.current = requestAnimationFrame(tick);
+    };
+    raf.current = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf.current);
+  }, [read, decl.length]);
+  if (decl.length === 0) return null;
+  return (
+    <div className="mt-3 flex flex-wrap gap-3" data-effect-meters>
+      {decl.map((m, i) => {
+        const v = values[i] ?? m.max;
+        const t = Math.max(0, Math.min(1, (v - m.min) / (m.max - m.min || 1)));
+        const reduction = m.unit === 'dB' && m.max === 0 && m.label !== '감지';
+        return (
+          <div key={m.label} className="flex w-28 flex-col gap-1">
+            <span className="text-[10px] text-ink-3">{m.label}</span>
+            <div className="h-1.5 overflow-hidden rounded bg-body">
+              <div className={`h-full ${reduction ? 'ml-auto bg-rec' : 'bg-ink'}`} style={{ width: `${(reduction ? 1 - t : t) * 100}%` }} />
+            </div>
+            <span className="font-num text-[12px] text-ink-2">{m.unit === 'dB' ? `${v.toFixed(1)}dB` : v.toFixed(m.max > 10 ? 0 : 2)}{m.unit && m.unit !== 'dB' ? m.unit : ''}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 /** 이펙트 하나. 파라미터 슬라이더는 선언에서 자동 생성된다 */
 function EffectPanel({
-  owner, effect, onChange, onRemove, onClose,
+  owner, effect, onChange, onRemove, onClose, readMeters,
 }: {
   owner: string;
   effect: EffectSpec;
+  readMeters?: (() => Float32Array | null) | undefined;
   onChange: (next: EffectSpec, commit: boolean) => void;
   onRemove: () => void;
   onClose: () => void;
@@ -338,6 +423,7 @@ function EffectPanel({
       <div className="flex items-center gap-2">
         <span className="text-[11px] text-ink-3">{owner} ·</span>
         <span className="flex-1 text-sm font-semibold text-ink">{declared.label}</span>
+        {declared.latency ? <span className="font-num text-[12px] text-ink-3" title="이 이펙트의 처리 지연 — 지연 보정이 맞춘다">지연 {declared.latency}샘플</span> : null}
         <button
           type="button"
           aria-pressed={!effect.bypass}
@@ -353,26 +439,40 @@ function EffectPanel({
         {Object.entries(declared.params).map(([key, spec]) => {
           const raw = effect.params[key];
           const value = typeof raw === 'number' ? raw : spec.default;
+          const set = (v: number, commit: boolean) => onChange({ ...effect, params: { ...effect.params, [key]: v } }, commit);
+          if (spec.options) {
+            return (
+              <div key={key} className="grid grid-cols-[5.5rem_1fr] items-center gap-2">
+                <label htmlFor={`fx-${key}`} className="text-[11px] text-ink-2">{spec.label}</label>
+                <select id={`fx-${key}`} value={Math.round(value)} onChange={(e) => set(Number(e.target.value), true)}
+                  className="h-7 rounded-md border border-rule bg-body px-1.5 text-xs text-ink">
+                  {spec.options.map((o, i) => <option key={o} value={i}>{o}</option>)}
+                </select>
+              </div>
+            );
+          }
+          const pos = (el: HTMLInputElement) => fromPos(spec, Number(el.value) / 1000);
           return (
             <div key={key} className="grid grid-cols-[5.5rem_1fr_4rem] items-center gap-2">
               <label htmlFor={`fx-${key}`} className="text-[11px] text-ink-2">{spec.label}</label>
               <input
                 id={`fx-${key}`}
                 type="range"
-                min={spec.min} max={spec.max}
-                step={(spec.max - spec.min) / 200}
-                value={value}
-                onChange={(e) => onChange({ ...effect, params: { ...effect.params, [key]: Number(e.target.value) } }, false)}
-                onPointerUp={(e) => onChange({ ...effect, params: { ...effect.params, [key]: Number((e.target as HTMLInputElement).value) } }, true)}
+                min={0} max={1000} step={1}
+                value={Math.round(toPos(spec, value) * 1000)}
+                onChange={(e) => set(pos(e.target), false)}
+                onPointerUp={(e) => set(pos(e.target as HTMLInputElement), true)}
+                onKeyUp={(e) => set(pos(e.target as HTMLInputElement), true)}
+                onDoubleClick={() => set(spec.default, true)}
+                title="두 번 누르면 기본값"
                 className="accent-ink"
               />
-              <span className="text-right font-num text-[13px] text-ink-2">
-                {value.toFixed(spec.max > 100 ? 0 : 1)}{spec.unit ?? ''}
-              </span>
+              <span className="text-right font-num text-[13px] text-ink-2">{formatValue(spec, value)}</span>
             </div>
           );
         })}
       </div>
+      {readMeters && <EffectMeters type={effect.type} read={readMeters} />}
     </div>
   );
 }

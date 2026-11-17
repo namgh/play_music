@@ -16,6 +16,8 @@ import { BufferRenderer } from './bufferRenderer.ts';
 import { WorkletRenderer } from './workletRenderer.ts';
 import { WasmVoiceEngine } from './voice/wasmEngine.ts';
 import wasmUrl from '../generated/dsp.wasm?url';
+import fxUrl from '../generated/fx.wasm?url';
+import { setFxBytes } from './fxRuntime.ts';
 import { encodeWav, peakAmplitude } from './wav.ts';
 import { reportClipping, type ClipReport } from './headroom.ts';
 
@@ -95,6 +97,12 @@ export function useAudioEngine(
         bytes = await (await fetch(wasmUrl)).arrayBuffer();
       } catch (err) {
         console.warn('wasm 을 가져오지 못했다', err);
+      }
+      // 이펙트 코어 — 없으면 Rust 이펙트만 통과로 떨어진다 (나머지는 그대로)
+      try {
+        setFxBytes(await (await fetch(fxUrl)).arrayBuffer());
+      } catch (err) {
+        console.warn('fx.wasm 을 가져오지 못했다 — Rust 이펙트는 통과시킨다', err);
       }
 
       // 1순위: 워크렛 (통합 경로)
@@ -267,6 +275,11 @@ export function useAudioEngine(
     const renderer = rendererRef.current;
     return renderer?.readLevel ? renderer.readLevel(trackId) : null;
   }, []);
+  const readEffectMeters = useCallback((owner: string | null, index: number) => {
+    const renderer = rendererRef.current;
+    return renderer?.readEffectMeters ? renderer.readEffectMeters(owner, index) : null;
+  }, []);
+  const compensationSamples = useCallback(() => rendererRef.current?.compensationSamples?.() ?? 0, []);
 
   /**
    * 바운스 (Logic Bounce, `LOGIC_PARITY.md` 1-13). 렌더는 언제나 곡 전체를 그리고
@@ -345,7 +358,7 @@ export function useAudioEngine(
   }), [bounce]);
 
   return {
-    state, playheadTick, error, exporting, engineKind, clip, readLevel,
+    state, playheadTick, error, exporting, engineKind, clip, readLevel, readEffectMeters, compensationSamples,
     play, stop, audition, previewInstrument, perform, exportWav, bounce, renderMix, setMetronome,
   };
 }

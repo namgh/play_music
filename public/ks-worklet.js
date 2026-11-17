@@ -296,3 +296,98 @@ class KsProcessor extends AudioWorkletProcessor {
 }
 
 registerProcessor('ks-string', KsProcessor);
+
+// ---------------------------------------------------------------------------
+// Rust 이펙트 (`EFFECTS_PLAN.md`) — 노드 하나에 이펙트 하나.
+//
+// fx.wasm 은 **이 컨텍스트에서 한 번만 컴파일**하고(아래 fxModule) 노드마다 인스턴스를 만든다.
+// 바이트는 메인 스레드가 첫 노드에만 실어 보낸다 — 노드를 만들 때마다 100KB 를 복사하지 않게.
+// 파라미터는 AudioParam p0…p23 — 기존 오토메이션(`scheduleTrackLanes`)이 그대로 움직인다.
+// ---------------------------------------------------------------------------
+
+const FX_PARAMS = 24;
+const FX_METERS = 16;
+let fxModule = null;
+
+class RustFxProcessor extends AudioWorkletProcessor {
+  static get parameterDescriptors() {
+    const list = [];
+    for (let i = 0; i < FX_PARAMS; i++) {
+      list.push({ name: `p${i}`, defaultValue: 0, minValue: -1e9, maxValue: 1e9, automationRate: 'k-rate' });
+    }
+    return list;
+  }
+
+  constructor(options) {
+    super();
+    const opts = options.processorOptions ?? {};
+    this.fx = null;
+    this.alive = true;
+    // 미터가 있는 이펙트만 초당 20번 보낸다 — 노드가 수십 개면 메시지가 쌓인다
+    this.meterEvery = opts.meters ? Math.round(sampleRate / 20) : 0;
+    this.sinceMeter = 0;
+    this.port.onmessage = (event) => {
+      if (event.data?.type === 'dispose') this.alive = false;
+    };
+    try {
+      if (!fxModule && opts.bytes) fxModule = new WebAssembly.Module(opts.bytes);
+      if (!fxModule) throw new Error('fx.wasm 이 아직 없다');
+      const fx = new WebAssembly.Instance(fxModule, {}).exports;
+      // 첫 값을 먼저 쓴다 — 구조가 파라미터에 달린 이펙트(IR 길이 등)가 처음부터 맞는 모양이어야 한다
+      // 주소를 **먼저** 얻는다 — 첫 호출이 상태를 할당하며 메모리를 키우면 미리 잡아 둔 버퍼가 떨어져 나간다
+      const paramsAt = fx.fx_params();
+      new Float32Array(fx.memory.buffer, paramsAt, FX_PARAMS).set(opts.params ?? []);
+      const latency = fx.fx_create(opts.kind, sampleRate);
+      if (latency < 0) throw new Error(`모르는 이펙트 번호 ${opts.kind}`);
+      if (typeof opts.latency === 'number' && opts.latency !== latency) {
+        this.port.postMessage({ type: 'error', message: `지연 불일치: 선언 ${opts.latency} · 실제 ${latency}` });
+      }
+      this.fx = fx;
+      this.views();
+    } catch (err) {
+      // 실패하면 통과시킨다 — 소리가 끊기는 것보다 이펙트가 빠지는 쪽이 낫다
+      this.port.postMessage({ type: 'error', message: String(err && err.message || err) });
+    }
+  }
+
+  views() {
+    const fx = this.fx;
+    const at = [fx.fx_params(), fx.fx_in_l(), fx.fx_in_r(), fx.fx_meters()];
+    const mem = fx.memory.buffer;
+    this.mem = mem;
+    this.pView = new Float32Array(mem, at[0], FX_PARAMS);
+    this.lView = new Float32Array(mem, at[1], MAX_BLOCK);
+    this.rView = new Float32Array(mem, at[2], MAX_BLOCK);
+    this.mView = new Float32Array(mem, at[3], FX_METERS);
+  }
+
+  process(inputs, outputs, parameters) {
+    const out = outputs[0];
+    const input = inputs[0];
+    const frames = out[0].length;
+    if (!this.fx) {
+      for (let ch = 0; ch < out.length; ch++) {
+        const src = input[ch] ?? input[0];
+        if (src) out[ch].set(src); else out[ch].fill(0);
+      }
+      return this.alive;
+    }
+    if (this.fx.memory.buffer !== this.mem) this.views();
+    for (let i = 0; i < FX_PARAMS; i++) this.pView[i] = parameters[`p${i}`][0];
+    const inL = input[0];
+    const inR = input[1] ?? input[0];
+    if (inL) { this.lView.set(inL); this.rView.set(inR); } else { this.lView.fill(0, 0, frames); this.rView.fill(0, 0, frames); }
+    this.fx.fx_process(frames);
+    if (this.fx.memory.buffer !== this.mem) this.views();
+    out[0].set(this.lView.subarray(0, frames));
+    if (out[1]) out[1].set(this.rView.subarray(0, frames));
+    this.sinceMeter += frames;
+    if (this.meterEvery > 0 && this.sinceMeter >= this.meterEvery) {
+      this.sinceMeter = 0;
+      this.port.postMessage({ type: 'meters', values: Array.from(this.mView) });
+    }
+    return this.alive;
+  }
+}
+
+registerProcessor('rust-fx', RustFxProcessor);

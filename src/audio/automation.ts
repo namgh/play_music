@@ -12,7 +12,7 @@
 
 import type { AutomationLane, AutomationPoint, AutomationTarget, Track } from '../model/project.ts';
 import { EFFECT_SPECS, isEffectType, resolveEffectParams } from './effects.ts';
-import type { EffectParamSpec, EffectType } from './effects.ts';
+import type { EffectParamSpec, EffectType, WebEffectType } from './effects.ts';
 import type { Tempo, Ticks } from '../model/time.ts';
 import { ticksToSeconds } from '../model/time.ts';
 
@@ -113,7 +113,7 @@ export function automationTargets(track: Track): { target: AutomationTarget; inf
     const specs = EFFECT_SPECS[effect.type];
     const resolved = resolveEffectParams(effect);
     for (const [name, spec] of Object.entries(specs.params)) {
-      if (!AUTOMATABLE[effect.type].includes(name)) continue;
+      if (!automatable(effect.type, name)) continue;
       out.push({
         target: `fx:${index}:${name}`,
         info: {
@@ -127,8 +127,16 @@ export function automationTargets(track: Track): { target: AutomationTarget; inf
   return out;
 }
 
-/** 렌더러가 `AudioParam` 으로 바로 움직일 수 있는 파라미터 (`effectGraph.ts` bindings 와 짝) */
-const AUTOMATABLE: Record<EffectType, string[]> = {
+/**
+ * 렌더러가 `AudioParam` 으로 바로 움직일 수 있는 파라미터 (`effectGraph.ts` bindings 와 짝).
+ * Rust 이펙트는 파라미터마다 AudioParam(p0…) 이 있어 **전부** 대상이다 — 선언에 `automatable: false` 만 뺀다
+ */
+function automatable(type: EffectType, name: string): boolean {
+  if (type in WEB_AUTOMATABLE) return WEB_AUTOMATABLE[type as WebEffectType].includes(name);
+  return EFFECT_SPECS[type].params[name]?.automatable !== false;
+}
+
+const WEB_AUTOMATABLE: Record<WebEffectType, string[]> = {
   eq: ['lowGainDb', 'midGainDb', 'highGainDb', 'midHz'],
   compressor: ['thresholdDb', 'ratio', 'attackMs', 'releaseMs', 'makeupDb'],
   reverb: ['mix'],

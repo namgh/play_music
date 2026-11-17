@@ -48,7 +48,8 @@ async function loadWorklet() {
     sampleRate: SAMPLE_RATE,
     currentFrame: 0,
     WebAssembly,
-    registerProcessor: (_name: string, ctor: new () => Processor) => { Ctor = ctor; },
+    // 같은 파일에 'rust-fx' 도 있다 — 보이스 프로세서만 고른다
+    registerProcessor: (name: string, ctor: new () => Processor) => { if (name === 'ks-string') Ctor = ctor; },
     AudioWorkletProcessor: class {
       port = { postMessage: (_m: unknown) => {}, onmessage: null };
     },

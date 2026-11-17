@@ -11,11 +11,17 @@
  */
 
 import type { EffectSpec } from '../model/project.ts';
+import { RUST_EFFECT_SPECS } from './rustEffects.ts';
+import type { EffectCategory, RustEffectDecl, RustEffectType } from './rustEffects.ts';
 
-export type EffectType =
+/** Web Audio 내장 노드로 짓는 이펙트 (처음 14종) */
+export type WebEffectType =
   | 'eq' | 'compressor' | 'reverb' | 'delay'
   | 'limiter' | 'highpass' | 'autofilter' | 'distortion' | 'chorus' | 'flanger' | 'phaser' | 'tremolo' | 'width'
   | 'spatial';
+
+/** 전체 — Web Audio 14종 + Rust 코어(`rustEffects.ts`) */
+export type EffectType = WebEffectType | RustEffectType;
 
 export interface EffectParamSpec {
   label: string;
@@ -25,12 +31,25 @@ export interface EffectParamSpec {
   unit?: string;
   /** 슬라이더 반응 곡선 */
   curve?: 'linear' | 'log';
+  /** 고르기 — 값은 0…n−1 정수, 화면은 목록으로 */
+  options?: string[];
+  /** false 면 오토메이션 대상이 아니다 (바꾸면 IR 등 구조를 다시 짓는 파라미터) */
+  automatable?: false;
+}
+
+export interface EffectDecl {
+  label: string;
+  category: EffectCategory;
+  params: Record<string, EffectParamSpec>;
+  /** Rust 코어 이펙트만 */
+  latency?: number;
+  meters?: RustEffectDecl['meters'];
 }
 
 /** 이펙트별 파라미터 선언 — UI 가 이걸 보고 자동 생성한다 (`sound.md` 9-5 와 같은 원칙) */
-export const EFFECT_SPECS: Record<EffectType, { label: string; params: Record<string, EffectParamSpec> }> = {
+const WEB_EFFECT_SPECS: Record<WebEffectType, EffectDecl> = {
   eq: {
-    label: 'EQ',
+    label: 'EQ', category: 'eq',
     params: {
       lowGainDb: { label: '저역', min: -18, max: 18, default: 0, unit: 'dB' },
       midGainDb: { label: '중역', min: -18, max: 18, default: 0, unit: 'dB' },
@@ -39,7 +58,7 @@ export const EFFECT_SPECS: Record<EffectType, { label: string; params: Record<st
     },
   },
   compressor: {
-    label: '컴프레서',
+    label: '컴프레서', category: 'dynamics',
     params: {
       thresholdDb: { label: '스레숄드', min: -60, max: 0, default: -18, unit: 'dB' },
       ratio: { label: '레이시오', min: 1, max: 20, default: 3 },
@@ -49,7 +68,7 @@ export const EFFECT_SPECS: Record<EffectType, { label: string; params: Record<st
     },
   },
   reverb: {
-    label: '리버브',
+    label: '리버브', category: 'reverb',
     params: {
       mix: { label: '섞기', min: 0, max: 1, default: 0.2 },
       decaySec: { label: '길이', min: 0.1, max: 8, default: 1.6, unit: 's' },
@@ -57,7 +76,7 @@ export const EFFECT_SPECS: Record<EffectType, { label: string; params: Record<st
     },
   },
   delay: {
-    label: '딜레이',
+    label: '딜레이', category: 'delay',
     params: {
       timeMs: { label: '시간', min: 20, max: 1500, default: 250, unit: 'ms', curve: 'log' },
       feedback: { label: '피드백', min: 0, max: 0.9, default: 0.35 },
@@ -68,7 +87,7 @@ export const EFFECT_SPECS: Record<EffectType, { label: string; params: Record<st
   // --- 2026-11-17 추가 (LOGIC_PARITY 1-12). Web Audio 내장 노드로 짓는다 — Rust 코어
   //     이전(LOGIC_PARITY 3-3)은 같은 파라미터 선언을 유지한 채 구현만 바꾼다 ---
   limiter: {
-    label: '리미터',
+    label: '리미터', category: 'dynamics',
     params: {
       inputDb: { label: '입력', min: 0, max: 18, default: 0, unit: 'dB' },
       ceilingDb: { label: '천장', min: -12, max: 0, default: -1, unit: 'dB' },
@@ -76,13 +95,13 @@ export const EFFECT_SPECS: Record<EffectType, { label: string; params: Record<st
     },
   },
   highpass: {
-    label: '로우컷',
+    label: '로우컷', category: 'eq',
     params: {
       cutoffHz: { label: '차단', min: 20, max: 2000, default: 80, unit: 'Hz', curve: 'log' },
     },
   },
   autofilter: {
-    label: '오토 필터',
+    label: '오토 필터', category: 'eq',
     params: {
       cutoffHz: { label: '차단', min: 40, max: 18000, default: 2000, unit: 'Hz', curve: 'log' },
       resonance: { label: '공명', min: 0.1, max: 20, default: 1, curve: 'log' },
@@ -91,7 +110,7 @@ export const EFFECT_SPECS: Record<EffectType, { label: string; params: Record<st
     },
   },
   distortion: {
-    label: '디스토션',
+    label: '디스토션', category: 'distortion',
     params: {
       driveDb: { label: '드라이브', min: 0, max: 40, default: 12, unit: 'dB' },
       toneHz: { label: '톤', min: 500, max: 16000, default: 6000, unit: 'Hz', curve: 'log' },
@@ -100,7 +119,7 @@ export const EFFECT_SPECS: Record<EffectType, { label: string; params: Record<st
     },
   },
   chorus: {
-    label: '코러스',
+    label: '코러스', category: 'modulation',
     params: {
       rateHz: { label: '속도', min: 0.05, max: 5, default: 0.8, unit: 'Hz', curve: 'log' },
       depthMs: { label: '깊이', min: 0, max: 10, default: 3, unit: 'ms' },
@@ -108,7 +127,7 @@ export const EFFECT_SPECS: Record<EffectType, { label: string; params: Record<st
     },
   },
   flanger: {
-    label: '플랜저',
+    label: '플랜저', category: 'modulation',
     params: {
       rateHz: { label: '속도', min: 0.05, max: 5, default: 0.3, unit: 'Hz', curve: 'log' },
       depthMs: { label: '깊이', min: 0, max: 5, default: 2, unit: 'ms' },
@@ -117,7 +136,7 @@ export const EFFECT_SPECS: Record<EffectType, { label: string; params: Record<st
     },
   },
   phaser: {
-    label: '페이저',
+    label: '페이저', category: 'modulation',
     params: {
       rateHz: { label: '속도', min: 0.05, max: 5, default: 0.5, unit: 'Hz', curve: 'log' },
       depth: { label: '깊이', min: 0, max: 1, default: 0.7 },
@@ -126,14 +145,14 @@ export const EFFECT_SPECS: Record<EffectType, { label: string; params: Record<st
     },
   },
   tremolo: {
-    label: '트레몰로',
+    label: '트레몰로', category: 'modulation',
     params: {
       rateHz: { label: '속도', min: 0.1, max: 15, default: 5, unit: 'Hz', curve: 'log' },
       depth: { label: '깊이', min: 0, max: 1, default: 0.5 },
     },
   },
   width: {
-    label: '스테레오 폭',
+    label: '스테레오 폭', category: 'utility',
     params: {
       width: { label: '폭', min: 0, max: 2, default: 1 },
     },
@@ -141,7 +160,7 @@ export const EFFECT_SPECS: Record<EffectType, { label: string; params: Record<st
   // 3D 패너 — 헤드폰으로 들으면 앞뒤·위아래까지 (HRTF 바이노럴, Logic 바이노럴 패너).
   // 스피커 서라운드(5.1·Atmos)는 브라우저가 다채널 출력을 안 주므로 이 길로 간다
   spatial: {
-    label: '3D 패너 (바이노럴)',
+    label: '3D 패너 (바이노럴)', category: 'spatial',
     params: {
       azimuth: { label: '방향', min: -180, max: 180, default: 0, unit: '°' },
       elevation: { label: '높이', min: -60, max: 60, default: 0, unit: '°' },
@@ -149,6 +168,9 @@ export const EFFECT_SPECS: Record<EffectType, { label: string; params: Record<st
     },
   },
 };
+
+/** 이펙트 전체 선언 — UI·오토메이션·검증이 이것 하나를 본다 */
+export const EFFECT_SPECS: Record<EffectType, EffectDecl> = { ...WEB_EFFECT_SPECS, ...RUST_EFFECT_SPECS };
 
 /** 방향·높이·거리 → 듣는 사람 기준 좌표 (오른쪽 +x, 위 +y, 앞 −z — Web Audio 기본 자세) */
 export function spatialPosition(azimuthDeg: number, elevationDeg: number, distance: number): { x: number; y: number; z: number } {

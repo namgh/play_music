@@ -86,6 +86,15 @@ export interface AudioRenderer {
    */
   readLevel?(trackId: TrackId | null): { peak: number; rms: number } | null;
 
+  /**
+   * Rust 이펙트의 미터(게인 감소·튜너·라우드니스 …). `owner` 는 트랙 id, 버스 id, `null`(마스터).
+   * `index` 는 이펙트 목록 자리. 미터가 없거나 대체 렌더러면 `null`
+   */
+  readEffectMeters?(owner: string | null, index: number): Float32Array | null;
+
+  /** 지연 보정이 맞추고 있는 가장 긴 경로 지연(샘플) — 믹서 표시용 */
+  compensationSamples?(): number;
+
   capabilitiesOf(instrumentId: string): InstrumentCapabilities;
 
   /**

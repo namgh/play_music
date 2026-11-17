@@ -14,7 +14,10 @@ import type { EffectSpec } from '../model/project.ts';
 import {
   dbToGain, distortionCurve, isEffectType, spatialPosition, resolveEffectParams, reverbMixGains, synthesizeReverbIr,
 } from './effects.ts';
-import type { EffectType } from './effects.ts';
+import type { WebEffectType } from './effects.ts';
+import { isRustEffect } from './rustEffects.ts';
+import type { RustEffectType } from './rustEffects.ts';
+import { createRustFxNode } from './fxRuntime.ts';
 
 /** 오토메이션이 직접 움직일 수 있는 `AudioParam` 과, 파라미터의 실제 값 → 그 param 값 변환 */
 export interface ParamBinding {
@@ -31,6 +34,10 @@ export interface EffectChain {
    * 순번은 **바이패스 포함** 원래 목록의 자리다 (`AutomationLane.target` 의 `fx:` 와 같다)
    */
   bindings?: Record<string, ParamBinding[]>;
+  /** 처리 지연(샘플) — 지연 보정(PDC)이 쓴다. 없으면 0 */
+  latency?: number;
+  /** 이펙트 순번(바이패스 포함 원래 자리) → 최근 미터 값. Rust 이펙트 중 미터가 있는 것만 */
+  meters?: Map<number, Float32Array>;
 }
 
 const same = (v: number) => v;
@@ -421,7 +428,22 @@ function buildSpatial(ctx: BaseAudioContext, p: Record<string, number>): EffectC
   };
 }
 
-const BUILDERS: Record<EffectType, (ctx: BaseAudioContext, p: Record<string, number>) => EffectChain> = {
+/**
+ * Rust 이펙트 (`EFFECTS_PLAN.md`) — 워크렛 노드 하나. 파라미터마다 AudioParam 이 있어 오토메이션이
+ * 값 그대로 움직인다. 워크렛이 없는 컨텍스트에서는 통과(게인 하나)로 떨어진다.
+ */
+function buildRust(ctx: BaseAudioContext, type: RustEffectType, p: Record<string, number>): EffectChain & { meterValues?: Float32Array } {
+  const fx = createRustFxNode(ctx, type, p);
+  if (!fx) {
+    const pass = ctx.createGain();
+    return { input: pass, output: pass, dispose: () => pass.disconnect() };
+  }
+  const bindings: Record<string, ParamBinding[]> = {};
+  for (const [key, param] of Object.entries(fx.params)) bindings[key] = [{ param, map: same }];
+  return { input: fx.node, output: fx.node, dispose: fx.dispose, bindings, latency: fx.latency, meterValues: fx.meters };
+}
+
+const BUILDERS: Record<WebEffectType, (ctx: BaseAudioContext, p: Record<string, number>) => EffectChain> = {
   eq: buildEq,
   compressor: buildCompressor,
   reverb: buildReverb,
@@ -458,6 +480,8 @@ export function buildEffectChain(ctx: BaseAudioContext, specs: readonly EffectSp
 
   let tail: AudioNode = passthrough;
   const bindings: Record<string, ParamBinding[]> = {};
+  const meters = new Map<number, Float32Array>();
+  let latency = 0;
   for (const [index, spec] of specs.entries()) {
     if (spec.bypass) continue;
     if (!isEffectType(spec.type)) {
@@ -465,10 +489,14 @@ export function buildEffectChain(ctx: BaseAudioContext, specs: readonly EffectSp
       throw new Error(`알 수 없는 이펙트: ${spec.type}`);
     }
     const params = resolveEffectParams(spec);
-    const chain = BUILDERS[spec.type](ctx, params);
+    const chain = isRustEffect(spec.type)
+      ? buildRust(ctx, spec.type, params)
+      : BUILDERS[spec.type as WebEffectType](ctx, params);
     tail.connect(chain.input);
     tail = chain.output;
     built.push(chain);
+    latency += chain.latency ?? 0;
+    if ('meterValues' in chain && chain.meterValues) meters.set(index, chain.meterValues as Float32Array);
     for (const [name, list] of Object.entries(chain.bindings ?? {})) bindings[`${index}:${name}`] = list;
   }
 
@@ -476,6 +504,8 @@ export function buildEffectChain(ctx: BaseAudioContext, specs: readonly EffectSp
     input: passthrough,
     output: tail,
     bindings,
+    latency,
+    meters,
     dispose: () => {
       passthrough.disconnect();
       for (const chain of built) chain.dispose();

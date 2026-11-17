@@ -1213,7 +1213,7 @@ export function App() {
       )}
       {view === 'mixer' && (
         <div className="scope-body min-h-0 flex-1 overflow-y-auto p-5">
-          <Mixer editor={editor} readLevel={engine.readLevel} />
+          <Mixer editor={editor} readLevel={engine.readLevel} readEffectMeters={engine.readEffectMeters} compensationSamples={engine.compensationSamples} />
         </div>
       )}
 

@@ -13,8 +13,8 @@ import { createTrack } from '../model/factory.ts';
 
 const TYPES = Object.keys(EFFECT_SPECS) as EffectType[];
 
-test('이펙트 14종 — 기본값이 범위 안이고 그대로 해석된다', () => {
-  assert.equal(TYPES.length, 14);
+test('이펙트 — Web Audio 14종 + Rust 코어, 기본값이 범위 안이고 그대로 해석된다', () => {
+  assert.ok(TYPES.length >= 14);
   for (const type of TYPES) {
     const fx = createEffect(type);
     const resolved = resolveEffectParams(fx);

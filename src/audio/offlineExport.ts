@@ -22,6 +22,7 @@ import type { InstrumentDefinition } from '../instruments/types.ts';
 import { instrumentParams, resolveInstrument } from '../instruments/resolve.ts';
 import { scheduleTrackLanes } from './automation.ts';
 import { BusGraph } from './busGraph.ts';
+import { markWorkletContext } from './fxRuntime.ts';
 import { planAudio, scheduleAudioRegions } from './audioRegions.ts';
 import { decodeAll } from './assets.ts';
 import { vcaScale } from '../model/project.ts';
@@ -55,6 +56,7 @@ export async function renderOfflineWithWorklet(
     sampleRate,
   });
   await offline.audioWorklet.addModule(WORKLET_URL);
+  markWorkletContext(offline);
 
   const master = buildEffectChain(offline, project.master.effects);
   const masterGain = offline.createGain();
@@ -96,7 +98,7 @@ export async function renderOfflineWithWorklet(
     scheduleTrackLanes(track, { automationGain, panNode: pan, bindings: effects.bindings }, project.tempo, 0, 0);
     node.connect(gain).connect(pan).connect(effects.input);
     effects.output.connect(automationGain);
-    buses.routeTrack(track, automationGain);
+    buses.routeTrack(track, automationGain, effects.latency ?? 0);
 
     // 워크렛이 wasm 을 준비했다고 알려 줄 때까지 기다린다. 준비 전에 예약하면
     // 그 메시지들이 무시돼 **음이 빠진 파일**이 나온다

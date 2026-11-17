@@ -40,6 +40,7 @@ import { buildEffectChain } from './effectGraph.ts';
 import type { EffectChain } from './effectGraph.ts';
 import { scheduleClick } from './metronome.ts';
 import { BusGraph } from './busGraph.ts';
+import { markWorkletContext } from './fxRuntime.ts';
 import { planAudio, scheduleAudioRegions } from './audioRegions.ts';
 import { decodeAsset } from './assets.ts';
 import { countInSeconds } from './scheduler.ts';
@@ -150,6 +151,7 @@ export class WorkletRenderer implements AudioRenderer {
         `워크렛 로드 실패 (${WORKLET_URL}): ${err instanceof Error ? err.message : String(err)}`,
       );
     }
+    markWorkletContext(ctx);
     return new WorkletRenderer(ctx, registry, wasmBytes);
   }
 
@@ -230,7 +232,6 @@ export class WorkletRenderer implements AudioRenderer {
     runtime.voiceKind = voiceKindIndex(instrument.voice);
     runtime.gainNode.gain.value = track.gain * instrument.baseLevel * (this.project ? vcaScale(this.project, track) : 1);
     runtime.panNode.pan.value = track.pan;
-    this.busGraph.routeTrack(track, runtime.analyser);
 
     // **발음 중인 소리에도 파라미터를 반영한다.** 스무딩이 클릭을 막아 준다
     runtime.node.port.postMessage({
@@ -247,6 +248,8 @@ export class WorkletRenderer implements AudioRenderer {
       runtime.panNode.connect(runtime.effects.input);
       runtime.effects.output.connect(runtime.automationGain);
     }
+    // 이펙트를 다시 지은 **뒤에** 잇는다 — 체인 지연이 바뀌었으면 지연 보정이 그 값을 써야 한다
+    this.busGraph.routeTrack(track, runtime.analyser, runtime.effects.latency ?? 0);
   }
 
   /** 모든 트랙 워크렛이 준비될 때까지 기다린다. 재생·시청 전에 호출한다 */
@@ -297,6 +300,19 @@ export class WorkletRenderer implements AudioRenderer {
    *
    * `peak >= 1` 이면 그 지점에서 이미 넘친 것이다. 마스터에서 넘치면 파일이 잘린다.
    */
+  readEffectMeters(owner: string | null, index: number): Float32Array | null {
+    const chain = owner === null
+      ? this.masterEffects
+      : owner.startsWith('bus_')
+        ? this.busGraph.busEffects(owner as unknown as BusId)
+        : this.tracks.get(owner as TrackId)?.effects;
+    return chain?.meters?.get(index) ?? null;
+  }
+
+  compensationSamples(): number {
+    return this.busGraph.maxLatency();
+  }
+
   readLevel(trackId: TrackId | null): { peak: number; rms: number } | null {
     // 버스 id 도 받는다 — 믹서의 Aux 스트립 미터
     const analyser = trackId === null
