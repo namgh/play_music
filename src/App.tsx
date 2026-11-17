@@ -17,6 +17,7 @@ import { NOTE_NAMES } from './model/pitch.ts';
 import { PPQ, ticksPerBar, ticksPerBeat, ticksToSeconds } from './model/time.ts';
 import { positionAt } from './model/meter.ts';
 import { adjacentMarkerTick, keyAt, tapTempo } from './editor/arrangement.ts';
+import { ExportPanel } from './ui/ExportPanel.tsx';
 import { extractVoice, forceLegato, humanize, removeOverlaps, scaleQuantize, scaleVelocity } from './editor/noteTools.ts';
 import type { NoteColorMode } from './ui/PianoRoll.tsx';
 import { createStack, setTrackFlag, setTrackStack } from './editor/tracks.ts';
@@ -129,7 +130,7 @@ export function App() {
   const [lcdMode, setLcdMode] = useState<'bars' | 'time'>('bars');
   const taps = useRef<number[]>([]);
   /** 상단 바에서 열린 띄움 창. 한 번에 하나만 */
-  const [menu, setMenu] = useState<'file' | 'theme' | null>(null);
+  const [menu, setMenu] = useState<'file' | 'theme' | 'export' | null>(null);
   const theme = useThemeState();
   const fileInput = useRef<HTMLInputElement | null>(null);
   const midiInput = useRef<HTMLInputElement | null>(null);
@@ -707,14 +708,18 @@ export function App() {
           <button
             type="button"
             disabled={engine.exporting}
-            onClick={() => void engine.exportWav()}
+            onClick={() => setMenu(menu === 'export' ? null : 'export')}
+            aria-expanded={menu === 'export'}
             className="ml-1 flex h-9 items-center gap-2 rounded-full bg-cta px-4 text-[13px] font-semibold text-cta-ink disabled:opacity-50"
           >
-            <IconExport />{engine.exporting ? '내보내는 중…' : 'WAV 내보내기'}
+            <IconExport />{engine.exporting ? '내보내는 중…' : '내보내기'}
           </button>
         </div>
 
-        {menu !== null && (
+        {menu === 'export' && (
+          <ExportPanel project={project} exporting={engine.exporting} onBounce={engine.bounce} onClose={() => setMenu(null)} />
+        )}
+        {menu !== null && menu !== 'export' && (
           // 바깥을 누르면 닫는다
           <div className="fixed inset-0 z-40" onClick={() => setMenu(null)} aria-hidden="true" />
         )}

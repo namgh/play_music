@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { PlayOptions } from './renderer.ts';
+import { fadeOutTail, measureBounce, normalizePeak, safeFileName, sliceRange, tpdfDither } from './bounce.ts';
+import type { BounceReport } from './bounce.ts';
+import { makeZip } from './zip.ts';
+import { ticksToSeconds } from '../model/time.ts';
 import type { Project, TrackId } from '../model/project.ts';
 import { createNote, projectLengthTicks } from '../model/factory.ts';
 import type { InstrumentDefinition } from '../instruments/types.ts';
@@ -29,6 +33,23 @@ export const ENGINE_LABELS: Record<EngineKind, string> = {
   worklet: 'Rust/WASM · 워크렛',
   buffer: 'Rust/WASM · 미리 렌더',
   typescript: 'TypeScript (대체)',
+};
+
+export interface BounceOptions {
+  startTick: number;
+  endTick: number;
+  /** 끝 뒤에 더 담을 꼬리(초) — 리버브·딜레이가 끝까지 울리게 */
+  tailSec: number;
+  sampleRate: 44100 | 48000;
+  bitDepth: 16 | 24;
+  /** 피크 노멀라이즈 목표(dBFS). null 이면 안 한다 */
+  normalizeDb: number | null;
+  /** 트랙마다 따로 (ZIP 으로 묶는다) */
+  stems: boolean;
+}
+
+export const DEFAULT_BOUNCE: BounceOptions = {
+  startTick: 0, endTick: Number.MAX_SAFE_INTEGER, tailSec: 2, sampleRate: 48000, bitDepth: 24, normalizeDb: null, stems: false,
 };
 
 export function useAudioEngine(
@@ -189,40 +210,68 @@ export function useAudioEngine(
     return renderer?.readLevel ? renderer.readLevel(trackId) : null;
   }, []);
 
-  const exportWav = useCallback(async () => {
+  /**
+   * 바운스 (Logic Bounce, `LOGIC_PARITY.md` 1-13). 렌더는 언제나 곡 전체를 그리고
+   * 범위·노멀라이즈·디더는 그 결과를 다듬는다 (`bounce.ts`). 스템이면 ZIP 하나로.
+   */
+  const bounce = useCallback(async (options: BounceOptions = DEFAULT_BOUNCE): Promise<BounceReport | null> => {
     setExporting(true);
     try {
       const renderer = await ensure();
-      renderer.setProject(projectRef.current);
-      const result = await renderer.exportAudio({ sampleRate: 48000, stems: false });
-      const first = result.buffers[0];
-      if (!first) throw new Error('내보낼 것이 없다');
+      const project = projectRef.current;
+      renderer.setProject(project);
+      const result = await renderer.exportAudio({ sampleRate: options.sampleRate, stems: options.stems });
+      if (result.buffers.length === 0) throw new Error('내보낼 것이 없다');
 
-      // **피크를 재서 알려 준다.** 1 을 넘으면 인코딩에서 잘리는데, 조용히 잘린
-      // 파일이 나가면 사용자는 자기 곡이 그대로 나갔다고 믿는다 (`ROADMAP.md` P3)
-      //
-      // 얼마나 내려야 하는지까지 함께 계산한다 — "낮추고 다시 내보내세요"라고만 하면
-      // 사용자가 숫자를 스스로 찾아 헤맨다 (`headroom.ts`)
-      setClip(reportClipping(peakAmplitude(first.channels), projectRef.current.master.gain));
+      const sr = result.sampleRate;
+      const startSec = ticksToSeconds(options.startTick, project.tempo);
+      const endSec = ticksToSeconds(options.endTick, project.tempo) + options.tailSec;
+      const songEnd = options.endTick >= projectLengthTicks(project);
+      let report: BounceReport | null = null;
 
-      const bytes = encodeWav(first.channels, { sampleRate: result.sampleRate, bitDepth: 24 });
-      const blob = new Blob([bytes as unknown as BlobPart], { type: 'audio/wav' });
+      const files = result.buffers.map((buffer, index) => {
+        let channels = sliceRange(buffer.channels, sr, { startSec, endSec });
+        // 곡 중간에서 끊었는데 꼬리도 안 붙였으면 끝에서 "딱" 한다 — 짧게 내린다
+        if (!songEnd && options.tailSec === 0) channels = fadeOutTail(channels, sr);
+        if (options.normalizeDb !== null) channels = normalizePeak(channels, options.normalizeDb).channels;
+        // **피크는 노멀라이즈 뒤에 잰다** — 1 을 넘으면 인코딩에서 잘린다 (`ROADMAP.md` P3)
+        if (index === 0) {
+          setClip(reportClipping(peakAmplitude(channels), project.master.gain));
+          report = measureBounce(channels, sr);
+        }
+        if (options.bitDepth === 16) channels = tpdfDither(channels, 16);
+        const trackName = buffer.trackId === null ? null : project.tracks.find((t) => t.id === buffer.trackId)?.name ?? `트랙 ${index + 1}`;
+        const name = `${safeFileName(project.name, 'project')}${trackName ? ` - ${safeFileName(trackName, `트랙 ${index + 1}`)}` : ''}.wav`;
+        return { name, data: encodeWav(channels, { sampleRate: sr, bitDepth: options.bitDepth }) };
+      });
+
+      const single = files.length === 1 ? files[0]! : null;
+      const blob = single
+        ? new Blob([single.data as unknown as BlobPart], { type: 'audio/wav' })
+        : new Blob([makeZip(files) as unknown as BlobPart], { type: 'application/zip' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `${projectRef.current.name || 'project'}.wav`;
+      link.download = single ? single.name : `${safeFileName(project.name, 'project')} - 스템.zip`;
       link.click();
       URL.revokeObjectURL(url);
       setError(null);
+      return report;
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+      return null;
     } finally {
       setExporting(false);
     }
   }, [ensure]);
 
+  /** 예전 단추 — 곡 전체 · 48kHz · 24bit */
+  const exportWav = useCallback(() => bounce({
+    ...DEFAULT_BOUNCE, endTick: projectLengthTicks(projectRef.current),
+  }), [bounce]);
+
   return {
     state, playheadTick, error, exporting, engineKind, clip, readLevel,
-    play, stop, audition, exportWav, setMetronome,
+    play, stop, audition, exportWav, bounce, setMetronome,
   };
 }

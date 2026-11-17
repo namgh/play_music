@@ -70,6 +70,8 @@ const centerOf = (sel) => ev(`(() => { const e = ${sel}; if (!e) return null; e.
 const clickEl = async (sel) => { const p = await centerOf(sel); if (!p) throw new Error('요소 없음: ' + sel); await click(p.x, p.y); };
 const byText = (t) => `[...document.querySelectorAll('button')].find((b) => b.textContent.trim().includes(${JSON.stringify(t)}))`;
 const byTitle = (t) => `[...document.querySelectorAll('button')].find((b) => (b.title || '').includes(${JSON.stringify(t)}))`;
+// 내보내기 창 — 열려 있으면 그대로 둔다 (단추가 여닫기를 오간다)
+const openExport = async () => { if (!(await ev(`!!document.querySelector('[role=dialog][aria-label="내보내기"]')`))) await clickEl(`document.querySelector('button[aria-expanded]:not([aria-label])') && [...document.querySelectorAll('button')].find((b) => b.textContent.trim() === '내보내기')`); };
 const noteCount = () => ev(`document.querySelectorAll('.cursor-crosshair [role=button]').length`);
 const saved = () => ev(`(() => { const t = localStorage.getItem('project-autosave-v1'); if (!t) return null; const p = JSON.parse(t); const d = p.project ?? p; return (d.tracks ?? []).reduce((n, tr) => n + tr.clips.reduce((m, c) => m + c.notes.length, 0), 0); })()`);
 
@@ -174,7 +176,7 @@ try {
   record('정지', !(await centerOf(byTitle('정지'))), `정지 0.6초 뒤 피크 ${tail.toFixed(4)}`);
 
   // 7. WAV 내보내기
-  await clickEl(byText('WAV 내보내기'));
+  await openExport(); await clickEl(byText('바운스'));
   let wav = null;
   for (let i = 0; i < 60 && !wav; i++) { await sleep(500); wav = readdirSync(DL).find((f) => f.endsWith('.wav')) ?? null; }
   if (wav) { await sleep(500); const a = analyzeWav(join(DL, wav)); record('WAV 내보내기', a.ok && a.peak > 0.001, a.ok ? `${wav} · ${a.ch}ch ${a.rate}Hz ${a.bits}bit · ${a.seconds.toFixed(2)}초 · 피크 ${a.peak.toFixed(3)} · RMS ${a.rms.toFixed(4)} · ${(a.bytes / 1024).toFixed(0)}KB` : a.why); }
@@ -363,7 +365,7 @@ try {
   const stop16 = await centerOf(byTitle('정지')); if (stop16) await click(stop16.x, stop16.y);
   record('버스를 거쳐도 재생됨 (마스터 이펙트 바꾼 뒤)', peak16 > 0.001, `피크 ${peak16.toFixed(4)}`);
   for (const f of readdirSync(DL)) rmSync(join(DL, f));
-  await clickEl(byText('WAV 내보내기'));
+  await openExport(); await clickEl(byText('바운스'));
   let wav16 = null;
   for (let i = 0; i < 60 && !wav16; i++) { await sleep(500); wav16 = readdirSync(DL).find((f) => f.endsWith('.wav')) ?? null; }
   if (wav16) { await sleep(500); const a = analyzeWav(join(DL, wav16)); record('버스 경로 내보내기', a.ok && a.peak > 0.001, a.ok ? `피크 ${a.peak.toFixed(3)} · ${a.seconds.toFixed(1)}초` : a.why); }
@@ -386,6 +388,33 @@ try {
   record(`이펙트 ${fxTypes.length}종을 한 트랙에 걸고 재생`, fxTypes.length === 13 && /\|\|13\b/.test(String(fxCount)) && peak17 > 0.0005 && problems.length === n17,
     `종류 ${fxTypes.length} · 걸린 수 ${fxCount} · 피크 ${peak17.toFixed(4)} · 새 오류 ${problems.length - n17}`);
   await shot('13-effects');
+
+  // 18. 내보내기 창 — 16bit·44.1k·노멀라이즈, 측정값 표시, 스템 ZIP
+  for (const f of readdirSync(DL)) rmSync(join(DL, f));
+  await openExport();
+  await clickEl(byText('16bit + 디더')); await clickEl(byText('44.1 kHz'));
+  await ev(`(() => { const box = [...document.querySelectorAll('[role=dialog] input[type=checkbox]')][1]; box.click(); })()`);
+  await clickEl(byText('바운스'));
+  let wav18 = null;
+  for (let i = 0; i < 60 && !wav18; i++) { await sleep(500); wav18 = readdirSync(DL).find((f) => f.endsWith('.wav')) ?? null; }
+  if (wav18) {
+    await sleep(500);
+    const a = analyzeWav(join(DL, wav18));
+    record('16bit·44.1kHz·노멀라이즈 바운스', a.ok && a.bits === 16 && a.rate === 44100 && Math.abs(20 * Math.log10(a.peak) + 1) < 0.2, a.ok ? `${a.bits}bit ${a.rate}Hz 피크 ${(20 * Math.log10(a.peak)).toFixed(2)}dB` : a.why);
+  } else record('16bit·44.1kHz·노멀라이즈 바운스', false, '파일이 안 내려옴');
+  const meas = await ev(`document.querySelector('[aria-label="내보낸 파일 측정"]')?.innerText ?? ''`);
+  record('내보낸 파일 측정값 표시', /dBTP/.test(meas), meas.replace(/\n/g, ' '));
+  for (const f of readdirSync(DL)) rmSync(join(DL, f));
+  await clickEl(byText('48 kHz'));
+  await ev(`(() => { const box = [...document.querySelectorAll('[role=dialog] input[type=checkbox]')][2]; box.click(); })()`);
+  await clickEl(byText('스템'));
+  let zip18 = null;
+  for (let i = 0; i < 90 && !zip18; i++) { await sleep(500); zip18 = readdirSync(DL).find((f) => f.endsWith('.zip')) ?? null; }
+  const zipBytes = zip18 ? readFileSync(join(DL, zip18)) : null;
+  const entries = zipBytes ? (zipBytes.toString('latin1').match(/PK\x01\x02/g) ?? []).length : 0;
+  record('스템 ZIP', zip18 !== null && entries >= 2, `${zip18} · 파일 ${entries}개`);
+  await shot('14-export');
+  await clickEl(byText('닫기'));
 } catch (err) {
   record('스크립트 실행', false, String(err.stack ?? err).slice(0, 500));
 } finally {

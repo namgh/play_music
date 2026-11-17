@@ -137,6 +137,19 @@ export const SCREENS = [
       await sleep(200);
     },
   },
+  {
+    name: 'a07-export', area: 7, title: '내보내기 — 범위(곡·반복·구간) · 24/16bit+디더 · 48/44.1k · 꼬리 · 노멀라이즈 · 스템 ZIP · 측정(LUFS·트루피크)',
+    run: async (b) => {
+      await b.clickEl(`[...document.querySelectorAll('button')].find((x) => x.textContent.trim() === '내보내기')`);
+      await sleep(200);
+      await b.ev(`(() => { const box = [...document.querySelectorAll('[role=dialog] input[type=checkbox]')][1]; box.click(); })()`);
+      await b.clickEl(`[...document.querySelectorAll('button')].find((x) => x.textContent.trim() === '바운스')`);
+      for (let i = 0; i < 60; i++) {
+        if (await b.ev(`!!document.querySelector('[aria-label="내보낸 파일 측정"]')`)) break;
+        await sleep(500);
+      }
+    },
+  },
 ];
 
 async function capture(b, screen) {
