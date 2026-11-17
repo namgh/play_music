@@ -199,6 +199,18 @@ export const SCREENS = [
       await sleep(200);
     },
   },
+  {
+    name: 'a12-smart-controls', area: 12, title: '스마트 컨트롤 — 손잡이 8개(매핑) · MIDI 이펙트(아르페지에이터·코드 트리거·리피터…)',
+    run: async (b) => {
+      await b.clickEl(byLabel('로즈 선택'));
+      await b.clickEl(`[...document.querySelectorAll('[role=tab]')].find((x) => x.textContent.includes('컨트롤'))`);
+      await sleep(200);
+      await b.choose(byLabel('MIDI 이펙트 추가'), 'arpeggiator');
+      await sleep(150);
+      await b.choose(byLabel('MIDI 이펙트 추가'), 'noteRepeater');
+      await sleep(200);
+    },
+  },
 ];
 
 async function capture(b, screen) {

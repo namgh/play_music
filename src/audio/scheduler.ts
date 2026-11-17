@@ -14,6 +14,7 @@ import type {
 } from '../model/project.ts';
 import { audibleTracks, isClipAudible } from '../model/project.ts';
 import { beatsBetween, positionAt } from '../model/meter.ts';
+import { processedNotes } from './midiEffects.ts';
 import type { Ticks, TimeSignature } from '../model/time.ts';
 import { PPQ, secondsToTicks, ticksPerBeat, ticksToSeconds } from '../model/time.ts';
 import type { Tuning } from '../model/pitch.ts';
@@ -48,7 +49,8 @@ export function collectNoteEvents(project: Project, fromTick: Ticks, toTick: Tic
       // 클립이 구간과 겹치지 않으면 음을 볼 필요가 없다
       if (clip.startTick >= toTick || clip.startTick + clip.lengthTick <= fromTick) continue;
 
-      for (const note of clip.notes) {
+      // MIDI 이펙트를 거친 음 — 이펙트가 없으면 클립의 음 그대로 (`midiEffects.ts`)
+      for (const note of processedNotes(track, clip, project.key)) {
         const startTick = clip.startTick + note.startTick;
         if (startTick < fromTick || startTick >= toTick) continue;
 

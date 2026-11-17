@@ -14,7 +14,7 @@
 import { CHORD_QUALITIES, SCHEMA_VERSION } from './project.ts';
 import type {
   AutomationLane, AutomationMode, AutomationPoint, AutomationTarget, ChordId, ChordQuality, Clip, ClipId, EffectSpec, LoopRegion,
-  MarkerId, MusicalKey, Note, NoteId, Origin, PitchCurve, Project, ProjectId, SectionId, StackId, Track, TrackId, BusId, VcaId, GroupId,
+  MarkerId, MusicalKey, Note, NoteId, Origin, PitchCurve, Project, ProjectId, SectionId, StackId, Track, TrackId, BusId, VcaId, GroupId, MidiEffect,
 } from './project.ts';
 import { normalizeSignatureChanges } from './meter.ts';
 import { DEFAULT_TEMPO, DEFAULT_TIME_SIGNATURE, PPQ } from './time.ts';
@@ -246,6 +246,12 @@ function parseTrack(value: unknown, seen: Set<string>): Track {
     }),
     ...(typeof raw.vcaId === 'string' && raw.vcaId.startsWith('vca_') ? { vcaId: raw.vcaId as VcaId } : {}),
     ...(typeof raw.groupId === 'string' && raw.groupId.startsWith('grp_') ? { groupId: raw.groupId as GroupId } : {}),
+    // MIDI 이펙트는 모양만 확인하고 그대로 싣는다 — 종류를 모르면 버린다
+    ...(Array.isArray(raw.midiEffects) ? {
+      midiEffects: (raw.midiEffects as unknown[]).filter((fx): fx is MidiEffect => !!fx && typeof fx === 'object'
+        && ['arpeggiator', 'chordTrigger', 'transposer', 'velocity', 'noteRepeater', 'scaleQuantizer', 'randomizer'].includes(String((fx as { type?: unknown }).type))),
+    } : {}),
+    ...(Array.isArray(raw.smartControls) ? { smartControls: (raw.smartControls as unknown[]).filter((x): x is string => typeof x === 'string') } : {}),
   };
 }
 

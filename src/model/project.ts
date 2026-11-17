@@ -219,7 +219,24 @@ export interface Track {
   vcaId?: VcaId;
   /** 믹서 그룹 — 같은 그룹은 볼륨·뮤트·솔로를 함께 움직인다 (편집 쪽에서) */
   groupId?: GroupId;
+  /** MIDI 이펙트 — 위에서 아래 순서로 */
+  midiEffects?: MidiEffect[];
+  /** 스마트 컨트롤에 내놓을 손잡이 (대상 목록). 없으면 자동으로 고른다 */
+  smartControls?: string[];
 }
+
+/**
+ * MIDI 이펙트 (Logic MIDI plug-ins). 음 데이터는 그대로 두고 **소리 낼 때만** 바뀐다
+ * (`src/audio/midiEffects.ts`). 틱 값은 4분음표 = 960.
+ */
+export type MidiEffect =
+  | { type: 'arpeggiator'; bypass: boolean; mode: 'up' | 'down' | 'updown' | 'random' | 'played'; rate: number; octaves: number; gate: number }
+  | { type: 'chordTrigger'; bypass: boolean; intervals: number[] }
+  | { type: 'transposer'; bypass: boolean; semitones: number }
+  | { type: 'velocity'; bypass: boolean; mode: 'fixed' | 'scale' | 'add'; value: number }
+  | { type: 'noteRepeater'; bypass: boolean; repeats: number; delay: number; feedback: number; transpose: number }
+  | { type: 'scaleQuantizer'; bypass: boolean }
+  | { type: 'randomizer'; bypass: boolean; timing: number; velocity: number };
 
 export interface Send {
   busId: BusId;

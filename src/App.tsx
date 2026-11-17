@@ -22,13 +22,14 @@ import { SoundBrowser } from './ui/SoundBrowser.tsx';
 import { PlaySurface } from './ui/PlaySurface.tsx';
 import { EventList } from './ui/EventList.tsx';
 import { StepSequencer } from './ui/StepSequencer.tsx';
+import { SmartControls } from './ui/SmartControls.tsx';
 import { extractVoice, forceLegato, humanize, removeOverlaps, scaleQuantize, scaleVelocity } from './editor/noteTools.ts';
 import type { NoteColorMode } from './ui/PianoRoll.tsx';
 import { createStack, setTrackFlag, setTrackStack } from './editor/tracks.ts';
 import type { GlobalSelection } from './ui/GlobalTracks.tsx';
 import { INSTRUMENT_CATALOG, playableInstrumentIds } from './instruments/definitions.ts';
 import { useInstruments } from './instruments/useInstruments.ts';
-import { resolveInstrument } from './instruments/resolve.ts';
+import { instrumentParams, resolveInstrument } from './instruments/resolve.ts';
 import { ENGINE_LABELS, useAudioEngine } from './audio/useAudioEngine.ts';
 import { PianoRoll } from './ui/PianoRoll.tsx';
 import { EditorToolbar } from './ui/EditorToolbar.tsx';
@@ -154,7 +155,7 @@ export function App() {
   /** 음 색 — 보기 설정 */
   const [noteColor, setNoteColor] = useState<NoteColorMode>('edit');
   /** 오른쪽 칸 탭 — 보기 설정 */
-  const [sideTab, setSideTab] = useState<'inspect' | 'browse'>('inspect');
+  const [sideTab, setSideTab] = useState<'inspect' | 'controls' | 'browse'>('inspect');
   /** 연주 칸(건반) — 보기 설정 */
   const [playOpen, setPlayOpen] = useState(false);
   /** 클립 편집기 보기 — 피아노 롤 / 이벤트 목록 */
@@ -1221,12 +1222,20 @@ export function App() {
           <aside className="scope-body flex min-h-0 min-w-0 flex-col gap-4 overflow-y-auto">
             {/* 오른쪽 칸 — 음 편집(인스펙터) 과 브라우저(소리 찾기) 를 탭으로 */}
             <div className="flex gap-1 rounded-lg bg-panel p-1" role="tablist" aria-label="오른쪽 칸">
-              {(['inspect', 'browse'] as const).map((tab) => (
+              {(['inspect', 'controls', 'browse'] as const).map((tab) => (
                 <button key={tab} type="button" role="tab" aria-selected={sideTab === tab} onClick={() => setSideTab(tab)}
                   className={`h-7 flex-1 rounded-md text-xs ${sideTab === tab ? 'bg-body font-semibold text-ink shadow-sm' : 'text-ink-3'}`}
-                >{tab === 'inspect' ? '음 편집' : '브라우저'}</button>
+                >{tab === 'inspect' ? '음 편집' : tab === 'controls' ? '컨트롤' : '브라우저'}</button>
               ))}
             </div>
+            {sideTab === 'controls' && track && (
+              <SmartControls
+                editor={editor}
+                track={track}
+                instrument={instrument}
+                params={instrument ? instrumentParams(instrument, track.toneId, track.toneParams) : {}}
+              />
+            )}
             {sideTab === 'browse' && (
               <SoundBrowser
                 editor={editor}

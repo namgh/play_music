@@ -496,6 +496,26 @@ try {
   const off22 = await totalNotes();
   record('스텝 칸 켜기·끄기', on22 === total22 + 1 && off22 === on22 - 1, `${total22} → ${on22} → ${off22}`);
   await shot('18-steps');
+
+  // 23. 스마트 컨트롤 — 손잡이 끌기, MIDI 이펙트(아르페지에이터) 걸고 재생
+  await clickEl(`[...document.querySelectorAll('[role=tab]')].find((b) => b.textContent.includes('컨트롤'))`);
+  await sleep(200);
+  const knob = await ev(`(() => { const e = document.querySelector('[data-smart-controls] svg[role=slider]'); const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, v: e.getAttribute('aria-valuenow') }; })()`);
+  await mouse('mouseMoved', knob.x, knob.y, { buttons: 0 }); await mouse('mousePressed', knob.x, knob.y);
+  for (let i = 1; i <= 5; i++) { await mouse('mouseMoved', knob.x, knob.y - i * 8); await sleep(30); }
+  await mouse('mouseReleased', knob.x, knob.y - 40); await sleep(300);
+  const knobAfter = await ev(`document.querySelector('[data-smart-controls] svg[role=slider]').getAttribute('aria-valuenow')`);
+  record('스마트 컨트롤 손잡이 끌기', Number(knobAfter) > Number(knob.v), `${knob.v} → ${knobAfter}`);
+  await ev(`(() => { const e = document.querySelector('[aria-label="MIDI 이펙트 추가"]'); Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(e, 'arpeggiator'); e.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+  await sleep(300);
+  const fx23 = await ev(`(() => { const p = JSON.parse(localStorage.getItem('project-autosave-v1')); const d = p.project ?? p; return d.tracks.map((t) => (t.midiEffects ?? []).map((f) => f.type).join('+')).join(','); })()`);
+  await clickEl(byTitle('맨 앞으로'));
+  await clickEl(byTitle('커서부터 재생'));
+  let peak23 = 0; for (let i = 0; i < 10; i++) { await sleep(150); peak23 = Math.max(peak23, await ev('window.__peak()')); }
+  const stop23 = await centerOf(byTitle('정지')); if (stop23) await click(stop23.x, stop23.y);
+  record('MIDI 이펙트(아르페지에이터) 걸고 재생', fx23.includes('arpeggiator') && peak23 > 0.001, `${fx23} · 피크 ${peak23.toFixed(4)}`);
+  await shot('19-smart-controls');
+  await clickEl(`[...document.querySelectorAll('[role=tab]')].find((b) => b.textContent.includes('음 편집'))`);
   await clickEl(`[...document.querySelectorAll('[aria-label="편집기 보기"] button')][0]`);
   await clickEl(`[...document.querySelectorAll('[aria-label="편집기 보기"] button')][0]`);
 } catch (err) {
