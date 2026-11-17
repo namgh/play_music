@@ -415,6 +415,28 @@ try {
   record('스템 ZIP', zip18 !== null && entries >= 2, `${zip18} · 파일 ${entries}개`);
   await shot('14-export');
   await clickEl(byText('닫기'));
+
+  // 19. 브라우저 — 검색, 곡에 없는 악기 미리 듣기, 트랙에 넣기, 패치 저장
+  await clickEl(`[...document.querySelectorAll('nav[aria-label="화면"] button')][0]`);
+  await sleep(300);
+  await clickEl(`[...document.querySelectorAll('[role=tab]')].find((b) => b.textContent.includes('브라우저'))`);
+  await ev(`(() => { const e = document.querySelector('[aria-label="악기 검색"]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(e, '마림바'); e.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+  await sleep(200);
+  const hits = await ev(`[...document.querySelectorAll('[data-instrument]')].map((e) => e.dataset.instrument).join(',')`);
+  record('악기 검색', hits === 'marimba', hits);
+  let peak19 = 0;
+  await clickEl(`document.querySelector('[aria-label="마림바 미리 듣기"]')`);
+  for (let i = 0; i < 12; i++) { await sleep(120); peak19 = Math.max(peak19, await ev('window.__peak()')); }
+  record('곡에 없는 악기 미리 듣기', peak19 > 0.001, `피크 ${peak19.toFixed(4)}`);
+  await clickEl(`[...document.querySelectorAll('[data-instrument="marimba"] button')].find((b) => b.textContent === '이 트랙에')`);
+  await sleep(300);
+  const inst19 = await ev(`(() => { const p = JSON.parse(localStorage.getItem('project-autosave-v1')); const d = p.project ?? p; return d.tracks.map((t) => t.instrumentId).join(','); })()`);
+  record('고른 트랙 악기 바꾸기', inst19.includes('marimba'), inst19);
+  await clickEl(`[...document.querySelectorAll('[data-browser] button')].find((b) => b.textContent === '저장')`);
+  await sleep(200);
+  const patches = await ev(`JSON.parse(localStorage.getItem('user-patches-v1') ?? '[]').length`);
+  record('패치 저장 (사용자 라이브러리)', patches === 1, `${patches}개`);
+  await shot('15-browser');
 } catch (err) {
   record('스크립트 실행', false, String(err.stack ?? err).slice(0, 500));
 } finally {

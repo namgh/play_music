@@ -150,6 +150,18 @@ export const SCREENS = [
       }
     },
   },
+  {
+    name: 'a08-browser', area: 8, title: '브라우저 — 검색·분류·미리 듣기·이 트랙에/새 트랙·내 음색(패치)',
+    run: async (b) => {
+      await b.clickEl(byLabel('어쿠스틱 기타 선택'));
+      await b.clickEl(`[...document.querySelectorAll('[role=tab]')].find((x) => x.textContent.includes('브라우저'))`);
+      await b.clickEl(`[...document.querySelectorAll('[aria-label="분류"] button')].find((x) => x.textContent === '기타')`);
+      await b.ev(`localStorage.setItem('user-patches-v1', JSON.stringify([{ id: 'pat_1', name: '따뜻한 로즈', instrumentId: 'electric-piano-rhodes', toneId: 'default', toneParams: null, savedAt: 1 }, { id: 'pat_2', name: '밝은 스트럼', instrumentId: 'acoustic-guitar', toneId: 'default', toneParams: null, savedAt: 0 }]))`);
+      await b.clickEl(`[...document.querySelectorAll('[role=tab]')].find((x) => x.textContent.includes('음 편집'))`);
+      await b.clickEl(`[...document.querySelectorAll('[role=tab]')].find((x) => x.textContent.includes('브라우저'))`);
+      await sleep(200);
+    },
+  },
 ];
 
 async function capture(b, screen) {

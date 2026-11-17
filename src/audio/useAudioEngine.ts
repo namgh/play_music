@@ -6,7 +6,10 @@ import type { BounceReport } from './bounce.ts';
 import { makeZip } from './zip.ts';
 import { ticksToSeconds } from '../model/time.ts';
 import type { Project, TrackId } from '../model/project.ts';
-import { createNote, projectLengthTicks } from '../model/factory.ts';
+import { createNote, createTrack, projectLengthTicks } from '../model/factory.ts';
+import { loadInstruments } from '../instruments/loader.ts';
+
+const PREVIEW_TRACK = 'trk_preview' as TrackId;
 import type { InstrumentDefinition } from '../instruments/types.ts';
 import type { AudioRenderer } from './renderer.ts';
 import { BufferRenderer } from './bufferRenderer.ts';
@@ -196,6 +199,24 @@ export function useAudioEngine(
     }
   }, [ensure]);
 
+  /**
+   * 곡에 없는 악기를 한 음 들려준다 (브라우저 미리 듣기). 렌더러에 **보이지 않는 트랙**
+   * 하나를 잠깐 얹는다 — 다음 편집의 `setProject` 가 그 트랙을 치운다.
+   */
+  const previewInstrument = useCallback(async (instrumentId: string, midi = 60) => {
+    try {
+      await loadInstruments([instrumentId]);
+      const renderer = await ensure();
+      const preview = { ...createTrack({ name: '미리 듣기', instrumentId }), id: PREVIEW_TRACK };
+      renderer.setProject({ ...projectRef.current, tracks: [...projectRef.current.tracks, preview] });
+      // 새 트랙의 워크렛이 wasm 을 준비하기 전에 보낸 음은 버려진다
+      await (renderer as { whenReady?: () => Promise<void> }).whenReady?.();
+      renderer.auditionNote(PREVIEW_TRACK, createNote({ startTick: 0, midi, velocity: 0.8 }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }, [ensure]);
+
   /** WAV 로 내보내고 다운로드시킨다 (`plan.md` 5-1 Phase 1 완료 조건) */
   /**
    * 미터가 프레임마다 부른다. **렌더러가 아직 없거나 레벨을 못 주면 `null`** 이고,
@@ -272,6 +293,6 @@ export function useAudioEngine(
 
   return {
     state, playheadTick, error, exporting, engineKind, clip, readLevel,
-    play, stop, audition, exportWav, bounce, setMetronome,
+    play, stop, audition, previewInstrument, exportWav, bounce, setMetronome,
   };
 }

@@ -18,6 +18,7 @@ import { PPQ, ticksPerBar, ticksPerBeat, ticksToSeconds } from './model/time.ts'
 import { positionAt } from './model/meter.ts';
 import { adjacentMarkerTick, keyAt, tapTempo } from './editor/arrangement.ts';
 import { ExportPanel } from './ui/ExportPanel.tsx';
+import { SoundBrowser } from './ui/SoundBrowser.tsx';
 import { extractVoice, forceLegato, humanize, removeOverlaps, scaleQuantize, scaleVelocity } from './editor/noteTools.ts';
 import type { NoteColorMode } from './ui/PianoRoll.tsx';
 import { createStack, setTrackFlag, setTrackStack } from './editor/tracks.ts';
@@ -149,6 +150,8 @@ export function App() {
   const [countIn, setCountIn] = useState(false);
   /** 음 색 — 보기 설정 */
   const [noteColor, setNoteColor] = useState<NoteColorMode>('edit');
+  /** 오른쪽 칸 탭 — 보기 설정 */
+  const [sideTab, setSideTab] = useState<'inspect' | 'browse'>('inspect');
   /**
    * **클립별** 표시 음역. **곡이 아니라 보기 설정**이라 프로젝트에 저장하지 않는다
    * (`plan.md` 5-4 — 프로젝트 데이터는 곡 자체다).
@@ -1184,7 +1187,24 @@ export function App() {
           {/* **오른쪽은 "이 편집기"의 열이다.** 줄 접기·음역·고스트는 화면에 대한
               설정이고, 그 아래가 선택한 음의 인스펙터다 */}
           <aside className="scope-body flex min-h-0 min-w-0 flex-col gap-4 overflow-y-auto">
-            {track && clip && instrument && (
+            {/* 오른쪽 칸 — 음 편집(인스펙터) 과 브라우저(소리 찾기) 를 탭으로 */}
+            <div className="flex gap-1 rounded-lg bg-panel p-1" role="tablist" aria-label="오른쪽 칸">
+              {(['inspect', 'browse'] as const).map((tab) => (
+                <button key={tab} type="button" role="tab" aria-selected={sideTab === tab} onClick={() => setSideTab(tab)}
+                  className={`h-7 flex-1 rounded-md text-xs ${sideTab === tab ? 'bg-body font-semibold text-ink shadow-sm' : 'text-ink-3'}`}
+                >{tab === 'inspect' ? '음 편집' : '브라우저'}</button>
+              ))}
+            </div>
+            {sideTab === 'browse' && (
+              <SoundBrowser
+                editor={editor}
+                track={track}
+                onPreview={(id) => void engine.previewInstrument(id)}
+                onSelectTrack={(id) => { setSelectedTrackId(id); setSelectedClipId(null); }}
+                onNotice={setNotice}
+              />
+            )}
+            {sideTab === 'inspect' && track && clip && instrument && (
               <EditorToolbar
                 fold={fold}
                 onFold={setFold}
@@ -1197,7 +1217,7 @@ export function App() {
                 onGhostMode={setGhostMode}
               />
             )}
-            <NoteInspector editor={editor} onAudition={audition} />
+            {sideTab === 'inspect' && <NoteInspector editor={editor} onAudition={audition} />}
           </aside>
         </div>
       )}
