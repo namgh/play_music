@@ -129,6 +129,17 @@ Tier 0·1 편집 조작까지 커밋됨 (2026-08-09).
 **작업 분할 기준**: 저 문서의 "Day" 는 실제로 하루보다 훨씬 작았다.
 **다음 계획부터는 거기서의 Day 1~4 를 합친 정도를 하루치로 잡는다.**
 
+### Logic 기능 채우기 — 20개 영역 1차 완료 (2026-11-17, `logic-parity` 브랜치)
+
+`LOGIC_PARITY.md` 3-1 의 23행 중 **대부분 17 · 일부 5(악보·오디오 편집·서라운드·영상·AI) · 이펙트 14종**.
+남은 큰 것: Flex(Phase 4), 생성 AI(착수 조건 — S4 음색 튜닝), 스피커 서라운드·Ableton Link(브라우저 불가),
+오디오가 .json 저장에 안 따라감(묶음 파일·서버 필요). 각 행의 "빠진 핵심" 칸이 다음 작업 목록이다.
+
+- 화면 시안: `design/studio-app.figcraft` (영역마다 페이지) — `npm run design:capture` 로 앱에서 떠 온다 (`design/README.md`)
+- 점검: `npm run check:browser` 71항목 (개발 서버가 떠 있어야 한다). 사람이 귀로 듣는 판정은 여전히 남아 있다
+- 새 파일 지도: 편집 `src/editor/{arrangement,tracks,noteTools,automationEdits,mixer,steps,recording,liveLoops,library,sessionPlayers}.ts`,
+  소리 `src/audio/{busGraph,midiEffects,audioRegions,assets,bounce,zip,mastering,midiInput}.ts`, 모델 `src/model/{meter,chords,notation,templates}.ts`
+
 ### 그 밖에는 `ROADMAP.md` 를 따른다
 
 목표는 **5축(음정 정밀도·용량/로딩·악기 수·소리 사실감·완성곡 완성도) 전부 상급**.
