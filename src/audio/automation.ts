@@ -10,7 +10,9 @@
  * `scheduleGainAutomation` 하나뿐이고, 나머지는 브라우저 없이 테스트된다.
  */
 
-import type { AutomationLane, AutomationPoint, Track } from '../model/project.ts';
+import type { AutomationLane, AutomationPoint, AutomationTarget, Track } from '../model/project.ts';
+import { EFFECT_SPECS, isEffectType, resolveEffectParams } from './effects.ts';
+import type { EffectParamSpec, EffectType } from './effects.ts';
 import type { Tempo, Ticks } from '../model/time.ts';
 import { ticksToSeconds } from '../model/time.ts';
 
@@ -65,5 +67,130 @@ export function scheduleGainAutomation(
     if (point.tick <= anchorTick) continue;
     const atSec = anchorTimeSec + (ticksToSeconds(point.tick, tempo) - anchorSeconds);
     param.linearRampToValueAtTime(baseScalar * point.value, atSec);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 모든 대상 — 볼륨 · 팬 · 이펙트 파라미터 (`LOGIC_PARITY.md` 1-9)
+// ---------------------------------------------------------------------------
+
+/** 0~1 저장값 → 이펙트 파라미터 실제 값. `log` 곡선이면 지수 보간 (주파수 같은 것) */
+export function denormalizeParam(spec: EffectParamSpec, value01: number): number {
+  const v = Math.max(0, Math.min(1, value01));
+  if (spec.curve === 'log' && spec.min > 0) return spec.min * Math.pow(spec.max / spec.min, v);
+  return spec.min + (spec.max - spec.min) * v;
+}
+
+/** 실제 값 → 0~1 (곡선 편집기가 지금 값을 첫 점으로 놓을 때) */
+export function normalizeParam(spec: EffectParamSpec, value: number): number {
+  if (spec.curve === 'log' && spec.min > 0) return Math.log(value / spec.min) / Math.log(spec.max / spec.min);
+  return (value - spec.min) / (spec.max - spec.min);
+}
+
+export interface TargetInfo {
+  label: string;
+  /** 0~1 → 표시 문자열 */
+  format: (value01: number) => string;
+  /** 오토메이션이 없을 때의 0~1 값 — 곡선 첫 점의 기본 */
+  current: number;
+}
+
+/** 이 트랙에서 고를 수 있는 오토메이션 대상 전부 */
+export function automationTargets(track: Track): { target: AutomationTarget; info: TargetInfo }[] {
+  const out: { target: AutomationTarget; info: TargetInfo }[] = [
+    { target: 'volume', info: { label: '볼륨', format: (v) => `${Math.round(v * 100)}%`, current: 1 } },
+    {
+      target: 'pan',
+      info: {
+        label: '팬',
+        format: (v) => { const p = Math.round((v * 2 - 1) * 100); return p === 0 ? 'C' : p < 0 ? `L${-p}` : `R${p}`; },
+        current: (track.pan + 1) / 2,
+      },
+    },
+  ];
+  track.effects.forEach((effect, index) => {
+    if (!isEffectType(effect.type)) return;
+    const specs = EFFECT_SPECS[effect.type];
+    const resolved = resolveEffectParams(effect);
+    for (const [name, spec] of Object.entries(specs.params)) {
+      if (!AUTOMATABLE[effect.type].includes(name)) continue;
+      out.push({
+        target: `fx:${index}:${name}`,
+        info: {
+          label: `${specs.label} ${spec.label}`,
+          format: (v) => { const real = denormalizeParam(spec, v); return `${real >= 100 ? Math.round(real) : Math.round(real * 100) / 100}${spec.unit ?? ''}`; },
+          current: Math.max(0, Math.min(1, normalizeParam(spec, resolved[name] ?? spec.default))),
+        },
+      });
+    }
+  });
+  return out;
+}
+
+/** 렌더러가 `AudioParam` 으로 바로 움직일 수 있는 파라미터 (`effectGraph.ts` bindings 와 짝) */
+const AUTOMATABLE: Record<EffectType, string[]> = {
+  eq: ['lowGainDb', 'midGainDb', 'highGainDb', 'midHz'],
+  compressor: ['thresholdDb', 'ratio', 'attackMs', 'releaseMs', 'makeupDb'],
+  reverb: ['mix'],
+  delay: ['mix', 'timeMs', 'feedback', 'dampingHz'],
+};
+
+/**
+ * 곡선을 임의의 `AudioParam` 에 예약한다. 점 사이는 **저장값(0~1) 공간에서 직선** —
+ * 실제 값 공간에서 잇지 않는다 (로그 주파수가 곡선 편집기에서 본 모양대로 움직이게).
+ * 그래서 점 사이를 잘게(1/32박) 쪼개 예약한다.
+ */
+export function scheduleMappedAutomation(
+  param: AudioParam,
+  points: readonly AutomationPoint[],
+  tempo: Tempo,
+  map: (value01: number) => number,
+  anchorTick: Ticks,
+  anchorTimeSec: number,
+): void {
+  param.cancelScheduledValues(anchorTimeSec);
+  if (points.length === 0) return;
+  param.setValueAtTime(map(automationValueAtTick(points, anchorTick)), anchorTimeSec);
+  const anchorSeconds = ticksToSeconds(anchorTick, tempo);
+  const step = 30; // 틱 — 1/32 박
+  const last = points[points.length - 1]!.tick;
+  for (let tick = Math.ceil((anchorTick + 1) / step) * step; tick <= last + step; tick += step) {
+    const atSec = anchorTimeSec + (ticksToSeconds(tick, tempo) - anchorSeconds);
+    param.linearRampToValueAtTime(map(automationValueAtTick(points, tick)), atSec);
+  }
+}
+
+export interface TrackAutomationNodes {
+  automationGain: GainNode;
+  panNode: StereoPannerNode;
+  bindings: Record<string, { param: AudioParam; map: (value: number) => number }[]> | undefined;
+}
+
+/** 트랙의 모든 레인을 예약한다 — 세 렌더러(워크렛·버퍼·내보내기)가 같은 함수를 쓴다 */
+export function scheduleTrackLanes(
+  track: Track,
+  nodes: TrackAutomationNodes,
+  tempo: Tempo,
+  anchorTick: Ticks,
+  anchorTimeSec: number,
+): void {
+  for (const lane of track.automation) {
+    if (lane.target === 'volume') {
+      // 이펙트 뒤 게인이라 배율은 1 — 정적 트랙 게인은 이미 `gainNode` 가 담당한다
+      scheduleGainAutomation(nodes.automationGain.gain, lane.points, tempo, 1, anchorTick, anchorTimeSec);
+    } else if (lane.target === 'pan') {
+      if (lane.points.length === 0) continue;
+      scheduleMappedAutomation(nodes.panNode.pan, lane.points, tempo, (v) => v * 2 - 1, anchorTick, anchorTimeSec);
+    } else {
+      const [, index, name] = lane.target.split(':');
+      const effect = track.effects[Number(index)];
+      if (!effect || effect.bypass || !isEffectType(effect.type)) continue;
+      const spec = EFFECT_SPECS[effect.type].params[name!];
+      const bindings = nodes.bindings?.[`${index}:${name}`];
+      if (!spec || !bindings) continue;
+      for (const binding of bindings) {
+        scheduleMappedAutomation(binding.param, lane.points, tempo, (v) => binding.map(denormalizeParam(spec, v)), anchorTick, anchorTimeSec);
+      }
+    }
   }
 }

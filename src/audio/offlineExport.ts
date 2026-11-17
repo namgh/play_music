@@ -20,7 +20,7 @@ import { pitchToHz } from '../model/pitch.ts';
 import { applyLegato, applySwing, collectNoteEvents, legatoLookup } from './scheduler.ts';
 import type { InstrumentDefinition } from '../instruments/types.ts';
 import { instrumentParams, resolveInstrument } from '../instruments/resolve.ts';
-import { scheduleGainAutomation, volumeLane } from './automation.ts';
+import { scheduleTrackLanes } from './automation.ts';
 import { expressionParams } from './articulation.ts';
 import {
   curveToParams, noteOffFields, toFreeCurve, variationSeed, WASM_PARAM_ORDER,
@@ -83,8 +83,7 @@ export async function renderOfflineWithWorklet(
     // (`workletRenderer.ts` 와 같은 이유). 내보내기는 항상 곡 처음(틱 0 = 오프라인
     // 클럭 0초)부터 렌더하므로 앵커를 0으로 준다
     const automationGain = offline.createGain();
-    const lane = volumeLane(track);
-    if (lane) scheduleGainAutomation(automationGain.gain, lane.points, project.tempo, 1, 0, 0);
+    scheduleTrackLanes(track, { automationGain, panNode: pan, bindings: effects.bindings }, project.tempo, 0, 0);
     node.connect(gain).connect(pan).connect(effects.input);
     effects.output.connect(automationGain).connect(master.input);
 

@@ -160,8 +160,18 @@ export interface AutomationPoint {
   value: number;
 }
 
+/**
+ * 오토메이션 대상. `fx:<순번>:<파라미터>` 는 트랙 이펙트 목록의 그 자리(바이패스 포함)의
+ * 파라미터다. **값은 전부 0~1 로 저장한다** — 대상마다 실제 범위로 바꾸는 것은 렌더러
+ * 쪽(`src/audio/automation.ts`)이다. 그래야 곡선 편집기가 대상을 몰라도 된다.
+ */
+export type AutomationTarget = 'volume' | 'pan' | `fx:${number}:${string}`;
+
+/** Logic 오토메이션 모드. 읽기만 / 만지는 동안 쓰기 / 만진 뒤 계속 쓰기 / 재생 내내 덮어쓰기 */
+export type AutomationMode = 'read' | 'touch' | 'latch' | 'write';
+
 export interface AutomationLane {
-  target: 'volume';
+  target: AutomationTarget;
   /** 틱 오름차순. 점 사이는 직선 보간, 양 끝 밖은 마지막 값을 유지한다 */
   points: AutomationPoint[];
 }
@@ -190,6 +200,8 @@ export interface Track {
   /** 비어 있으면 예전과 같은 소리 — 자동으로 켜지는 트랙이 없다 */
   automation: AutomationLane[];
   clips: Clip[];
+  /** 오토메이션 모드. 없으면 읽기 */
+  automationMode?: AutomationMode;
   /** 숨김 (Logic Hide). 목록에서만 빠지고 **소리는 그대로 난다** */
   hidden?: boolean;
   /** 보호 (Logic Protect). 켜져 있으면 클립·음·오토메이션을 고칠 수 없다 */

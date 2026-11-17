@@ -30,7 +30,7 @@ import type { ScheduledClick, ScheduledNote } from './scheduler.ts';
 import type { InstrumentDefinition, ParamValue } from '../instruments/types.ts';
 import { instrumentParams, resolveInstrument } from '../instruments/resolve.ts';
 import type { ResolvedInstrument } from '../instruments/types.ts';
-import { scheduleGainAutomation, volumeLane } from './automation.ts';
+import { scheduleTrackLanes } from './automation.ts';
 import { expressionParams } from './articulation.ts';
 import {
   curveToParams, noteOffFields, toFreeCurve, variationSeed, WASM_PARAM_ORDER,
@@ -261,12 +261,8 @@ export class WorkletRenderer implements AudioRenderer {
     if (!this.project) return;
     for (const track of this.project.tracks) {
       const runtime = this.tracks.get(track.id);
-      const lane = volumeLane(track);
-      if (!runtime || !lane) continue;
-      // 이펙트 뒤 게인이라 배율은 1 — 정적 트랙 게인은 이미 `gainNode` 가 담당한다
-      scheduleGainAutomation(
-        runtime.automationGain.gain, lane.points, this.project.tempo, 1, anchorTick, anchorTimeSec,
-      );
+      if (!runtime || track.automation.length === 0) continue;
+      scheduleTrackLanes(track, { ...runtime, bindings: runtime.effects.bindings }, this.project.tempo, anchorTick, anchorTimeSec);
     }
   }
 

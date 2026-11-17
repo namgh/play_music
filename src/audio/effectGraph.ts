@@ -15,11 +15,25 @@ import {
   dbToGain, isEffectType, resolveEffectParams, reverbMixGains, synthesizeReverbIr,
 } from './effects.ts';
 
+/** 오토메이션이 직접 움직일 수 있는 `AudioParam` 과, 파라미터의 실제 값 → 그 param 값 변환 */
+export interface ParamBinding {
+  param: AudioParam;
+  map: (value: number) => number;
+}
+
 export interface EffectChain {
   input: AudioNode;
   output: AudioNode;
   dispose(): void;
+  /**
+   * 오토메이션 대상. 키는 이펙트 체인 전체에서 `${이펙트 순번}:${파라미터}` —
+   * 순번은 **바이패스 포함** 원래 목록의 자리다 (`AutomationLane.target` 의 `fx:` 와 같다)
+   */
+  bindings?: Record<string, ParamBinding[]>;
 }
+
+const same = (v: number) => v;
+const ms = (v: number) => v / 1000;
 
 function buildEq(ctx: BaseAudioContext, params: Record<string, number>): EffectChain {
   const low = ctx.createBiquadFilter();
@@ -43,6 +57,12 @@ function buildEq(ctx: BaseAudioContext, params: Record<string, number>): EffectC
     input: low,
     output: high,
     dispose: () => { low.disconnect(); mid.disconnect(); high.disconnect(); },
+    bindings: {
+      lowGainDb: [{ param: low.gain, map: same }],
+      midGainDb: [{ param: mid.gain, map: same }],
+      highGainDb: [{ param: high.gain, map: same }],
+      midHz: [{ param: mid.frequency, map: same }],
+    },
   };
 }
 
@@ -62,6 +82,13 @@ function buildCompressor(ctx: BaseAudioContext, params: Record<string, number>):
     input: comp,
     output: makeup,
     dispose: () => { comp.disconnect(); makeup.disconnect(); },
+    bindings: {
+      thresholdDb: [{ param: comp.threshold, map: same }],
+      ratio: [{ param: comp.ratio, map: same }],
+      attackMs: [{ param: comp.attack, map: ms }],
+      releaseMs: [{ param: comp.release, map: ms }],
+      makeupDb: [{ param: makeup.gain, map: dbToGain }],
+    },
   };
 }
 
@@ -92,6 +119,8 @@ function buildReverb(ctx: BaseAudioContext, params: Record<string, number>): Eff
       input.disconnect(); output.disconnect();
       convolver.disconnect(); dryGain.disconnect(); wetGain.disconnect();
     },
+    // 길이·감쇠는 IR 을 새로 만들어야 해서 오토메이션 대상이 아니다 (Logic 도 리버브 크기는 안 움직인다)
+    bindings: mixBindings(dryGain, wetGain),
   };
 }
 
@@ -138,6 +167,22 @@ function buildDelay(ctx: BaseAudioContext, params: Record<string, number>): Effe
       input.disconnect(); output.disconnect(); delayNode.disconnect();
       feedbackFilter.disconnect(); feedbackGain.disconnect(); dryGain.disconnect(); wetGain.disconnect();
     },
+    bindings: {
+      ...mixBindings(dryGain, wetGain),
+      timeMs: [{ param: delayNode.delayTime, map: ms }],
+      feedback: [{ param: feedbackGain.gain, map: same }],
+      dampingHz: [{ param: feedbackFilter.frequency, map: same }],
+    },
+  };
+}
+
+/** 섞기(mix) 하나가 드라이·웨트 두 게인을 함께 움직인다 */
+function mixBindings(dryGain: GainNode, wetGain: GainNode): Record<string, ParamBinding[]> {
+  return {
+    mix: [
+      { param: dryGain.gain, map: (v) => reverbMixGains(v).dry },
+      { param: wetGain.gain, map: (v) => reverbMixGains(v).wet },
+    ],
   };
 }
 
@@ -150,7 +195,8 @@ export function buildEffectChain(ctx: BaseAudioContext, specs: readonly EffectSp
   const built: EffectChain[] = [];
 
   let tail: AudioNode = passthrough;
-  for (const spec of specs) {
+  const bindings: Record<string, ParamBinding[]> = {};
+  for (const [index, spec] of specs.entries()) {
     if (spec.bypass) continue;
     if (!isEffectType(spec.type)) {
       // 조용히 건너뛰면 "이펙트를 켰는데 아무 일도 안 난다"가 된다
@@ -165,11 +211,13 @@ export function buildEffectChain(ctx: BaseAudioContext, specs: readonly EffectSp
     tail.connect(chain.input);
     tail = chain.output;
     built.push(chain);
+    for (const [name, list] of Object.entries(chain.bindings ?? {})) bindings[`${index}:${name}`] = list;
   }
 
   return {
     input: passthrough,
     output: tail,
+    bindings,
     dispose: () => {
       passthrough.disconnect();
       for (const chain of built) chain.dispose();

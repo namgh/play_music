@@ -41,7 +41,7 @@ import { scheduleClick } from './metronome.ts';
 import { countInSeconds } from './scheduler.ts';
 import type { PlayOptions } from './renderer.ts';
 import type { EffectChain } from './effectGraph.ts';
-import { scheduleGainAutomation, volumeLane } from './automation.ts';
+import { scheduleTrackLanes } from './automation.ts';
 import { expressionParams } from './articulation.ts';
 
 /** 타이머 주기. 룩어헤드보다 충분히 짧아야 한다 */
@@ -239,12 +239,8 @@ export class BufferRenderer implements AudioRenderer {
     this.pumpTimer = setInterval(() => this.scheduler.pump(), PUMP_INTERVAL_MS);
     for (const track of this.project.tracks) {
       const runtime = this.tracks.get(track.id);
-      const lane = volumeLane(track);
-      if (!runtime || !lane) continue;
-      // 이펙트 뒤 게인이라 배율은 1 — 정적 트랙 게인은 이미 `gainNode` 가 담당한다
-      scheduleGainAutomation(
-        runtime.automationGain.gain, lane.points, this.project.tempo, 1, fromTick, anchorTime,
-      );
+      if (!runtime || track.automation.length === 0) continue;
+      scheduleTrackLanes(track, { ...runtime, bindings: runtime.effects.bindings }, this.project.tempo, fromTick, anchorTime);
     }
   }
 

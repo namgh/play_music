@@ -314,6 +314,34 @@ try {
   const d14 = await ev(`(() => { const p = JSON.parse(localStorage.getItem('project-autosave-v1')); const d = p.project ?? p; return { stacks: (d.stacks ?? []).length, member: d.tracks.some((t) => t.stackId) }; })()`);
   record('트랙 스택 만들기', d14.stacks === 1 && d14.member, JSON.stringify(d14));
   await shot('10-tracks');
+
+  // 15. 오토메이션 — 레인 열기, 점 찍기, 팬 대상, 재생 중 쓰기 기록
+  const trackName15 = await ev(`document.querySelector('[data-track]').dataset.track`);
+  await clickEl(`document.querySelector('[aria-label="${trackName15} 오토메이션"]')`);
+  const lane15 = await ev(`(() => { const e = document.querySelector('[data-automation] > div:last-child'); const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; })()`);
+  await click(lane15.x + lane15.w * 0.1, lane15.y + lane15.h * 0.2);
+  await click(lane15.x + lane15.w * 0.5, lane15.y + lane15.h * 0.8);
+  await sleep(300);
+  const auto15 = () => ev(`(() => { const p = JSON.parse(localStorage.getItem('project-autosave-v1')); const d = p.project ?? p; return d.tracks.flatMap((t) => t.automation.map((l) => l.target + ':' + l.points.length)).join(' '); })()`);
+  record('오토메이션 점 찍기', (await auto15()).includes('volume:2'), await auto15());
+  const target15 = `document.querySelector('[aria-label="${trackName15} 오토메이션 대상"]')`;
+  await ev(`(() => { const e = ${target15}; Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(e, 'pan'); e.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+  await sleep(200);
+  const lanePan = await ev(`(() => { const e = document.querySelector('[data-automation] > div:last-child'); const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; })()`);
+  await click(lanePan.x + lanePan.w * 0.3, lanePan.y + lanePan.h * 0.1);
+  await sleep(300);
+  record('팬 오토메이션', (await auto15()).includes('pan:1'), await auto15());
+  await clickEl(`document.querySelector('[aria-label="${trackName15} 오토메이션 모드"] [role=radio]:nth-child(4)')`);
+  await clickEl(byTitle('맨 앞으로'));
+  await clickEl(byTitle('커서부터 재생'));
+  await sleep(1500);
+  const stop15 = await centerOf(byTitle('정지')); if (stop15) await click(stop15.x, stop15.y);
+  await sleep(500);
+  const after15 = await auto15();
+  record('쓰기 모드 — 재생하는 동안 볼륨 곡선 기록', /volume:(\d+)/.test(after15) && Number(/volume:(\d+)/.exec(after15)[1]) >= 2, after15);
+  await clickEl(byTitle('되돌리기')); await sleep(300);
+  record('기록은 언두 한 단계', (await auto15()).includes('volume:2'), await auto15());
+  await shot('11-automation');
 } catch (err) {
   record('스크립트 실행', false, String(err.stack ?? err).slice(0, 500));
 } finally {

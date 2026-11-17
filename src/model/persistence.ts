@@ -13,7 +13,7 @@
 
 import { CHORD_QUALITIES, SCHEMA_VERSION } from './project.ts';
 import type {
-  AutomationLane, AutomationPoint, ChordId, ChordQuality, Clip, ClipId, EffectSpec, LoopRegion,
+  AutomationLane, AutomationMode, AutomationPoint, AutomationTarget, ChordId, ChordQuality, Clip, ClipId, EffectSpec, LoopRegion,
   MarkerId, MusicalKey, Note, NoteId, Origin, PitchCurve, Project, ProjectId, SectionId, StackId, Track, TrackId,
 } from './project.ts';
 import { normalizeSignatureChanges } from './meter.ts';
@@ -187,18 +187,23 @@ function parseAutomationPoint(value: unknown): AutomationPoint {
 
 function parseAutomation(value: unknown): AutomationLane[] {
   if (value == null) return [];
-  return asArray(value, '오토메이션').map((entry) => {
+  return asArray(value, '오토메이션').flatMap((entry) => {
     const raw = asRecord(entry, '오토메이션 레인');
-    // 지금은 'volume' 하나뿐이다 — 모르는 target 은 흘려보내지 않고 소리 없이
-    // 무시되면 안 되므로 volume 으로 떨어뜨린다 (렌더가 여전히 값을 읽으므로
-    // 아예 버리는 것보다 안전하다)
-    return {
-      target: 'volume' as const,
+    // 모르는 대상은 **버린다** — 예전에는 volume 으로 떨어뜨렸는데, 팬 곡선이
+    // 볼륨으로 읽히면 소리가 끊기는 엉뚱한 곡이 된다
+    const target = raw.target ?? 'volume';
+    if (typeof target !== 'string' || !isAutomationTarget(target)) return [];
+    return [{
+      target,
       points: asArray(raw.points ?? [], '오토메이션 점 목록')
         .map((point) => parseAutomationPoint(point))
         .sort((a, b) => a.tick - b.tick),
-    };
+    }];
   });
+}
+
+export function isAutomationTarget(value: string): value is AutomationTarget {
+  return value === 'volume' || value === 'pan' || /^fx:\d+:[A-Za-z]+$/.test(value);
 }
 
 function parseTrack(value: unknown, seen: Set<string>): Track {
@@ -226,6 +231,8 @@ function parseTrack(value: unknown, seen: Set<string>): Track {
     effects: parseEffects(raw.effects),
     automation: parseAutomation(raw.automation),
     clips: asArray(raw.clips ?? [], '클립 목록').map((clip) => parseClip(clip, seen)),
+    ...(['read', 'touch', 'latch', 'write'].includes(String(raw.automationMode))
+      ? { automationMode: raw.automationMode as AutomationMode } : {}),
     ...(raw.hidden == null ? {} : { hidden: bool(raw.hidden, false) }),
     ...(raw.locked == null ? {} : { locked: bool(raw.locked, false) }),
     ...(typeof raw.stackId === 'string' && raw.stackId.startsWith('stk_') ? { stackId: raw.stackId as StackId } : {}),

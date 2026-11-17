@@ -86,6 +86,21 @@ export const SCREENS = [
       await b.clickEl(`document.querySelectorAll('.cursor-crosshair [role=button]')[3]`);
     },
   },
+  {
+    name: 'a04-automation', area: 4, title: '오토메이션 — 트랙 아래 곡선 레인 · 대상(볼륨/팬/이펙트) · 모드',
+    run: async (b) => {
+      await b.clickEl(byLabel('베이스 오토메이션'));
+      await sleep(200);
+      const lane = `document.querySelector('[data-automation="베이스:volume"] > div:last-child')`;
+      for (const [fx, fy] of [[0.02, 0.1], [0.25, 0.2], [0.5, 0.75], [0.62, 0.3], [0.9, 0.1]]) await b.clickIn(lane, fx, fy);
+      await b.clickEl(byLabel('스네어 오토메이션'));
+      await b.choose(byLabel('스네어 오토메이션 대상'), 'pan');
+      await sleep(200);
+      const pan = `document.querySelector('[data-automation="스네어:pan"] > div:last-child')`;
+      for (const [fx, fy] of [[0.05, 0.5], [0.3, 0.1], [0.55, 0.9], [0.8, 0.5]]) await b.clickIn(pan, fx, fy);
+      await b.clickEl(`document.querySelector('[aria-label="스네어 오토메이션 모드"] [role=radio]:nth-child(3)')`);
+    },
+  },
 ];
 
 async function capture(b, screen) {

@@ -1,13 +1,17 @@
-import { useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 
 import { GlobalTracks } from './GlobalTracks.tsx';
+import { AutomationLane } from './AutomationLane.tsx';
+import { lanePoints, recorderStep, simplifyLane, writeAutomation } from '../editor/automationEdits.ts';
+import { automationValueAtTick } from '../audio/automation.ts';
+import { PPQ } from '../model/time.ts';
 import { toggleStackFlag, ungroupStack, updateStack } from '../editor/tracks.ts';
 import type { GlobalSelection } from './GlobalTracks.tsx';
 import { barLines } from '../model/meter.ts';
 import { projectLengthTicks } from '../model/factory.ts';
 
-import type { ClipId, Project, Track, TrackId, TrackStack } from '../model/project.ts';
+import type { AutomationTarget, ClipId, Project, Track, TrackId, TrackStack } from '../model/project.ts';
 import { countEditedNotes } from '../model/project.ts';
 import { addClip, addTrack, deleteClip, deleteTrack, duplicateClip, moveClip, resizeClip, updateTrack }
   from '../editor/edits.ts';
@@ -115,6 +119,47 @@ export function Timeline({
   const pct = (ticks: number) => `${(ticks / totalTicks) * 100}%`;
   // 스택은 머리 줄 하나 + (펼쳤으면) 멤버. 숨긴 트랙은 "숨긴 트랙" 을 켰을 때만
   const [showHidden, setShowHidden] = useState(false);
+  /** 트랙별로 펼친 오토메이션 레인과 그 대상 — 보기 설정 */
+  const [autoOpen, setAutoOpen] = useState<Partial<Record<TrackId, AutomationTarget>>>({});
+  /**
+   * 재생 중 기록 상태 (트랙별). ref 에 둔다 — 매 프레임 바뀌는데 그때마다 다시
+   * 그리면 안 된다. 기록한 곡선은 미리보기로 쌓다가 재생이 멈출 때 한 번에 확정한다
+   * (언두 한 단계).
+   */
+  const recording = useRef(new Map<TrackId, { lastTick: number | null; latched: boolean; touching: boolean; value: number }>());
+  const recorded = useRef(false);
+  useEffect(() => {
+    if (playheadTick === null) {
+      if (recorded.current) {
+        // 프레임마다 찍힌 점을 정리해서 확정한다
+        let tidy = project;
+        for (const id of recording.current.keys()) tidy = simplifyLane(tidy, id, 'volume');
+        editor.preview(tidy);
+        editor.commitCurrent();
+      }
+      recorded.current = false;
+      recording.current.clear();
+      return;
+    }
+    let next = project;
+    for (const track of project.tracks) {
+      const mode = track.automationMode ?? 'read';
+      if (mode === 'read') continue;
+      const st = recording.current.get(track.id)
+        ?? { lastTick: null, latched: false, touching: false, value: automationValueAtTick(lanePoints(project, track.id, 'volume'), playheadTick) };
+      const step = recorderStep(mode, st, { tick: playheadTick, touching: st.touching });
+      recording.current.set(track.id, { ...st, ...step.next });
+      if (step.write && step.write.toTick > step.write.fromTick) {
+        next = writeAutomation(next, track.id, 'volume', step.write, st.value);
+      }
+    }
+    if (next !== project) {
+      recorded.current = true;
+      editor.preview(next);
+    }
+    // 재생 헤드가 움직일 때만 돈다 — project 를 넣으면 미리보기가 다시 불러 무한히 돈다
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playheadTick]);
   /** 글로벌 트랙 줄 (Logic 의 G) — 보기 설정이라 저장하지 않는다 */
   const [showGlobals, setShowGlobals] = useState(true);
   const hiddenCount = project.tracks.filter((t) => t.hidden).length;
@@ -330,8 +375,8 @@ export function Timeline({
               )))}
             </div>
           </div>
-        ) : ((track) => (
-          <div key={track.id} data-track={track.name} className={`flex border-b border-grid last:border-b-0 ${track.hidden ? 'opacity-50' : ''}`}>
+        ) : ((track) => (<Fragment key={track.id}>
+          <div data-track={track.name} className={`flex border-b border-grid last:border-b-0 ${track.hidden ? 'opacity-50' : ''}`}>
             {/* 왼쪽 칸 = 이 트랙의 설정. 오른쪽 레인과 **같은 행**이라 눈이 오가지 않는다 */}
             <div
               style={{ height: LANE_HEIGHT }}
@@ -400,20 +445,48 @@ export function Timeline({
                 min={0} max={1} step={0.01}
                 value={track.gain}
                 aria-label={`${track.name} 레벨`}
-                onChange={(event) =>
-                  editor.preview(updateTrack(project, track.id, { gain: Number(event.target.value) }))}
-                onPointerUp={() => editor.commitCurrent()}
-                className="w-16 shrink-0 accent-ink"
+                onChange={(event) => {
+                  const value = Number(event.target.value);
+                  // 재생 중이고 기록 모드면 페이더가 **볼륨 곡선**을 쓴다 (Logic 과 같다)
+                  if (playheadTick !== null && (track.automationMode ?? 'read') !== 'read') {
+                    const st = recording.current.get(track.id) ?? { lastTick: null, latched: false, touching: false, value };
+                    recording.current.set(track.id, { ...st, touching: true, value: value / Math.max(0.001, track.gain) });
+                    return;
+                  }
+                  editor.preview(updateTrack(project, track.id, { gain: value }));
+                }}
+                onPointerUp={() => {
+                  const st = recording.current.get(track.id);
+                  if (st) recording.current.set(track.id, { ...st, touching: false });
+                  else editor.commitCurrent();
+                }}
+                className="w-12 shrink-0 accent-ink"
               />
               {/* **페이더 바로 옆에 둔다.** 어느 트랙이 큰지 보고 그 자리에서
                   줄일 수 있어야 의미가 있다 — 멀리 있으면 안 본다 */}
               {readLevel && (
                 <LevelMeter
-                  className="w-12 shrink-0"
+                  className="w-9 shrink-0"
                   label={`${track.name} 레벨`}
                   read={() => readLevel(track.id)}
                 />
               )}
+              <button
+                type="button"
+                aria-pressed={autoOpen[track.id] !== undefined}
+                aria-label={`${track.name} 오토메이션`}
+                title="오토메이션 곡선 보기 (볼륨·팬·이펙트)"
+                onClick={() => setAutoOpen((m) => {
+                  const next = { ...m };
+                  if (next[track.id]) delete next[track.id];
+                  // 곡선이 이미 있는 대상부터 연다 — 없으면 볼륨
+                  else next[track.id] = track.automation[0]?.target ?? 'volume';
+                  return next;
+                })}
+                className={`h-7 w-7 shrink-0 rounded border text-xs font-semibold ${
+                  autoOpen[track.id] ? 'border-acc bg-acc text-acc-ink'
+                    : track.automation.length > 0 ? 'border-acc text-ink' : 'border-rule text-ink-3 hover:border-ink-3'}`}
+              >A</button>
               <button
                 type="button"
                 onClick={() => editor.commit(deleteTrack(project, track.id))}
@@ -516,7 +589,18 @@ export function Timeline({
               })}
             </div>
           </div>
-        ))(row.track))}
+          {autoOpen[track.id] && (
+            <AutomationLane
+              editor={editor}
+              track={track}
+              target={autoOpen[track.id]!}
+              onTarget={(target) => setAutoOpen((m) => ({ ...m, [track.id]: target }))}
+              nameCol={NAME_COL}
+              totalTicks={totalTicks}
+              snap={(tick) => Math.round(tick / (PPQ / 4)) * (PPQ / 4)}
+            />
+          )}
+        </Fragment>))(row.track))}
 
         {playheadTick !== null && (
           <div className="relative">
