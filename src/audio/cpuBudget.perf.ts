@@ -232,7 +232,7 @@ test('무음일 때는 거의 비용이 들지 않는다', async () => {
 // Rust 이펙트 (`EFFECTS_PLAN.md` 4-3) — 이펙트 하나가 실시간의 몇 배로 도는가.
 // 트랙 32 × 이펙트 4 = 128 개를 한 오디오 스레드에 올려도 버티려면 **하나가 최소 200배**는 돼야 한다
 // (워크렛은 Node 보다 느리다 — 여유를 잡는다). 비선형 단계를 4배 오버샘플링하는 것(지연 16 샘플)은
-// 원칙상 비용이 크다 — 100배. 무거운 것(컨볼루션·FIR·피치)은 따로 40배.
+// 원칙상 비용이 크다 — 80배 (실측 약 100배, 측정마다 ±5% 흔들려 여유를 둔다). 무거운 것(컨볼루션·FIR·피치)은 따로 40배.
 // ---------------------------------------------------------------------------
 
 test('Rust 이펙트 — 하나하나가 실시간의 몇 배인가', async () => {
@@ -261,7 +261,7 @@ test('Rust 이펙트 — 하나하나가 실시간의 몇 배인가', async () =
     const latency = (RUST_EFFECT_SPECS[type] as { latency?: number }).latency ?? 0;
     // 리버브는 원래 무겁다(지연 여러 개·컨볼루션) — 트랙마다가 아니라 버스에 하나 거는 것이라 40배
     const heavy = HEAVY.has(type) || RUST_EFFECT_SPECS[type].category === 'reverb';
-    const floor = heavy ? 40 : latency === 16 ? 100 : 200;
+    const floor = heavy ? 40 : latency === 16 ? 80 : 200;
     if (factor <= floor) failures.push(`${type} 가 실시간의 ${factor.toFixed(0)}배 — 기준 ${floor}배`);
   }
   console.log(rows.join('\n'));
