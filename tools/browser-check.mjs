@@ -610,6 +610,23 @@ try {
   const after27 = await ev(`(() => { const p = JSON.parse(localStorage.getItem('project-autosave-v1')); return (p.project ?? p).lengthBars; })()`);
   record('라이브 루프 — 장면 재생·편곡으로', scenes27 >= 1 && peak27 > 0.001 && after27 > bars27, `장면 ${scenes27} · 피크 ${peak27.toFixed(4)} · 마디 ${bars27} → ${after27}`);
   await shot('23-live-loops');
+
+  // 28. 악보 — 그려지고, MusicXML 이 내려온다
+  await clickEl(`[...document.querySelectorAll('nav[aria-label="화면"] button')][0]`);
+  await sleep(300);
+  await clickEl(`[...document.querySelectorAll('[aria-label="편집기 보기"] button')].find((b) => b.textContent === '악보')`);
+  await sleep(300);
+  const measures28 = await ev(`document.querySelectorAll('[data-score] [data-measure]').length`);
+  const heads28 = await ev(`document.querySelectorAll('[data-score] ellipse').length`);
+  for (const f of readdirSync(DL)) rmSync(join(DL, f));
+  await clickEl(byText('MusicXML 내보내기'));
+  let xml28 = null;
+  for (let i = 0; i < 20 && !xml28; i++) { await sleep(300); xml28 = readdirSync(DL).find((f) => f.endsWith('.musicxml')) ?? null; }
+  const xmlText = xml28 ? readFileSync(join(DL, xml28), 'utf8') : '';
+  record('악보 그리기·MusicXML', measures28 > 0 && heads28 > 0 && xmlText.includes('<score-partwise') && xmlText.includes('<note>'),
+    `마디 ${measures28} · 음표 머리 ${heads28} · ${xml28} ${xmlText.length}B`);
+  await shot('24-score');
+  await clickEl(`[...document.querySelectorAll('[aria-label="편집기 보기"] button')][0]`);
   await clickEl(`[...document.querySelectorAll('nav[aria-label="화면"] button')][0]`);
   await clickEl(`[...document.querySelectorAll('[role=tab]')].find((b) => b.textContent.includes('음 편집'))`);
   await clickEl(`[...document.querySelectorAll('[aria-label="편집기 보기"] button')][0]`);

@@ -263,6 +263,14 @@ export const SCREENS = [
       await sleep(500);
     },
   },
+  {
+    name: 'a17-score', area: 17, title: '악보 — 오선·음자리표·조표·박자표·코드 기호·붙임줄 · MusicXML 내보내기 · 인쇄',
+    run: async (b) => {
+      await b.clickEl(byLabel('베이스 선택'));
+      await b.clickEl(`[...document.querySelectorAll('[aria-label="편집기 보기"] button')].find((x) => x.textContent === '악보')`);
+      await sleep(400);
+    },
+  },
 ];
 
 async function capture(b, screen) {

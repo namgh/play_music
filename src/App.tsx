@@ -25,6 +25,7 @@ import { StepSequencer } from './ui/StepSequencer.tsx';
 import { SmartControls } from './ui/SmartControls.tsx';
 import { ProjectPanel } from './ui/ProjectPanel.tsx';
 import { LiveLoops } from './ui/LiveLoops.tsx';
+import { ScoreView } from './ui/ScoreView.tsx';
 import { commitRecording, compFromTake, NoteRecorder, playedToNotes, switchTake } from './editor/recording.ts';
 import { SettingsPanel } from './ui/SettingsPanel.tsx';
 import { useMidiInput } from './audio/midiInput.ts';
@@ -179,7 +180,7 @@ export function App() {
   /** 연주 칸(건반) — 보기 설정 */
   const [playOpen, setPlayOpen] = useState(false);
   /** 클립 편집기 보기 — 피아노 롤 / 이벤트 목록 */
-  const [editorView, setEditorView] = useState<'roll' | 'steps' | 'list'>('roll');
+  const [editorView, setEditorView] = useState<'roll' | 'steps' | 'list' | 'score'>('roll');
   /** 곡 고르기 판 */
   const [projectsOpen, setProjectsOpen] = useState(false);
   /** 앱 설정 — 곡이 아니라 작업 환경 (`settings.ts`) */
@@ -1278,14 +1279,15 @@ export function App() {
                   <span className="flex-1" />
                   {/* 같은 클립을 보는 두 방식 — 그림(피아노 롤) / 숫자(이벤트 목록) */}
                   <div className="flex gap-0.5 self-center rounded-md bg-panel p-0.5" role="tablist" aria-label="편집기 보기">
-                    {(['roll', 'steps', 'list'] as const).map((v) => (
+                    {(['roll', 'steps', 'list', 'score'] as const).map((v) => (
                       <button key={v} type="button" role="tab" aria-selected={editorView === v} onClick={() => setEditorView(v)}
                         className={`h-6 rounded px-2 text-[11px] ${editorView === v ? 'bg-body font-semibold text-ink shadow-sm' : 'text-ink-3'}`}
-                      >{v === 'roll' ? '피아노 롤' : v === 'steps' ? '스텝' : '이벤트 목록'}</button>
+                      >{v === 'roll' ? '피아노 롤' : v === 'steps' ? '스텝' : v === 'list' ? '이벤트 목록' : '악보'}</button>
                     ))}
                   </div>
                 </div>
                 {editorView === 'list' && <div className="scope-screen flex min-h-0 flex-1 flex-col"><EventList editor={editor} clip={clip} onAudition={audition} /></div>}
+                {editorView === 'score' && <div className="flex min-h-0 flex-1 flex-col"><ScoreView project={project} track={track} clip={clip} /></div>}
                 {editorView === 'steps' && (
                   <div className="scope-screen flex min-h-0 flex-1 flex-col">
                     <StepSequencer editor={editor} track={track} clip={clip} playheadTick={engine.playheadTick}
