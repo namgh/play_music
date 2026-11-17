@@ -14,6 +14,7 @@ pub mod pitchfx;
 pub mod reverbs;
 pub mod spacedesigner;
 pub mod spectral;
+pub mod utility;
 
 pub const MAX_PARAMS: usize = 24;
 pub const MAX_METERS: usize = 16;
@@ -153,6 +154,26 @@ pub const KINDS: &[(&str, Factory)] = &[
     ("denoiser", |sr, p| Box::new(spectral::Denoiser::new(sr, p))),
     ("matcheq", |sr, p| Box::new(spectral::MatchEq::new(sr, p))),
     ("freeze", |sr, p| Box::new(spectral::Freeze::new(sr, p))),
+    // 6단계 — 미터·유틸
+    ("tuner", |sr, p| Box::new(utility::Tuner::new(sr, p))),
+    ("loudness", |sr, p| Box::new(utility::Loudness::new(sr, p))),
+    ("levelmeter", |sr, p| {
+        Box::new(utility::LevelMeter::new(sr, p))
+    }),
+    ("correlation", |sr, p| {
+        Box::new(utility::Correlation::new(sr, p))
+    }),
+    ("analyzer", |sr, p| Box::new(utility::Analyzer::new(sr, p))),
+    ("bpmcounter", |sr, p| {
+        Box::new(utility::BpmCounter::new(sr, p))
+    }),
+    ("utility", |sr, p| Box::new(utility::Utility::new(sr, p))),
+    ("directionmixer", |sr, p| {
+        Box::new(utility::DirectionMixer::new(sr, p))
+    }),
+    ("stereospread", |sr, p| {
+        Box::new(utility::StereoSpread::new(sr, p))
+    }),
 ];
 
 pub fn create(kind: usize, sample_rate: f32, params: &Params) -> Option<Box<dyn Effect>> {

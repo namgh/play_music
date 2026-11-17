@@ -655,6 +655,77 @@ export const RUST_EFFECT_SPECS = {
       mix: unit('섞기', 1),
     },
   },
+  // --- 6단계: 미터·유틸 (미터는 소리를 바꾸지 않는다) ---
+  tuner: {
+    label: '튜너', category: 'utility',
+    meters: [{ label: '감지', unit: 'Hz', min: 0, max: 1000 }, { label: '음 (MIDI)', min: 0, max: 127 }, { label: '벗어남', unit: '¢', min: -50, max: 50 }, { label: '확신', min: 0, max: 1 }],
+    params: { a4Hz: { label: '기준 A', min: 400, max: 480, default: 440, unit: 'Hz' } },
+  },
+  loudness: {
+    label: '라우드니스 미터', category: 'utility',
+    meters: [
+      { label: '순간 (M)', unit: 'LUFS', min: -60, max: 0 }, { label: '단기 (S)', unit: 'LUFS', min: -60, max: 0 },
+      { label: '통합 (I)', unit: 'LUFS', min: -60, max: 0 }, { label: '트루 피크', unit: 'dBTP', min: -60, max: 3 },
+      { label: '순간 최대', unit: 'LUFS', min: -60, max: 0 },
+    ],
+    params: { reset: { ...choice('다시 재기 (바꾸면 처음부터)', ['가', '나'], 0), automatable: false } },
+  },
+  levelmeter: {
+    label: '레벨 미터', category: 'utility',
+    meters: [
+      { label: '왼 피크', unit: 'dB', min: -60, max: 3 }, { label: '오른 피크', unit: 'dB', min: -60, max: 3 },
+      { label: '왼 RMS', unit: 'dB', min: -60, max: 3 }, { label: '오른 RMS', unit: 'dB', min: -60, max: 3 },
+      { label: '피크 유지', unit: 'dB', min: -60, max: 3 },
+    ],
+    params: { rmsMs: msec('RMS 시간', 10, 3000, 300) },
+  },
+  correlation: {
+    label: '상관 미터', category: 'utility',
+    meters: [{ label: '상관', min: -1, max: 1 }, { label: '좌우 균형', min: -1, max: 1 }, { label: '폭 (사이드/미드)', unit: 'dB', min: -40, max: 6 }],
+    params: { responseMs: msec('반응', 10, 3000, 300) },
+  },
+  analyzer: {
+    label: '스펙트럼 분석기', category: 'utility',
+    meters: Array.from({ length: 16 }, (_, b) => {
+      const f = 30 * Math.pow(16000 / 30, b / 15);
+      return { label: f >= 1000 ? `${(f / 1000).toFixed(1)}k` : `${Math.round(f)}`, unit: 'dB', min: -80, max: 0 };
+    }),
+    params: { responseMs: msec('반응', 20, 2000, 200) },
+  },
+  bpmcounter: {
+    label: 'BPM 카운터', category: 'utility',
+    meters: [{ label: 'BPM', min: 60, max: 200 }, { label: '확신', min: 0, max: 1 }],
+    params: {},
+  },
+  utility: {
+    label: '유틸리티 (게인·위상·모노)', category: 'utility',
+    params: {
+      gainDb: db('게인', -96, 36, 0),
+      invertLeft: choice('왼 위상', ['그대로', '뒤집기'], 0),
+      invertRight: choice('오른 위상', ['그대로', '뒤집기'], 0),
+      mono: choice('모노', ['끔', '켬'], 0),
+      swap: choice('좌우 바꾸기', ['끔', '켬'], 0),
+      balance: unit('밸런스', 0, 1, -1),
+      width: unit('폭', 1, 2),
+    },
+  },
+  directionmixer: {
+    label: '방향 믹서', category: 'utility',
+    params: {
+      input: choice('입력', ['LR', 'MS'], 0),
+      spread: unit('폭', 1, 2),
+      directionDeg: { label: '방향', min: -90, max: 90, default: 0, unit: '°' },
+    },
+  },
+  stereospread: {
+    label: '스테레오 스프레드', category: 'utility',
+    params: {
+      bands: { label: '대역 수', min: 2, max: 12, default: 8 },
+      intensity: unit('세기', 0.5),
+      lowHz: hz('아래', 50, 2000, 300),
+      highHz: hz('위', 100, 20000, 8000),
+    },
+  },
 } satisfies Record<string, RustEffectDecl>;
 
 export type RustEffectType = keyof typeof RUST_EFFECT_SPECS;
