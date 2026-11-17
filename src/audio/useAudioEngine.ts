@@ -64,6 +64,8 @@ export function useAudioEngine(
   const readyRef = useRef<(() => Promise<void>) | null>(null);
   const projectRef = useRef(project);
   projectRef.current = project;
+  /** 라이브 루프 연주용 곡 (`liveLoops.ts`). 있으면 렌더러는 이것을 연주한다 */
+  const performingRef = useRef<Project | null>(null);
 
   const [state, setState] = useState<'stopped' | 'playing'>('stopped');
   const [playheadTick, setPlayheadTick] = useState<number | null>(null);
@@ -138,6 +140,8 @@ export function useAudioEngine(
     const renderer = rendererRef.current;
     if (!renderer) return;
     try {
+      // 라이브 루프 연주 중이면 연주용 곡을 다시 만들어야 하므로 여기서는 건드리지 않는다
+      if (performingRef.current) return;
       renderer.setProject(project);
       setError(null);
     } catch (err) {
@@ -149,6 +153,11 @@ export function useAudioEngine(
 
   const stop = useCallback(() => {
     rendererRef.current?.stop();
+    // 라이브 루프 연주였으면 곡으로 돌아간다
+    if (performingRef.current) {
+      performingRef.current = null;
+      rendererRef.current?.setProject(projectRef.current);
+    }
     setState('stopped');
     setPlayheadTick(null);
   }, []);
@@ -212,6 +221,34 @@ export function useAudioEngine(
       // 새 트랙의 워크렛이 wasm 을 준비하기 전에 보낸 음은 버려진다
       await (renderer as { whenReady?: () => Promise<void> }).whenReady?.();
       renderer.auditionNote(PREVIEW_TRACK, createNote({ startTick: 0, midi, velocity: 0.8 }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }, [ensure]);
+
+  /**
+   * 라이브 루프 연주 — 곡을 바꾸지 않고 연주용 곡을 반복 재생한다. 칸을 바꾸면 **지금
+   * 자리(반복 안에서)부터 이어서** — 처음으로 되돌아가면 박이 끊긴다. null 이면 멈추고 곡으로.
+   */
+  const perform = useCallback(async (performance: Project | null) => {
+    try {
+      const renderer = await ensure();
+      if (!performance) {
+        performingRef.current = null;
+        renderer.stop();
+        renderer.setProject(projectRef.current);
+        setState('stopped');
+        setPlayheadTick(null);
+        return;
+      }
+      const wasPlaying = performingRef.current !== null;
+      performingRef.current = performance;
+      const loopEnd = performance.loop?.endTick ?? 1;
+      const at = wasPlaying ? (renderer.getPosition().tick % loopEnd) : 0;
+      renderer.setProject(performance);
+      renderer.play(at);
+      setState('playing');
+      setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -293,6 +330,6 @@ export function useAudioEngine(
 
   return {
     state, playheadTick, error, exporting, engineKind, clip, readLevel,
-    play, stop, audition, previewInstrument, exportWav, bounce, setMetronome,
+    play, stop, audition, previewInstrument, perform, exportWav, bounce, setMetronome,
   };
 }

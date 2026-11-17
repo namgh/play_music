@@ -250,6 +250,19 @@ export const SCREENS = [
       await sleep(600);
     },
   },
+  {
+    name: 'a16-live-loops', area: 16, title: '라이브 루프 — 트랙 × 장면 격자 · 칸 켜기 · ▶ 장면 · 편곡으로',
+    run: async (b) => {
+      await b.clickEl(`[...document.querySelectorAll('nav[aria-label="화면"] button')].find((x) => x.title === '라이브 루프')`);
+      await sleep(300);
+      await b.clickEl(`[...document.querySelectorAll('button')].find((x) => x.textContent === '구간에서 장면 만들기')`);
+      await sleep(300);
+      await b.clickEl(`[...document.querySelectorAll('[data-scene] button')][2]`);
+      await sleep(300);
+      await b.clickEl(`document.querySelector('[data-cell="패드:코러스"] button')`);
+      await sleep(500);
+    },
+  },
 ];
 
 async function capture(b, screen) {

@@ -593,6 +593,24 @@ try {
   const msg26 = await ev(`document.body.innerText.match(/\\d+음을 녹음했습니다[^\\n]*/)?.[0] ?? ''`);
   record('녹음 — 친 음이 클립에 (바꿔 녹음)', msg26.startsWith('3음') && after26 >= 3, `${total26} → ${after26} · 테이크 ${takes26} · ${msg26}`);
   await shot('22-recording');
+
+  // 27. 라이브 루프 — 구간에서 장면, 장면 재생(소리), 편곡으로 붙이기
+  await clickEl(`[...document.querySelectorAll('nav[aria-label="화면"] button')].find((b) => b.title === '라이브 루프')`);
+  await sleep(300);
+  await clickEl(byText('구간에서 장면 만들기'));
+  await sleep(300);
+  const scenes27 = await ev(`document.querySelectorAll('[data-scene]').length`);
+  const bars27 = await ev(`(() => { const p = JSON.parse(localStorage.getItem('project-autosave-v1')); return (p.project ?? p).lengthBars; })()`);
+  await clickEl(`document.querySelector('[data-scene] button')`);
+  let peak27 = 0; for (let i = 0; i < 12; i++) { await sleep(150); peak27 = Math.max(peak27, await ev('window.__peak()')); }
+  await clickEl(byText('모두 멈춤'));
+  await sleep(200);
+  await clickEl(`[...document.querySelectorAll('button')].find((b) => b.textContent.startsWith('편곡으로'))`);
+  await sleep(400);
+  const after27 = await ev(`(() => { const p = JSON.parse(localStorage.getItem('project-autosave-v1')); return (p.project ?? p).lengthBars; })()`);
+  record('라이브 루프 — 장면 재생·편곡으로', scenes27 >= 1 && peak27 > 0.001 && after27 > bars27, `장면 ${scenes27} · 피크 ${peak27.toFixed(4)} · 마디 ${bars27} → ${after27}`);
+  await shot('23-live-loops');
+  await clickEl(`[...document.querySelectorAll('nav[aria-label="화면"] button')][0]`);
   await clickEl(`[...document.querySelectorAll('[role=tab]')].find((b) => b.textContent.includes('음 편집'))`);
   await clickEl(`[...document.querySelectorAll('[aria-label="편집기 보기"] button')][0]`);
   await clickEl(`[...document.querySelectorAll('[aria-label="편집기 보기"] button')][0]`);

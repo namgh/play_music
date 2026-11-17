@@ -356,6 +356,22 @@ function optionalGlobals(raw: Record<string, unknown>, seen: Set<string>): Parti
       return { bar: Math.round(num(c.bar, 1, 1)), timeSignature: parseTimeSignature(c.timeSignature, '박자') };
     }));
   }
+  if (raw.liveScenes != null) {
+    out.liveScenes = asArray(raw.liveScenes, '라이브 루프').map((entry) => {
+      const sc = asRecord(entry, '장면');
+      return {
+        id: str(sc.id, 'scn'),
+        name: str(sc.name, '장면'),
+        cells: asArray(sc.cells ?? [], '칸').flatMap((c) => {
+          const cell = asRecord(c, '칸');
+          if (typeof cell.trackId !== 'string' || !cell.trackId.startsWith('trk_')) return [];
+          // 칸의 음은 클립 음과 id 가 따로다 — 따로 센다
+          const own = new Set<string>();
+          return [{ trackId: cell.trackId as TrackId, lengthTick: num(cell.lengthTick, 4 * PPQ, 1), notes: asArray(cell.notes ?? [], '칸 음').map((n) => parseNote(n, own)) }];
+        }),
+      };
+    });
+  }
   if (raw.buses != null) {
     out.buses = asArray(raw.buses, '버스').map((entry) => {
       const b = asRecord(entry, '버스');

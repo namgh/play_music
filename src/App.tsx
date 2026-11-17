@@ -24,6 +24,7 @@ import { EventList } from './ui/EventList.tsx';
 import { StepSequencer } from './ui/StepSequencer.tsx';
 import { SmartControls } from './ui/SmartControls.tsx';
 import { ProjectPanel } from './ui/ProjectPanel.tsx';
+import { LiveLoops } from './ui/LiveLoops.tsx';
 import { commitRecording, compFromTake, NoteRecorder, playedToNotes, switchTake } from './editor/recording.ts';
 import { SettingsPanel } from './ui/SettingsPanel.tsx';
 import { useMidiInput } from './audio/midiInput.ts';
@@ -88,6 +89,7 @@ const GRID_OPTIONS: { label: string; ticks: number }[] = [
 const VIEWS = [
   ['editor', '편집기', IconEditor],
   ['mixer', '믹서', IconMixer],
+  ['live', '라이브 루프', IconLoop],
   ['tuning', '튜닝 도구', IconTuning],
 ] as const;
 type View = (typeof VIEWS)[number][0];
@@ -1092,6 +1094,11 @@ export function App() {
       {view === 'tuning' && (
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
           <div className="scope-screen rounded-2xl bg-screen p-5"><TuningLab /></div>
+        </div>
+      )}
+      {view === 'live' && (
+        <div className="scope-body min-h-0 flex-1 overflow-y-auto p-5">
+          <LiveLoops editor={editor} onPerform={(p) => void engine.perform(p)} playing={engine.state === 'playing'} onNotice={setNotice} />
         </div>
       )}
       {view === 'mixer' && (

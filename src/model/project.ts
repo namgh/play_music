@@ -142,6 +142,20 @@ export interface Clip {
   takes?: Take[];
 }
 
+/** 라이브 루프 칸 — 트랙 하나의 반복 조각 */
+export interface LiveCell {
+  trackId: TrackId;
+  lengthTick: Ticks;
+  notes: Note[];
+}
+
+/** 라이브 루프 장면 — 격자의 세로 한 줄 (Logic Live Loops scene) */
+export interface LiveScene {
+  id: string;
+  name: string;
+  cells: LiveCell[];
+}
+
 export interface Take {
   id: string;
   name: string;
@@ -402,6 +416,8 @@ export interface Project {
   keyChanges?: KeyChange[];
   /** 트랙 스택 */
   stacks?: TrackStack[];
+  /** 라이브 루프 장면들 (`src/editor/liveLoops.ts`) */
+  liveScenes?: LiveScene[];
   /** 버스(Aux) */
   buses?: Bus[];
   vcas?: Vca[];
