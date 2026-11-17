@@ -517,6 +517,13 @@ export function splitClip(
     id: newClipId(),
     startTick: clip.startTick + offset,
     lengthTick: clip.lengthTick - offset,
+    // 오디오는 에셋의 시작 자리를 그만큼 민다 — 나눈 두 조각이 이어 들려야 한다
+    ...(clip.audio ? {
+      audio: {
+        ...clip.audio,
+        offsetSec: clip.audio.offsetSec + (ticksToSeconds(clip.startTick + offset, project.tempo) - ticksToSeconds(clip.startTick, project.tempo)),
+      },
+    } : {}),
     // 오른쪽 음은 **id 를 유지한다** — 나눴다고 선택·언두가 끊기면 안 된다
     notes: clip.notes
       .filter((n) => n.startTick >= offset)

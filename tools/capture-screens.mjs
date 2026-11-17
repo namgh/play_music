@@ -9,6 +9,8 @@
 
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import { byLabel, byText, byTitle, launch, sleep } from './lib/chrome.mjs';
 
@@ -269,6 +271,33 @@ export const SCREENS = [
       await b.clickEl(byLabel('베이스 선택'));
       await b.clickEl(`[...document.querySelectorAll('[aria-label="편집기 보기"] button')].find((x) => x.textContent === '악보')`);
       await sleep(400);
+    },
+  },
+  {
+    name: 'a18-audio', area: 18, title: '오디오 — 가져오기·마이크 녹음 · 파형 · 시작 다듬기·길이·게인·페이드·거꾸로·노멀라이즈',
+    run: async (b) => {
+      // 보컬 같은 소리: 떨리는 사인 + 끝으로 갈수록 작아지게
+      const sr = 48000, n = sr * 6, buf = Buffer.alloc(44 + n * 2);
+      buf.write('RIFF', 0); buf.writeUInt32LE(36 + n * 2, 4); buf.write('WAVE', 8); buf.write('fmt ', 12); buf.writeUInt32LE(16, 16);
+      buf.writeUInt16LE(1, 20); buf.writeUInt16LE(1, 22); buf.writeUInt32LE(sr, 24); buf.writeUInt32LE(sr * 2, 28); buf.writeUInt16LE(2, 32); buf.writeUInt16LE(16, 34);
+      buf.write('data', 36); buf.writeUInt32LE(n * 2, 40);
+      for (let i = 0; i < n; i++) {
+        const t = i / sr;
+        const env = Math.min(1, t * 4) * (0.35 + 0.65 * Math.abs(Math.sin(t * 2.1))) * (1 - t / 7);
+        buf.writeInt16LE(Math.round(Math.sin(2 * Math.PI * (220 + 6 * Math.sin(t * 30)) * t) * 20000 * env), 44 + i * 2);
+      }
+      // 경로에 .. 가 있으면 CDP 가 파일을 못 넣는다 — 임시 폴더의 절대 경로로
+      const path = join(tmpdir(), '보컬 데모.wav');
+      writeFileSync(path, buf);
+      const doc = await b.send('DOM.getDocument', {});
+      const node = await b.send('DOM.querySelector', { nodeId: doc.root.nodeId, selector: 'input[aria-label="오디오 파일"]' });
+      await b.send('DOM.setFileInputFiles', { nodeId: node.nodeId, files: [path] });
+      for (let i = 0; i < 20 && !(await b.ev(`!!document.querySelector('[data-audio-editor]')`)); i++) await sleep(300);
+      for (const [label, v] of [['페이드 인', '0.8'], ['페이드 아웃', '1.2'], ['시작 다듬기', '0.4']]) {
+        await b.ev(`(() => { const e = document.querySelector('[aria-label="${label}"]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(e, '${v}'); e.dispatchEvent(new Event('input', { bubbles: true })); e.dispatchEvent(new PointerEvent('pointerup', { bubbles: true })); })()`);
+        await sleep(150);
+      }
+      await sleep(1200);
     },
   },
 ];

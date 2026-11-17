@@ -2,6 +2,7 @@ import { Fragment, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 
 import { GlobalTracks } from './GlobalTracks.tsx';
+import { usePeaks } from './audioUi.ts';
 import { AutomationLane } from './AutomationLane.tsx';
 import { lanePoints, recorderStep, simplifyLane, writeAutomation } from '../editor/automationEdits.ts';
 import { automationValueAtTick } from '../audio/automation.ts';
@@ -273,6 +274,16 @@ export function Timeline({
           >
             ＋ 트랙 추가
           </button>
+          <button
+            type="button"
+            onClick={() => {
+              const added = addTrack(project, { name: `오디오 ${project.tracks.filter((t) => t.kind === 'audio').length + 1}`, instrumentId: 'acoustic-guitar' });
+              editor.commit({ ...added.project, tracks: added.project.tracks.map((t) => (t.id === added.trackId ? { ...t, kind: 'audio' as const } : t)) });
+              onSelectTrack(added.trackId);
+            }}
+            title="마이크로 녹음하거나 오디오 파일을 놓는 트랙"
+            className="h-7 rounded-md border border-rule bg-panel px-2.5 text-xs text-ink hover:border-ink-3"
+          >＋ 오디오</button>
         </div>
         {/* 도구는 넘치면 옆으로 스크롤한다 — 줄바꿈하면 트랙 영역이 밀려 내려간다 */}
         {tools && <div className="flex min-w-0 shrink items-center gap-1.5 overflow-x-auto [scrollbar-width:none]">{tools}</div>}
@@ -515,6 +526,7 @@ export function Timeline({
                     } ${selected ? 'ring-[1.5px] ring-acc' : ''} ${clip.muted ? 'opacity-40' : ''}`}
                   >
                     <i className={`pointer-events-none absolute inset-x-0 top-0 h-1.5 ${(TRACK_COLORS[clip.color ?? track.color] ?? FALLBACK_COLOR).head}`} />
+                    {clip.audio && <ClipWave assetId={clip.audio.assetId} from={clip.audio.offsetSec / clip.audio.assetSec} />}
                     <button
                       type="button"
                       onClick={() => onSelect(track.id, clip.id)}
@@ -525,7 +537,7 @@ export function Timeline({
                       title="끌어서 옮깁니다"
                       className="min-w-0 flex-1 cursor-grab truncate text-left font-semibold text-sink"
                     >
-                      <span className={clip.muted ? 'line-through' : ''}>{clip.label || '클립'}</span>
+                      <span className={clip.muted ? 'line-through' : ''}>{clip.audio ? '🎙 ' : ''}{clip.label || '클립'}</span>
                       <span className="ml-1 font-normal text-sink-2">
                         {clip.notes.length}음{edited > 0 ? ` · ${edited} 수정` : ''}
                       </span>
@@ -614,5 +626,18 @@ export function Timeline({
         )}
       </div>
     </section>
+  );
+}
+
+/** 오디오 클립 안의 파형 — 쓰는 구간부터 */
+function ClipWave({ assetId, from }: { assetId: string; from: number }) {
+  const p = usePeaks(assetId, 160);
+  if (!p) return null;
+  const start = Math.floor(from * p.length);
+  const bars = [...p.slice(start)];
+  return (
+    <svg viewBox={`0 0 ${bars.length} 20`} preserveAspectRatio="none" className="pointer-events-none absolute inset-x-0 bottom-0.5 top-3 h-auto w-full opacity-70">
+      {bars.map((v, i) => <rect key={i} x={i} y={10 - v * 10} width={0.8} height={Math.max(0.3, v * 20)} fill="currentColor" className="text-sink" />)}
+    </svg>
   );
 }

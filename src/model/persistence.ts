@@ -174,6 +174,16 @@ function parseClip(value: unknown, seen: Set<string>): Clip {
     ...(raw.muted == null ? {} : { muted: bool(raw.muted, false) }),
     ...(raw.color == null ? {} : { color: str(raw.color, 'j1') }),
     notes: asArray(raw.notes ?? [], '음 목록').map((note) => parseNote(note, seen)),
+    ...(raw.audio == null ? {} : (() => {
+      const a = asRecord(raw.audio, '오디오 리전');
+      return {
+        audio: {
+          assetId: str(a.assetId, ''), name: str(a.name, '오디오'), assetSec: num(a.assetSec, 0, 0),
+          offsetSec: num(a.offsetSec, 0, 0), gainDb: num(a.gainDb, 0, -60, 24),
+          fadeInSec: num(a.fadeInSec, 0, 0), fadeOutSec: num(a.fadeOutSec, 0, 0), reverse: bool(a.reverse, false),
+        },
+      };
+    })()),
     ...(raw.takes == null ? {} : {
       takes: asArray(raw.takes, '테이크').map((entry) => {
         const t = asRecord(entry, '테이크');
@@ -241,6 +251,7 @@ function parseTrack(value: unknown, seen: Set<string>): Track {
     clips: asArray(raw.clips ?? [], '클립 목록').map((clip) => parseClip(clip, seen)),
     ...(['read', 'touch', 'latch', 'write'].includes(String(raw.automationMode))
       ? { automationMode: raw.automationMode as AutomationMode } : {}),
+    ...(raw.kind === 'audio' ? { kind: 'audio' as const } : {}),
     ...(raw.hidden == null ? {} : { hidden: bool(raw.hidden, false) }),
     ...(raw.locked == null ? {} : { locked: bool(raw.locked, false) }),
     ...(typeof raw.stackId === 'string' && raw.stackId.startsWith('stk_') ? { stackId: raw.stackId as StackId } : {}),

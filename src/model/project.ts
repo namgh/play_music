@@ -136,6 +136,11 @@ export interface Clip {
   color?: string | null;
   notes: Note[];
   /**
+   * 오디오 클립 (Logic 오디오 리전). 있으면 이 클립은 음 대신 녹음·가져온 소리를 낸다.
+   * 소리 자체는 크고 이진이라 프로젝트(JSON)에 넣지 않고 에셋 저장소에 둔다 (`src/audio/assets.ts`)
+   */
+  audio?: AudioRegion;
+  /**
    * 보관된 테이크 (Logic 테이크 폴더). 들리는 것은 언제나 `notes` 고, 이것들은 골라서
    * 바꿔 넣을 후보다 (`src/editor/recording.ts`)
    */
@@ -154,6 +159,24 @@ export interface LiveScene {
   id: string;
   name: string;
   cells: LiveCell[];
+}
+
+/**
+ * 오디오 리전 — 에셋의 어디부터 얼마나, 어떻게. 길이는 클립 길이(틱)가 정하고,
+ * 소리는 **늘이거나 줄이지 않는다** (템포를 바꿔도 녹음 길이는 그대로 — 타임 스트레치는 Phase 4)
+ */
+export interface AudioRegion {
+  assetId: string;
+  /** 에셋 이름 (파일명) — 표시용 */
+  name: string;
+  /** 에셋 전체 길이(초) — 트림 한계 */
+  assetSec: number;
+  /** 에셋의 몇 초부터 */
+  offsetSec: number;
+  gainDb: number;
+  fadeInSec: number;
+  fadeOutSec: number;
+  reverse: boolean;
 }
 
 export interface Take {
@@ -230,6 +253,8 @@ export interface Track {
   clips: Clip[];
   /** 오토메이션 모드. 없으면 읽기 */
   automationMode?: AutomationMode;
+  /** 오디오 트랙 — 녹음 단추가 마이크를 쓴다. 없으면 악기 트랙 */
+  kind?: 'audio';
   /** 숨김 (Logic Hide). 목록에서만 빠지고 **소리는 그대로 난다** */
   hidden?: boolean;
   /** 보호 (Logic Protect). 켜져 있으면 클립·음·오토메이션을 고칠 수 없다 */

@@ -40,6 +40,8 @@ import { buildEffectChain } from './effectGraph.ts';
 import type { EffectChain } from './effectGraph.ts';
 import { scheduleClick } from './metronome.ts';
 import { BusGraph } from './busGraph.ts';
+import { planAudio, scheduleAudioRegions } from './audioRegions.ts';
+import { decodeAsset } from './assets.ts';
 import { countInSeconds } from './scheduler.ts';
 import type { PlayOptions } from './renderer.ts';
 import { renderOfflineWithWorklet } from './offlineExport.ts';
@@ -99,6 +101,9 @@ export class WorkletRenderer implements AudioRenderer {
   private masterEffectsKey = '';
   /** Aux 버스·트랙 출력·센드 (`busGraph.ts`) */
   private busGraph: BusGraph;
+  /** 풀어 둔 오디오 에셋 — 재생 순간에 기다리지 않게 미리 (`assets.ts`) */
+  private readonly audioBuffers = new Map<string, AudioBuffer>();
+  private audioNodes: AudioBufferSourceNode[] = [];
   /** 예약된 메트로놈 오실레이터. 정지할 때 끊어야 한다 */
   private readonly clickNodes = new Set<OscillatorNode>();
 
@@ -163,6 +168,7 @@ export class WorkletRenderer implements AudioRenderer {
     if (masterKey !== this.masterEffectsKey) this.rebuildMasterEffects(project.master.effects, masterKey);
 
     this.busGraph.syncBuses(project);
+    this.preloadAudio(project);
     for (const [id, runtime] of this.tracks) {
       if (!project.tracks.some((t) => t.id === id)) {
         this.disposeTrack(runtime);
@@ -257,6 +263,16 @@ export class WorkletRenderer implements AudioRenderer {
     this.scheduler.start(this.project, fromTick, preRoll);
     this.pumpTimer = setInterval(() => this.scheduler.pump(), PUMP_INTERVAL_MS);
     this.scheduleTrackAutomation(fromTick, anchorTime);
+    this.audioNodes = scheduleAudioRegions(this.ctx, planAudio(this.project, fromTick), this.audioBuffers, anchorTime,
+      (trackId) => this.tracks.get(trackId)?.panNode ?? null);
+  }
+
+  private preloadAudio(project: Project): void {
+    for (const t of project.tracks) for (const c of t.clips) {
+      const id = c.audio?.assetId;
+      if (!id || this.audioBuffers.has(id)) continue;
+      void decodeAsset(this.ctx, id).then((b) => { if (b) this.audioBuffers.set(id, b); });
+    }
   }
 
   /**
@@ -306,6 +322,8 @@ export class WorkletRenderer implements AudioRenderer {
   stop(): void {
     this.scheduler.stop();
     this.stopClicks();
+    for (const n of this.audioNodes) { try { n.stop(); } catch { /* 이미 끝남 */ } }
+    this.audioNodes = [];
     if (this.pumpTimer !== null) {
       clearInterval(this.pumpTimer);
       this.pumpTimer = null;

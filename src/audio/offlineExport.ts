@@ -22,6 +22,8 @@ import type { InstrumentDefinition } from '../instruments/types.ts';
 import { instrumentParams, resolveInstrument } from '../instruments/resolve.ts';
 import { scheduleTrackLanes } from './automation.ts';
 import { BusGraph } from './busGraph.ts';
+import { planAudio, scheduleAudioRegions } from './audioRegions.ts';
+import { decodeAll } from './assets.ts';
 import { vcaScale } from '../model/project.ts';
 import { expressionParams } from './articulation.ts';
 import {
@@ -70,6 +72,9 @@ export async function renderOfflineWithWorklet(
     project.tuning,
   );
 
+  // 오디오 클립 — 내보내기 컨텍스트에서 다시 푼다 (컨텍스트마다 버퍼가 따로다)
+  const audioBuffers = await decodeAll(offline, tracks.flatMap((t) => t.clips.flatMap((c) => (c.audio ? [c.audio.assetId] : []))));
+  const panOf = new Map<string, AudioNode>();
   const ready: Promise<void>[] = [];
 
   for (const track of tracks) {
@@ -86,6 +91,7 @@ export async function renderOfflineWithWorklet(
     // 줄고 이미 만들어진 웨트 꼬리는 그대로 울려 게이트 리버브가 성립하지 않는다
     // (`workletRenderer.ts` 와 같은 이유). 내보내기는 항상 곡 처음(틱 0 = 오프라인
     // 클럭 0초)부터 렌더하므로 앵커를 0으로 준다
+    panOf.set(track.id, pan);
     const automationGain = offline.createGain();
     scheduleTrackLanes(track, { automationGain, panNode: pan, bindings: effects.bindings }, project.tempo, 0, 0);
     node.connect(gain).connect(pan).connect(effects.input);
@@ -146,6 +152,7 @@ export async function renderOfflineWithWorklet(
   }
 
   await Promise.all(ready);
+  scheduleAudioRegions(offline, planAudio(subset, 0), audioBuffers, 0, (id) => panOf.get(id) ?? null);
   const rendered = await offline.startRendering();
   return Array.from({ length: rendered.numberOfChannels }, (_, ch) => rendered.getChannelData(ch));
 }

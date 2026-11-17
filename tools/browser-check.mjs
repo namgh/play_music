@@ -27,7 +27,9 @@ mkdirSync(DL, { recursive: true });
 const chrome = spawn('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', [
   '--headless=new', `--remote-debugging-port=${PORT}`, `--user-data-dir=${PROFILE}`,
   '--window-size=1440,900', '--force-device-scale-factor=1', '--hide-scrollbars',
-  '--autoplay-policy=no-user-gesture-required', '--no-first-run', 'about:blank',
+  '--autoplay-policy=no-user-gesture-required', '--no-first-run',
+  // 마이크 녹음 점검용 — 가짜 장치(사인파)와 권한 자동 허용
+  '--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream', 'about:blank',
 ], { stdio: 'ignore' });
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -626,6 +628,46 @@ try {
   record('악보 그리기·MusicXML', measures28 > 0 && heads28 > 0 && xmlText.includes('<score-partwise') && xmlText.includes('<note>'),
     `마디 ${measures28} · 음표 머리 ${heads28} · ${xml28} ${xmlText.length}B`);
   await shot('24-score');
+
+  // 29. 오디오 — 파일 가져오기·편집기·재생, 마이크 녹음(가짜 장치)
+  await clickEl(`[...document.querySelectorAll('[aria-label="편집기 보기"] button')][0]`);
+  const sine = (() => {
+    const sr = 48000, n = sr * 2, b = Buffer.alloc(44 + n * 2);
+    b.write('RIFF', 0); b.writeUInt32LE(36 + n * 2, 4); b.write('WAVE', 8); b.write('fmt ', 12); b.writeUInt32LE(16, 16);
+    b.writeUInt16LE(1, 20); b.writeUInt16LE(1, 22); b.writeUInt32LE(sr, 24); b.writeUInt32LE(sr * 2, 28); b.writeUInt16LE(2, 32); b.writeUInt16LE(16, 34);
+    b.write('data', 36); b.writeUInt32LE(n * 2, 40);
+    for (let i = 0; i < n; i++) b.writeInt16LE(Math.round(Math.sin(2 * Math.PI * 220 * i / sr) * 12000), 44 + i * 2);
+    return b;
+  })();
+  const wavPath = join(OUT, '사인 220.wav');
+  writeFileSync(wavPath, sine);
+  const doc = await send('DOM.getDocument', {});
+  const node = await send('DOM.querySelector', { nodeId: doc.root.nodeId, selector: 'input[aria-label="오디오 파일"]' });
+  await send('DOM.setFileInputFiles', { nodeId: node.nodeId, files: [wavPath] });
+  await sleep(1500);
+  const audio29 = await ev(`(() => { const p = JSON.parse(localStorage.getItem('project-autosave-v1')); const d = p.project ?? p; return d.tracks.flatMap((t) => t.clips.filter((c) => c.audio).map((c) => t.name + ':' + c.audio.name + ':' + c.audio.assetSec.toFixed(2))).join(' '); })()`);
+  const editorShown = await ev(`!!document.querySelector('[data-audio-editor]')`);
+  await sleep(800);
+  const bars29 = await ev(`document.querySelectorAll('[data-audio-editor] svg rect').length`);
+  record('오디오 가져오기 — 새 오디오 트랙에 클립, 편집기·파형', audio29.includes('2.00') && editorShown && bars29 > 100, `${audio29} · 파형 막대 ${bars29}`);
+  await clickEl(`document.querySelector('[aria-label="게인"]')`);
+  await clickEl(byTitle('맨 앞으로'));
+  await clickEl(byTitle('커서부터 재생'));
+  let peak29 = 0; for (let i = 0; i < 12; i++) { await sleep(150); peak29 = Math.max(peak29, await ev('window.__peak()')); }
+  const stop29 = await centerOf(byTitle('정지')); if (stop29) await click(stop29.x, stop29.y);
+  record('오디오 클립 재생', peak29 > 0.01, `피크 ${peak29.toFixed(4)}`);
+  // 마이크 녹음
+  await clickEl(byText('＋ 오디오'));
+  await sleep(300);
+  const selected29 = await ev(`[...document.querySelectorAll('[data-track]')].map((e) => e.dataset.track).join(',')`);
+  await clickEl(`document.querySelector('[aria-label="녹음"]')`);
+  await sleep(2000);
+  const rec29 = await ev(`document.querySelector('[aria-label="녹음"]').getAttribute('aria-pressed') + ' / ' + (document.body.innerText.match(/마이크[^\\n]*/)?.[0] ?? '')`);
+  await clickEl(`document.querySelector('[aria-label="녹음"]')`);
+  await sleep(2500);
+  const mic29 = await ev(`(() => { const p = JSON.parse(localStorage.getItem('project-autosave-v1')); const d = p.project ?? p; return d.tracks.flatMap((t) => t.clips.filter((c) => c.audio && c.audio.name.startsWith('녹음')).map((c) => c.audio.assetSec.toFixed(1))).join(','); })()`);
+  record('마이크 녹음 (가짜 장치)', mic29.length > 0 && Number(mic29.split(',')[0]) > 0.5, `${mic29}초 · ${await ev(`document.body.innerText.match(/오디오 [\\d.]+초를 녹음|마이크를 열지[^\\n]*|녹음을 저장하지[^\\n]*/)?.[0] ?? ''`)}`);
+  await shot('25-audio');
   await clickEl(`[...document.querySelectorAll('[aria-label="편집기 보기"] button')][0]`);
   await clickEl(`[...document.querySelectorAll('nav[aria-label="화면"] button')][0]`);
   await clickEl(`[...document.querySelectorAll('[role=tab]')].find((b) => b.textContent.includes('음 편집'))`);

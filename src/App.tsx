@@ -26,6 +26,8 @@ import { SmartControls } from './ui/SmartControls.tsx';
 import { ProjectPanel } from './ui/ProjectPanel.tsx';
 import { LiveLoops } from './ui/LiveLoops.tsx';
 import { ScoreView } from './ui/ScoreView.tsx';
+import { AudioEditor } from './ui/AudioEditor.tsx';
+import { importAudioBytes, MicRecorder, placeAudio } from './ui/audioUi.ts';
 import { commitRecording, compFromTake, NoteRecorder, playedToNotes, switchTake } from './editor/recording.ts';
 import { SettingsPanel } from './ui/SettingsPanel.tsx';
 import { useMidiInput } from './audio/midiInput.ts';
@@ -160,6 +162,9 @@ export function App() {
   const theme = useThemeState();
   const fileInput = useRef<HTMLInputElement | null>(null);
   const midiInput = useRef<HTMLInputElement | null>(null);
+  const audioInput = useRef<HTMLInputElement | null>(null);
+  /** 마이크 녹음 (오디오 트랙) */
+  const mic = useRef<{ recorder: MicRecorder; fromTick: number; trackId: TrackId } | null>(null);
 
   /**
    * 편집 커서 (클립 기준 틱). **두 기능이 이걸 공유한다** —
@@ -316,10 +321,46 @@ export function App() {
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [engine.state]);
+  /** 오디오 트랙 녹음 — 마이크로 받아 재생이 멈추면 클립으로 */
+  const startMic = async () => {
+    if (!track) return;
+    try {
+      const recorder = new MicRecorder();
+      await recorder.start();
+      const from = cursorTick + (clip?.startTick ?? 0);
+      mic.current = { recorder, fromTick: from, trackId: track.id };
+      setIsRecording(true);
+      void engine.play(from, { countInBars: 0 });
+    } catch (err) {
+      setNotice(`마이크를 열지 못했습니다: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+  useEffect(() => {
+    const m = mic.current;
+    if (!m || engine.state === 'playing') return;
+    mic.current = null;
+    setIsRecording(false);
+    void (async () => {
+      try {
+        const bytes = await m.recorder.stop();
+        const { assetId, seconds } = await importAudioBytes(bytes);
+        const name = `녹음 ${new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
+        const placed = placeAudio(projectRef.current, { assetId, seconds, name, atTick: m.fromTick, trackId: m.trackId });
+        editor.commit(placed.project);
+        setNotice(`오디오 ${seconds.toFixed(1)}초를 녹음했습니다`);
+      } catch (err) {
+        setNotice(`녹음을 저장하지 못했습니다: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [engine.state]);
+  const projectRef = useRef(project);
+  projectRef.current = project;
   const lastPlayhead = useRef<number | null>(null);
   if (engine.playheadTick !== null) lastPlayhead.current = engine.playheadTick;
 
   const startRecording = () => {
+    if (track?.kind === 'audio') { void startMic(); return; }
     if (!clip || !track) { setNotice('녹음할 클립을 고르세요'); return; }
     if (track.locked) { setNotice(`"${track.name}" 트랙은 보호돼 있습니다`); return; }
     const from = cursorTick + clip.startTick;
@@ -849,6 +890,7 @@ export function App() {
             {/* MIDI — 없으면 다른 DAW 와 단절돼 사용자가 갇힌다 (`ROADMAP.md` P3) */}
             <button type="button" className={MENU_ITEM} onClick={() => { exportMidi(); setMenu(null); }}>MIDI 내보내기</button>
             <button type="button" className={MENU_ITEM} onClick={() => { midiInput.current?.click(); setMenu(null); }}>MIDI 가져오기</button>
+            <button type="button" className={MENU_ITEM} onClick={() => { audioInput.current?.click(); setMenu(null); }}>오디오 가져오기<span className="ml-auto text-[11px] text-ink-3">WAV·MP3…</span></button>
             <div className="my-1 h-px bg-rule" />
             {/* 클라우드는 **얹는 기능**이다 — 로그인하지 않아도 위의 파일 저장·열기는 그대로 된다 */}
             <div className="px-2 py-1.5">
@@ -864,6 +906,30 @@ export function App() {
           accept="application/json,.json"
           className="hidden"
           onChange={(e) => { void onOpenFile(e.target.files?.[0]); e.target.value = ''; }}
+        />
+        <input
+          ref={audioInput}
+          type="file"
+          accept="audio/*"
+          aria-label="오디오 파일"
+          className="hidden"
+          onChange={async (e) => {
+            const file = e.target.files?.[0];
+            e.target.value = '';
+            if (!file) return;
+            try {
+              setNotice(`"${file.name}" 을 읽는 중…`);
+              const { assetId, seconds } = await importAudioBytes(await file.arrayBuffer());
+              const at = cursorTick + (clip?.startTick ?? 0);
+              const placed = placeAudio(project, { assetId, seconds, name: file.name, atTick: at, trackId: track?.kind === 'audio' ? track.id : null });
+              editor.commit(placed.project);
+              setSelectedTrackId(placed.trackId);
+              setSelectedClipId(placed.project.tracks.find((t) => t.id === placed.trackId)?.clips.find((c) => c.audio?.assetId === assetId && c.startTick === at)?.id ?? null);
+              setNotice(`"${file.name}" (${seconds.toFixed(1)}초) 을 놓았습니다`);
+            } catch (err) {
+              setNotice(err instanceof Error ? err.message : String(err));
+            }
+          }}
         />
         <input
           ref={midiInput}
@@ -1278,7 +1344,7 @@ export function App() {
                   )}
                   <span className="flex-1" />
                   {/* 같은 클립을 보는 두 방식 — 그림(피아노 롤) / 숫자(이벤트 목록) */}
-                  <div className="flex gap-0.5 self-center rounded-md bg-panel p-0.5" role="tablist" aria-label="편집기 보기">
+                  <div className={`gap-0.5 self-center rounded-md bg-panel p-0.5 ${clip.audio ? 'hidden' : 'flex'}`} role="tablist" aria-label="편집기 보기">
                     {(['roll', 'steps', 'list', 'score'] as const).map((v) => (
                       <button key={v} type="button" role="tab" aria-selected={editorView === v} onClick={() => setEditorView(v)}
                         className={`h-6 rounded px-2 text-[11px] ${editorView === v ? 'bg-body font-semibold text-ink shadow-sm' : 'text-ink-3'}`}
@@ -1286,15 +1352,16 @@ export function App() {
                     ))}
                   </div>
                 </div>
-                {editorView === 'list' && <div className="scope-screen flex min-h-0 flex-1 flex-col"><EventList editor={editor} clip={clip} onAudition={audition} /></div>}
-                {editorView === 'score' && <div className="flex min-h-0 flex-1 flex-col"><ScoreView project={project} track={track} clip={clip} /></div>}
-                {editorView === 'steps' && (
+                {!clip.audio && editorView === 'list' && <div className="scope-screen flex min-h-0 flex-1 flex-col"><EventList editor={editor} clip={clip} onAudition={audition} /></div>}
+                {clip.audio && <div className="flex min-h-0 flex-1 flex-col"><AudioEditor editor={editor} clip={clip as typeof clip & { audio: NonNullable<typeof clip.audio> }} /></div>}
+                {!clip.audio && editorView === 'score' && <div className="flex min-h-0 flex-1 flex-col"><ScoreView project={project} track={track} clip={clip} /></div>}
+                {!clip.audio && editorView === 'steps' && (
                   <div className="scope-screen flex min-h-0 flex-1 flex-col">
                     <StepSequencer editor={editor} track={track} clip={clip} playheadTick={engine.playheadTick}
                       onAudition={(trackId, midi) => void engine.audition(trackId, midi, 0)} />
                   </div>
                 )}
-                <div className={`scope-screen min-h-0 flex-1 flex-col gap-2 ${editorView === 'roll' ? 'flex' : 'hidden'}`}>
+                <div className={`scope-screen min-h-0 flex-1 flex-col gap-2 ${editorView === 'roll' && !clip.audio ? 'flex' : 'hidden'}`}>
                   <PianoRoll
                     className="min-h-[11rem] flex-1"
                     editor={editor}
