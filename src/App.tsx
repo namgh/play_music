@@ -21,6 +21,7 @@ import { ExportPanel } from './ui/ExportPanel.tsx';
 import { SoundBrowser } from './ui/SoundBrowser.tsx';
 import { PlaySurface } from './ui/PlaySurface.tsx';
 import { EventList } from './ui/EventList.tsx';
+import { StepSequencer } from './ui/StepSequencer.tsx';
 import { extractVoice, forceLegato, humanize, removeOverlaps, scaleQuantize, scaleVelocity } from './editor/noteTools.ts';
 import type { NoteColorMode } from './ui/PianoRoll.tsx';
 import { createStack, setTrackFlag, setTrackStack } from './editor/tracks.ts';
@@ -157,7 +158,7 @@ export function App() {
   /** 연주 칸(건반) — 보기 설정 */
   const [playOpen, setPlayOpen] = useState(false);
   /** 클립 편집기 보기 — 피아노 롤 / 이벤트 목록 */
-  const [editorView, setEditorView] = useState<'roll' | 'list'>('roll');
+  const [editorView, setEditorView] = useState<'roll' | 'steps' | 'list'>('roll');
   /**
    * **클립별** 표시 음역. **곡이 아니라 보기 설정**이라 프로젝트에 저장하지 않는다
    * (`plan.md` 5-4 — 프로젝트 데이터는 곡 자체다).
@@ -1158,14 +1159,20 @@ export function App() {
                   <span className="flex-1" />
                   {/* 같은 클립을 보는 두 방식 — 그림(피아노 롤) / 숫자(이벤트 목록) */}
                   <div className="flex gap-0.5 self-center rounded-md bg-panel p-0.5" role="tablist" aria-label="편집기 보기">
-                    {(['roll', 'list'] as const).map((v) => (
+                    {(['roll', 'steps', 'list'] as const).map((v) => (
                       <button key={v} type="button" role="tab" aria-selected={editorView === v} onClick={() => setEditorView(v)}
                         className={`h-6 rounded px-2 text-[11px] ${editorView === v ? 'bg-body font-semibold text-ink shadow-sm' : 'text-ink-3'}`}
-                      >{v === 'roll' ? '피아노 롤' : '이벤트 목록'}</button>
+                      >{v === 'roll' ? '피아노 롤' : v === 'steps' ? '스텝' : '이벤트 목록'}</button>
                     ))}
                   </div>
                 </div>
                 {editorView === 'list' && <div className="scope-screen flex min-h-0 flex-1 flex-col"><EventList editor={editor} clip={clip} onAudition={audition} /></div>}
+                {editorView === 'steps' && (
+                  <div className="scope-screen flex min-h-0 flex-1 flex-col">
+                    <StepSequencer editor={editor} track={track} clip={clip} playheadTick={engine.playheadTick}
+                      onAudition={(trackId, midi) => void engine.audition(trackId, midi, 0)} />
+                  </div>
+                )}
                 <div className={`scope-screen min-h-0 flex-1 flex-col gap-2 ${editorView === 'roll' ? 'flex' : 'hidden'}`}>
                   <PianoRoll
                     className="min-h-[11rem] flex-1"

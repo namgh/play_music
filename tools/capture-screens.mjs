@@ -182,9 +182,20 @@ export const SCREENS = [
     name: 'a10-event-list', area: 10, title: '이벤트 목록 — 마디·박·틱·음·센트·길이·세기를 숫자로 · MIDI 변환 줄',
     run: async (b) => {
       await b.clickEl(byLabel('어쿠스틱 기타 선택'));
-      await b.clickEl(`[...document.querySelectorAll('[aria-label="편집기 보기"] button')][1]`);
+      await b.clickEl(`[...document.querySelectorAll('[aria-label="편집기 보기"] button')].find((x) => x.textContent === '이벤트 목록')`);
       await sleep(200);
       await b.clickEl(`document.querySelector('[data-note-row="2"] td')`);
+      await sleep(200);
+    },
+  },
+  {
+    name: 'a11-step-sequencer', area: 11, title: '스텝 시퀀서 — 드럼 트랙들이 한 판(줄 = 트랙) · 강세·래칫·게이트',
+    run: async (b) => {
+      await b.clickEl(byLabel('킥 선택'));
+      await b.clickEl(`[...document.querySelectorAll('[aria-label="편집기 보기"] button')].find((x) => x.textContent === '스텝')`);
+      await sleep(200);
+      for (const i of [6, 14]) await b.clickEl(`document.querySelector('[aria-label="스네어 ${i}칸"]')`);
+      await b.clickEl(`[...document.querySelectorAll('[data-step-sequencer] button')].find((x) => x.getAttribute('aria-label') === '스네어 13칸 켜짐')`);
       await sleep(200);
     },
   },

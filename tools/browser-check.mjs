@@ -466,7 +466,7 @@ try {
 
   // 21. 이벤트 목록 — 숫자로 고치기, MIDI 변환
   await clickEl(`document.querySelector('[aria-label="건반"]')`);
-  await clickEl(`[...document.querySelectorAll('[aria-label="편집기 보기"] button')][1]`);
+  await clickEl(`[...document.querySelectorAll('[aria-label="편집기 보기"] button')].find((x) => x.textContent === '이벤트 목록')`);
   await sleep(200);
   const rows21 = await ev(`document.querySelectorAll('[data-note-row]').length`);
   const firstMidi = `document.querySelector('[data-note-row="0"] input[aria-label="MIDI"]')`;
@@ -483,6 +483,20 @@ try {
   const oct21 = Number(await ev(`${firstMidi}.value`));
   record('MIDI 변환 — +옥타브', oct21 === after21 + 12 || oct21 === 127, `${after21} → ${oct21}`);
   await shot('17-event-list');
+
+  // 22. 스텝 시퀀서 — 칸 켜기/끄기가 음을 찍고 지운다
+  await clickEl(`[...document.querySelectorAll('[aria-label="편집기 보기"] button')].find((b) => b.textContent === '스텝')`);
+  await sleep(200);
+  const total22 = await totalNotes();
+  await clickEl(`document.querySelector('[data-step-sequencer] button[aria-pressed="false"]')`);
+  await sleep(300);
+  const on22 = await totalNotes();
+  await clickEl(`document.querySelector('[data-step-sequencer] button[aria-pressed="true"]')`);
+  await sleep(300);
+  const off22 = await totalNotes();
+  record('스텝 칸 켜기·끄기', on22 === total22 + 1 && off22 === on22 - 1, `${total22} → ${on22} → ${off22}`);
+  await shot('18-steps');
+  await clickEl(`[...document.querySelectorAll('[aria-label="편집기 보기"] button')][0]`);
   await clickEl(`[...document.querySelectorAll('[aria-label="편집기 보기"] button')][0]`);
 } catch (err) {
   record('스크립트 실행', false, String(err.stack ?? err).slice(0, 500));
