@@ -224,6 +224,15 @@ export const SCREENS = [
       await sleep(200);
     },
   },
+  {
+    name: 'a14-settings-keys', area: 14, title: '설정 — 단축키(바꾸기·겹침 경고·기본값) · 일반(카운트인·조율) · MIDI 장치',
+    run: async (b) => {
+      await b.clickEl(byLabel('설정'));
+      await b.clickEl(`[...document.querySelectorAll('[role=dialog] [role=tab]')].find((x) => x.textContent === '단축키')`);
+      await b.clickEl(`document.querySelector('[data-command="loop"] button')`);
+      await sleep(150);
+    },
+  },
 ];
 
 async function capture(b, screen) {

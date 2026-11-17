@@ -13,7 +13,7 @@ import { downloadProject, loadAutosave, readProjectFile, saveAutosave } from './
 import { decodeMidi, encodeMidi } from './model/midi.ts';
 import { createEmptyProject, projectLengthTicks } from './model/factory.ts';
 import type { ClipId, MusicalKey, Note, Project, StackId, TrackId } from './model/project.ts';
-import { NOTE_NAMES } from './model/pitch.ts';
+import { NOTE_NAMES, pitchName } from './model/pitch.ts';
 import { PPQ, ticksPerBar, ticksPerBeat, ticksToSeconds } from './model/time.ts';
 import { positionAt } from './model/meter.ts';
 import { adjacentMarkerTick, keyAt, tapTempo } from './editor/arrangement.ts';
@@ -24,6 +24,11 @@ import { EventList } from './ui/EventList.tsx';
 import { StepSequencer } from './ui/StepSequencer.tsx';
 import { SmartControls } from './ui/SmartControls.tsx';
 import { ProjectPanel } from './ui/ProjectPanel.tsx';
+import { SettingsPanel } from './ui/SettingsPanel.tsx';
+import { useMidiInput } from './audio/midiInput.ts';
+import { resolveCommand } from './ui/shortcuts.ts';
+import { effectiveBindings, loadSettings, saveSettings } from './ui/settings.ts';
+import type { AppSettings } from './ui/settings.ts';
 import { browserKv, putProject } from './editor/library.ts';
 import { extractVoice, forceLegato, humanize, removeOverlaps, scaleQuantize, scaleVelocity } from './editor/noteTools.ts';
 import type { NoteColorMode } from './ui/PianoRoll.tsx';
@@ -136,6 +141,8 @@ export function App() {
   /** LCD 위치 표시 — 마디.박 또는 분:초 */
   const [lcdMode, setLcdMode] = useState<'bars' | 'time'>('bars');
   const taps = useRef<number[]>([]);
+  /** 단축키 처리기가 늘 최신 마커 이동을 부르게 */
+  const jumpMarkerRef = useRef<(d: 1 | -1) => void>(() => {});
   /** 상단 바에서 열린 띄움 창. 한 번에 하나만 */
   const [menu, setMenu] = useState<'file' | 'theme' | 'export' | null>(null);
   const theme = useThemeState();
@@ -164,6 +171,11 @@ export function App() {
   const [editorView, setEditorView] = useState<'roll' | 'steps' | 'list'>('roll');
   /** 곡 고르기 판 */
   const [projectsOpen, setProjectsOpen] = useState(false);
+  /** 앱 설정 — 곡이 아니라 작업 환경 (`settings.ts`) */
+  const [settings, setSettingsState] = useState<AppSettings>(() => loadSettings());
+  const setSettings = useCallback((next: AppSettings) => { setSettingsState(next); saveSettings(next); }, []);
+  const bindings = useMemo(() => effectiveBindings(settings), [settings]);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   /**
    * **클립별** 표시 음역. **곡이 아니라 보기 설정**이라 프로젝트에 저장하지 않는다
    * (`plan.md` 5-4 — 프로젝트 데이터는 곡 자체다).
@@ -189,6 +201,15 @@ export function App() {
     project.tracks.map((t) => t.instrumentId),
   );
   const engine = useAudioEngine(project, registry);
+  // MIDI 입력 — 설정에서 장치를 골랐거나 설정 창이 열려 있을 때만 켠다(처음에 권한을 묻는다)
+  const [midiLast, setMidiLast] = useState<string | null>(null);
+  const midiNoteRef = useRef<(midi: number, velocity: number) => void>(() => {});
+  const midiDevice = useMidiInput(settings.midiInputId !== null || settingsOpen, settings.midiInputId, (m) => {
+    if (m?.kind === 'noteOn') {
+      setMidiLast(`${pitchName({ midi: m.midi, cents: 0 })} · 세기 ${Math.round(m.velocity * 127)}`);
+      midiNoteRef.current(m.midi, m.velocity);
+    }
+  });
 
   // **튜닝 도구로 넘어가면 곡 재생을 멈춘다.** 그 화면은 자체 엔진으로 소리를 내므로
   // 곡이 계속 흐르면 둘이 겹쳐 들리고, 그 상태로는 음색을 판정할 수 없다
@@ -248,6 +269,9 @@ export function App() {
     },
     [engine, track],
   );
+
+  // MIDI 건반 → 고른 트랙으로 연주 (녹음은 녹음 기능이 이 ref 를 감싼다)
+  midiNoteRef.current = (midi, velocity) => { if (track) void engine.audition(track.id, midi, 0, velocity); };
 
   // 메트로놈 상태를 엔진에 반영한다. `engine` 전체가 아니라 setter 에만 의존한다 —
   // `engine` 은 렌더마다 새 객체라 매 렌더 실행된다
@@ -327,97 +351,56 @@ export function App() {
       const target = event.target as HTMLElement | null;
       if (target && /^(INPUT|SELECT|TEXTAREA)$/.test(target.tagName)) return;
 
-      const meta = event.metaKey || event.ctrlKey;
-      if (meta) {
-        switch (event.key.toLowerCase()) {
-          case 'o':
-            event.preventDefault();
-            setProjectsOpen(true);
-            return;
-          case 's':
-            event.preventDefault();
-            downloadProject(project);
-            setNotice('파일로 저장했습니다');
-            return;
-          case 'z':
-            event.preventDefault();
-            if (event.shiftKey) editor.redo();
-            else editor.undo();
-            return;
-          case 'c':
-            event.preventDefault();
-            doCopy();
-            return;
-          case 'v':
-            event.preventDefault();
-            doPaste();
-            return;
-          case 'd':
-            event.preventDefault();
-            doDuplicate();
-            return;
-          case 'a':
-            event.preventDefault();
-            if (clip) editor.select(clip.notes.map((n) => n.id));
-            return;
-          case 'l':
-            event.preventDefault();
-            loopFromSelection();
-            return;
-          default:
-            break;
-        }
-        return;
-      }
-
-      if (event.code === 'Space') {
-        event.preventDefault();
-        // **커서부터 재생한다.** 예전에는 항상 0 이라 8마디 곡의 7마디를 고치려면
-        // 매번 앞 6마디를 다 들어야 했다
-        if (engine.state === 'playing') engine.stop();
-        else void engine.play(cursorTick + (clip?.startTick ?? 0), { countInBars: countIn ? 1 : 0 });
-        return;
-      }
-      if (event.key === 'Escape') {
-        editor.select([]);
-        // 글로벌 트랙에서 고른 것도 놓는다 — 그래야 그 줄의 도구(코드 찾기 등)가 돌아온다
-        setGlobalSelection(null);
-        return;
-      }
-      if (selection.length === 0) return;
-
-      switch (event.key) {
-        case 'Backspace':
-        case 'Delete':
-          event.preventDefault();
-          editor.commit(deleteNotes(project, selection));
+      // 단축키는 명령 목록에서 찾는다 — 설정에서 바꾼 키도 여기로 온다 (`shortcuts.ts`)
+      const command = resolveCommand(bindings, event);
+      if (!command) return;
+      const needsSelection = ['delete', 'up', 'down', 'octaveUp', 'octaveDown', 'left', 'right'].includes(command);
+      if (needsSelection && selection.length === 0) return;
+      event.preventDefault();
+      switch (command) {
+        case 'projects': setProjectsOpen(true); return;
+        case 'settings': setSettingsOpen(true); return;
+        case 'save': downloadProject(project); setNotice('파일로 저장했습니다'); return;
+        case 'undo': editor.undo(); return;
+        case 'redo': editor.redo(); return;
+        case 'copy': doCopy(); return;
+        case 'paste': doPaste(); return;
+        case 'duplicate': doDuplicate(); return;
+        case 'selectAll': if (clip) editor.select(clip.notes.map((n) => n.id)); return;
+        case 'loop': loopFromSelection(); return;
+        case 'play':
+          // **커서부터 재생한다.** 예전에는 항상 0 이라 8마디 곡의 7마디를 고치려면
+          // 매번 앞 6마디를 다 들어야 했다
+          if (engine.state === 'playing') engine.stop();
+          else void engine.play(cursorTick + (clip?.startTick ?? 0), { countInBars: countIn ? settings.countInBars : 0 });
+          return;
+        case 'deselect':
           editor.select([]);
-          break;
-        case 'ArrowUp':
-          event.preventDefault();
-          editor.commit(moveNotes(project, selection, { semitones: event.shiftKey ? 12 : 1 }));
-          break;
-        case 'ArrowDown':
-          event.preventDefault();
-          editor.commit(moveNotes(project, selection, { semitones: event.shiftKey ? -12 : -1 }));
-          break;
-        case 'ArrowLeft':
-          event.preventDefault();
-          editor.commit(moveNotes(project, selection, { ticks: -gridTicks }));
-          break;
-        case 'ArrowRight':
-          event.preventDefault();
-          editor.commit(moveNotes(project, selection, { ticks: gridTicks }));
-          break;
-        default:
-          break;
+          // 글로벌 트랙에서 고른 것도 놓는다 — 그래야 그 줄의 도구(코드 찾기 등)가 돌아온다
+          setGlobalSelection(null);
+          return;
+        case 'metronome': setMetronome((on) => !on); return;
+        case 'countIn': setCountIn((on) => !on); return;
+        case 'keyboard': setPlayOpen((on) => !on); return;
+        case 'mixer': setView('mixer'); return;
+        case 'editor': setView('editor'); return;
+        case 'prevMarker': jumpMarkerRef.current(-1); return;
+        case 'nextMarker': jumpMarkerRef.current(1); return;
+        case 'delete': editor.commit(deleteNotes(project, selection)); editor.select([]); return;
+        case 'up': editor.commit(moveNotes(project, selection, { semitones: 1 })); return;
+        case 'down': editor.commit(moveNotes(project, selection, { semitones: -1 })); return;
+        case 'octaveUp': editor.commit(moveNotes(project, selection, { semitones: 12 })); return;
+        case 'octaveDown': editor.commit(moveNotes(project, selection, { semitones: -12 })); return;
+        case 'left': editor.commit(moveNotes(project, selection, { ticks: -gridTicks })); return;
+        case 'right': editor.commit(moveNotes(project, selection, { ticks: gridTicks })); return;
+        default: return;
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [
-    clip, countIn, cursorTick, doCopy, doDuplicate, doPaste, editor, engine, gridTicks,
-    loopFromSelection, project, selection,
+    bindings, clip, countIn, cursorTick, doCopy, doDuplicate, doPaste, editor, engine, gridTicks,
+    loopFromSelection, project, selection, settings.countInBars,
   ]);
 
   // 재생 중에는 커서가 재생 위치를 따라간다 — 멈춘 자리에서 다시 시작하려면 필요하다
@@ -506,6 +489,7 @@ export function App() {
     }
     seek(target);
   };
+  jumpMarkerRef.current = jumpMarker;
 
   const keyLabel = project.key === null ? '없음' : `${project.key.tonic} ${project.key.mode === 'major' ? '장조' : '단조'}`;
   /** 편집 함수가 거절하면(겹침·자리 없음) 조용히 넘기지 않고 이유를 보여 준다 */
@@ -519,7 +503,7 @@ export function App() {
 
   const togglePlay = () => (engine.state === 'playing'
     ? engine.stop()
-    : void engine.play(cursorTick + (clip?.startTick ?? 0), { countInBars: countIn ? 1 : 0 }));
+    : void engine.play(cursorTick + (clip?.startTick ?? 0), { countInBars: countIn ? settings.countInBars : 0 }));
 
   const exportMidi = () => {
     const { bytes, droppedCents } = encodeMidi(project);
@@ -745,6 +729,9 @@ export function App() {
             onClick={() => setMenu(menu === 'theme' ? null : 'theme')}
             className={`${ROUND_BTN} ${menu === 'theme' ? ROUND_ON : ''}`}
           ><IconPalette /></button>
+          <button type="button" title="설정 · 단축키 · MIDI 장치 (⌘,)" aria-label="설정" onClick={() => setSettingsOpen(true)} className={ROUND_BTN}>
+            <span className="text-[15px]">⚙</span>
+          </button>
           {/* 내보내기는 세션의 **끝**이라 이것만 색을 준다 */}
           <button
             type="button"
@@ -757,6 +744,10 @@ export function App() {
           </button>
         </div>
 
+        {settingsOpen && (
+          <SettingsPanel editor={editor} settings={settings} onSettings={setSettings}
+            midi={{ ...midiDevice, lastNote: midiLast }} onClose={() => setSettingsOpen(false)} />
+        )}
         {projectsOpen && <ProjectPanel project={project} onOpen={openProject} onClose={() => setProjectsOpen(false)} />}
         {menu === 'export' && (
           <ExportPanel project={project} exporting={engine.exporting} onBounce={engine.bounce} onClose={() => setMenu(null)} />

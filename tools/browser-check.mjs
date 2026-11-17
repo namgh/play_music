@@ -547,6 +547,29 @@ try {
   const versions24 = await ev(`Object.keys(localStorage).filter((k) => k.startsWith('library-version-')).length`);
   record('버전 남기기·돌아가기 (돌아가기 전 상태도 남음)', hidden24 === 0 && versions24 >= 2, `숨긴 트랙 ${hidden24} · 버전 ${versions24}개`);
   await shot('20-projects');
+
+  // 25. 설정 — 단축키 바꾸기가 실제로 먹는다, 한글 입력과 상관없이 위치로
+  await clickEl(`document.querySelector('[aria-label="설정"]')`);
+  await clickEl(`[...document.querySelectorAll('[role=dialog][aria-label="설정"] [role=tab]')].find((b) => b.textContent === '단축키')`);
+  await clickEl(`document.querySelector('[data-command="metronome"] button')`);
+  await send('Input.dispatchKeyEvent', { type: 'keyDown', code: 'KeyM', key: 'ㅡ' });
+  await send('Input.dispatchKeyEvent', { type: 'keyUp', code: 'KeyM', key: 'ㅡ' });
+  await sleep(200);
+  const bound = await ev(`document.querySelector('[data-command="metronome"] kbd')?.textContent`);
+  await clickEl(`[...document.querySelectorAll('[role=dialog][aria-label="설정"] button')].find((b) => b.textContent === '닫기')`);
+  const metroBefore = await ev(`document.querySelector('button[title="메트로놈"]').getAttribute('aria-pressed')`);
+  await send('Input.dispatchKeyEvent', { type: 'keyDown', code: 'KeyM', key: 'ㅡ' });
+  await send('Input.dispatchKeyEvent', { type: 'keyUp', code: 'KeyM', key: 'ㅡ' });
+  await sleep(200);
+  const metroAfter = await ev(`document.querySelector('button[title="메트로놈"]').getAttribute('aria-pressed')`);
+  record('단축키 바꾸기 (한글 입력 상태 키로)', bound === 'M' && metroBefore !== metroAfter, `${bound} · 메트로놈 ${metroBefore} → ${metroAfter}`);
+  await send('Input.dispatchKeyEvent', { type: 'keyDown', code: 'KeyZ', key: 'ㅋ', modifiers: 4 });
+  await send('Input.dispatchKeyEvent', { type: 'keyUp', code: 'KeyZ', key: 'ㅋ', modifiers: 4 });
+  await sleep(200);
+  const metroUndo = await ev(`document.querySelector('button[title="메트로놈"]').getAttribute('aria-pressed')`);
+  record('⌘Z 가 한글 입력 상태에서도 먹는다 (메트로놈은 곡이 아니라 언두 대상 아님)', metroUndo === metroAfter, String(metroUndo));
+  await ev(`localStorage.removeItem('settings-v1'); 'ok'`);
+  await shot('21-settings');
   await clickEl(`[...document.querySelectorAll('[role=tab]')].find((b) => b.textContent.includes('음 편집'))`);
   await clickEl(`[...document.querySelectorAll('[aria-label="편집기 보기"] button')][0]`);
   await clickEl(`[...document.querySelectorAll('[aria-label="편집기 보기"] button')][0]`);
