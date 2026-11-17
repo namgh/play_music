@@ -12,7 +12,9 @@
 
 import type { EffectSpec } from '../model/project.ts';
 
-export type EffectType = 'eq' | 'compressor' | 'reverb' | 'delay';
+export type EffectType =
+  | 'eq' | 'compressor' | 'reverb' | 'delay'
+  | 'limiter' | 'highpass' | 'autofilter' | 'distortion' | 'chorus' | 'flanger' | 'phaser' | 'tremolo' | 'width';
 
 export interface EffectParamSpec {
   label: string;
@@ -62,7 +64,100 @@ export const EFFECT_SPECS: Record<EffectType, { label: string; params: Record<st
       dampingHz: { label: '반복 고역 감쇠', min: 500, max: 16000, default: 3500, unit: 'Hz', curve: 'log' },
     },
   },
+  // --- 2026-11-17 추가 (LOGIC_PARITY 1-12). Web Audio 내장 노드로 짓는다 — Rust 코어
+  //     이전(LOGIC_PARITY 3-3)은 같은 파라미터 선언을 유지한 채 구현만 바꾼다 ---
+  limiter: {
+    label: '리미터',
+    params: {
+      inputDb: { label: '입력', min: 0, max: 18, default: 0, unit: 'dB' },
+      ceilingDb: { label: '천장', min: -12, max: 0, default: -1, unit: 'dB' },
+      releaseMs: { label: '릴리즈', min: 10, max: 1000, default: 100, unit: 'ms', curve: 'log' },
+    },
+  },
+  highpass: {
+    label: '로우컷',
+    params: {
+      cutoffHz: { label: '차단', min: 20, max: 2000, default: 80, unit: 'Hz', curve: 'log' },
+    },
+  },
+  autofilter: {
+    label: '오토 필터',
+    params: {
+      cutoffHz: { label: '차단', min: 40, max: 18000, default: 2000, unit: 'Hz', curve: 'log' },
+      resonance: { label: '공명', min: 0.1, max: 20, default: 1, curve: 'log' },
+      lfoRateHz: { label: 'LFO 속도', min: 0, max: 10, default: 0, unit: 'Hz' },
+      lfoDepth: { label: 'LFO 깊이', min: 0, max: 1, default: 0 },
+    },
+  },
+  distortion: {
+    label: '디스토션',
+    params: {
+      driveDb: { label: '드라이브', min: 0, max: 40, default: 12, unit: 'dB' },
+      toneHz: { label: '톤', min: 500, max: 16000, default: 6000, unit: 'Hz', curve: 'log' },
+      mix: { label: '섞기', min: 0, max: 1, default: 1 },
+      outputDb: { label: '출력', min: -24, max: 0, default: -6, unit: 'dB' },
+    },
+  },
+  chorus: {
+    label: '코러스',
+    params: {
+      rateHz: { label: '속도', min: 0.05, max: 5, default: 0.8, unit: 'Hz', curve: 'log' },
+      depthMs: { label: '깊이', min: 0, max: 10, default: 3, unit: 'ms' },
+      mix: { label: '섞기', min: 0, max: 1, default: 0.5 },
+    },
+  },
+  flanger: {
+    label: '플랜저',
+    params: {
+      rateHz: { label: '속도', min: 0.05, max: 5, default: 0.3, unit: 'Hz', curve: 'log' },
+      depthMs: { label: '깊이', min: 0, max: 5, default: 2, unit: 'ms' },
+      feedback: { label: '피드백', min: 0, max: 0.9, default: 0.5 },
+      mix: { label: '섞기', min: 0, max: 1, default: 0.5 },
+    },
+  },
+  phaser: {
+    label: '페이저',
+    params: {
+      rateHz: { label: '속도', min: 0.05, max: 5, default: 0.5, unit: 'Hz', curve: 'log' },
+      depth: { label: '깊이', min: 0, max: 1, default: 0.7 },
+      feedback: { label: '피드백', min: 0, max: 0.9, default: 0.3 },
+      mix: { label: '섞기', min: 0, max: 1, default: 0.5 },
+    },
+  },
+  tremolo: {
+    label: '트레몰로',
+    params: {
+      rateHz: { label: '속도', min: 0.1, max: 15, default: 5, unit: 'Hz', curve: 'log' },
+      depth: { label: '깊이', min: 0, max: 1, default: 0.5 },
+    },
+  },
+  width: {
+    label: '스테레오 폭',
+    params: {
+      width: { label: '폭', min: 0, max: 2, default: 1 },
+    },
+  },
 };
+
+/**
+ * 디스토션 곡선 — tanh 소프트 클립. **순수 함수**라 테스트한다.
+ * 드라이브를 올려도 출력이 ±1 을 넘지 않는다 (tanh). 짝수 배음이 조금 섞이게
+ * 비대칭 바이어스를 아주 약하게 준다 — 완전 대칭이면 홀수 배음만 나와 거칠다.
+ */
+export function distortionCurve(driveDb: number, size = 2048): Float32Array {
+  const gain = dbToGain(driveDb);
+  const curve = new Float32Array(size);
+  // 바이어스는 **입력 크기에 비례해 줄인다** — 드라이브가 클 때 고정 바이어스를 주면
+  // 0 점이 한쪽 포화로 밀려 음 한쪽이 납작해진다 (40dB 에서 -12배로 튀었다)
+  const bias = 0.08 / Math.max(1, gain);
+  const raw = (x: number) => Math.tanh(gain * (x + bias)) - Math.tanh(gain * bias);
+  const norm = Math.max(Math.abs(raw(1)), Math.abs(raw(-1))) || 1;
+  for (let i = 0; i < size; i++) {
+    const x = (i / (size - 1)) * 2 - 1;
+    curve[i] = raw(x) / norm;
+  }
+  return curve;
+}
 
 export function isEffectType(type: string): type is EffectType {
   return type in EFFECT_SPECS;

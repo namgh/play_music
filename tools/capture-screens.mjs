@@ -122,6 +122,21 @@ export const SCREENS = [
       await sleep(300);
     },
   },
+  {
+    name: 'a06-effects', area: 6, title: '이펙트 — 13종(리미터·로우컷·오토 필터·디스토션·코러스·플랜저·페이저·트레몰로·스테레오 폭 추가)',
+    run: async (b) => {
+      await b.clickEl(`[...document.querySelectorAll('nav[aria-label="화면"] button')][1]`);
+      await sleep(400);
+      const add = (strip, type) => b.choose(`document.querySelector('[data-strip="${strip}"] [aria-label="이펙트 추가"]')`, type);
+      for (const t of ['highpass', 'distortion', 'autofilter']) { await add('어쿠스틱 기타', t); await sleep(150); }
+      for (const t of ['chorus', 'width']) { await add('로즈', t); await sleep(150); }
+      for (const t of ['phaser', 'tremolo']) { await add('패드', t); await sleep(150); }
+      await add('마스터', 'limiter');
+      await sleep(150);
+      await b.clickEl(`[...document.querySelectorAll('[data-strip="어쿠스틱 기타"] button')].find((x) => x.textContent.includes('디스토션'))`);
+      await sleep(200);
+    },
+  },
 ];
 
 async function capture(b, screen) {

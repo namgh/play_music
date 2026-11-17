@@ -369,6 +369,23 @@ try {
   if (wav16) { await sleep(500); const a = analyzeWav(join(DL, wav16)); record('버스 경로 내보내기', a.ok && a.peak > 0.001, a.ok ? `피크 ${a.peak.toFixed(3)} · ${a.seconds.toFixed(1)}초` : a.why); }
   else record('버스 경로 내보내기', false, '파일이 안 내려옴');
   await shot('12-mixer');
+
+  // 17. 이펙트 13종 — 전부 실제 노드로 만들어지고, 걸린 채로 소리가 난다
+  const fxTypes = await ev(`[...document.querySelector('[data-strip] [aria-label="이펙트 추가"]').options].map((o) => o.value).filter(Boolean)`);
+  for (const type of fxTypes) {
+    await ev(`(() => { const e = document.querySelector('[data-strip] [aria-label="이펙트 추가"]'); Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(e, ${JSON.stringify(type)}); e.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+    await sleep(120);
+  }
+  await sleep(500); // 연달아 추가하면 자동 저장이 마지막까지 미뤄진다
+  const n17 = problems.length;
+  const fxCount = await ev(`(() => { const p = JSON.parse(localStorage.getItem('project-autosave-v1')); const d = p.project ?? p; return d.tracks.map((t) => t.name + '|' + (t.locked ? 'L' : '') + '|' + t.effects.length).join(' ; ') + ' :: ' + document.querySelector('[data-save-state]').textContent; })()`);
+  await clickEl(byTitle('맨 앞으로'));
+  await clickEl(byTitle('커서부터 재생'));
+  let peak17 = 0; for (let i = 0; i < 12; i++) { await sleep(150); peak17 = Math.max(peak17, await ev('window.__peak()')); }
+  const stop17 = await centerOf(byTitle('정지')); if (stop17) await click(stop17.x, stop17.y);
+  record(`이펙트 ${fxTypes.length}종을 한 트랙에 걸고 재생`, fxTypes.length === 13 && /\|\|13\b/.test(String(fxCount)) && peak17 > 0.0005 && problems.length === n17,
+    `종류 ${fxTypes.length} · 걸린 수 ${fxCount} · 피크 ${peak17.toFixed(4)} · 새 오류 ${problems.length - n17}`);
+  await shot('13-effects');
 } catch (err) {
   record('스크립트 실행', false, String(err.stack ?? err).slice(0, 500));
 } finally {

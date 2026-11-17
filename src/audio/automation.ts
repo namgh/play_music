@@ -133,6 +133,15 @@ const AUTOMATABLE: Record<EffectType, string[]> = {
   compressor: ['thresholdDb', 'ratio', 'attackMs', 'releaseMs', 'makeupDb'],
   reverb: ['mix'],
   delay: ['mix', 'timeMs', 'feedback', 'dampingHz'],
+  limiter: ['inputDb', 'ceilingDb', 'releaseMs'],
+  highpass: ['cutoffHz'],
+  autofilter: ['cutoffHz', 'resonance', 'lfoRateHz', 'lfoDepth'],
+  distortion: ['toneHz', 'mix', 'outputDb'],
+  chorus: ['rateHz', 'depthMs', 'mix'],
+  flanger: ['rateHz', 'depthMs', 'feedback', 'mix'],
+  phaser: ['rateHz', 'depth', 'feedback', 'mix'],
+  tremolo: ['rateHz', 'depth'],
+  width: ['width'],
 };
 
 /**
