@@ -463,6 +463,27 @@ try {
   record('스텝 입력 — 세 음 중 Shift 는 화음', after20 - before20 === 3, `${before20} → ${after20} · 마지막 셋 ${starts} · 알림 ${note20}`);
   await clickEl(byText('스텝 입력 중'));
   await shot('16-play-surface');
+
+  // 21. 이벤트 목록 — 숫자로 고치기, MIDI 변환
+  await clickEl(`document.querySelector('[aria-label="건반"]')`);
+  await clickEl(`[...document.querySelectorAll('[aria-label="편집기 보기"] button')][1]`);
+  await sleep(200);
+  const rows21 = await ev(`document.querySelectorAll('[data-note-row]').length`);
+  const firstMidi = `document.querySelector('[data-note-row="0"] input[aria-label="MIDI"]')`;
+  const before21 = Number(await ev(`${firstMidi}.value`));
+  await ev(`(() => { const e = ${firstMidi}; e.focus(); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(e, '${before21 + 1}'); e.dispatchEvent(new Event('input', { bubbles: true })); e.blur(); })()`);
+  await sleep(300);
+  const after21 = Number(await ev(`${firstMidi}.value`));
+  record('이벤트 목록 — MIDI 숫자 고치기', rows21 > 0 && after21 === before21 + 1, `${rows21}줄 · ${before21} → ${after21}`);
+  await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape' });
+  await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape' });
+  await sleep(150);
+  await clickEl(byText('+옥타브'));
+  await sleep(300);
+  const oct21 = Number(await ev(`${firstMidi}.value`));
+  record('MIDI 변환 — +옥타브', oct21 === after21 + 12 || oct21 === 127, `${after21} → ${oct21}`);
+  await shot('17-event-list');
+  await clickEl(`[...document.querySelectorAll('[aria-label="편집기 보기"] button')][0]`);
 } catch (err) {
   record('스크립트 실행', false, String(err.stack ?? err).slice(0, 500));
 } finally {

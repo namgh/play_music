@@ -63,5 +63,10 @@
     "name": "a09-play-surface",
     "area": 9,
     "title": "연주 — 화면 건반 · 자판 연주(A~', Z/X 옥타브, C/V 세기) · 스텝 입력(Shift 화음, Tab 쉼표)"
+  },
+  {
+    "name": "a10-event-list",
+    "area": 10,
+    "title": "이벤트 목록 — 마디·박·틱·음·센트·길이·세기를 숫자로 · MIDI 변환 줄"
   }
 ]

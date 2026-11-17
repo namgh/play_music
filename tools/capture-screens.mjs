@@ -178,6 +178,16 @@ export const SCREENS = [
       await sleep(200);
     },
   },
+  {
+    name: 'a10-event-list', area: 10, title: '이벤트 목록 — 마디·박·틱·음·센트·길이·세기를 숫자로 · MIDI 변환 줄',
+    run: async (b) => {
+      await b.clickEl(byLabel('어쿠스틱 기타 선택'));
+      await b.clickEl(`[...document.querySelectorAll('[aria-label="편집기 보기"] button')][1]`);
+      await sleep(200);
+      await b.clickEl(`document.querySelector('[data-note-row="2"] td')`);
+      await sleep(200);
+    },
+  },
 ];
 
 async function capture(b, screen) {

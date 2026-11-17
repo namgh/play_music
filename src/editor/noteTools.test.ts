@@ -74,3 +74,24 @@ test('성부 떼어내기 — 화음의 윗음을 새 트랙으로, 혼자인 �
   assert.deepEqual(notes(bottom, 1).map((n) => n.pitch.midi), [60, 65]);
   assert.throws(() => extractVoice(withNotes([[0, 60], [1, 62]]), allIds(withNotes([[0, 60]])), 'top'));
 });
+
+test('숫자로 고치기 — 범위로 자른다', async () => {
+  const { setNoteFields } = await import('./noteTools.ts');
+  const p = withNotes([[0, 60]]);
+  const id = allIds(p)[0]!;
+  const q = setNoteFields(p, id, { startTick: -5, lengthTick: 0, midi: 200, cents: 80, velocity: 2 });
+  assert.deepEqual(notes(q)[0]!.pitch, { midi: 127, cents: 50 });
+  assert.deepEqual([notes(q)[0]!.startTick, notes(q)[0]!.lengthTick, notes(q)[0]!.velocity], [0, 1, 1]);
+});
+
+test('MIDI 변환 — 전조·세기·길이·거꾸로·뒤집기·크레셴도', async () => {
+  const { transformNotes } = await import('./noteTools.ts');
+  const p = withNotes([[0, 60, 1], [1, 64, 1], [3, 67, 1]]);
+  const ids = allIds(p);
+  assert.deepEqual(notes(transformNotes(p, ids, { kind: 'transpose', semitones: 12 })).map((n) => n.pitch.midi), [72, 76, 79]);
+  assert.deepEqual(notes(transformNotes(p, ids, { kind: 'velocity', mode: 'set', value: 0.5 })).map((n) => n.velocity), [0.5, 0.5, 0.5]);
+  assert.deepEqual(notes(transformNotes(p, ids, { kind: 'length', mode: 'scale', value: 0.5 })).map((n) => n.lengthTick / PPQ), [0.5, 0.5, 0.5]);
+  assert.deepEqual(notes(transformNotes(p, ids, { kind: 'reverse' })).map((n) => n.startTick / PPQ), [3, 2, 0]);
+  assert.deepEqual(notes(transformNotes(p, ids, { kind: 'invert', axis: 64 })).map((n) => n.pitch.midi), [68, 64, 61]);
+  assert.deepEqual(notes(transformNotes(p, ids, { kind: 'crescendo', from: 0.2, to: 1 })).map((n) => n.velocity), [0.2, 0.6, 1]);
+});

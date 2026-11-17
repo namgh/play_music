@@ -151,3 +151,72 @@ export function extractVoice(
   tracks.splice(tracks.findIndex((t) => t.id === track.id) + 1, 0, newTrack);
   return { project: { ...added.project, tracks }, trackId: added.trackId, moved: chosen.size };
 }
+
+// --- 음 하나 숫자로 고치기 · MIDI 변환 (Logic Event List · MIDI Transform, 1-5) ---------
+
+/** 이벤트 목록에서 숫자로 고친다. 길이는 1틱 이상, 세기 0.01~1, 음높이 0~127 */
+export function setNoteFields(
+  project: Project,
+  id: NoteId,
+  patch: Partial<{ startTick: number; lengthTick: number; midi: number; cents: number; velocity: number }>,
+): Project {
+  return mapSelected(project, [id], (note) => ({
+    ...note,
+    ...(patch.startTick === undefined ? {} : { startTick: Math.max(0, Math.round(patch.startTick)) }),
+    ...(patch.lengthTick === undefined ? {} : { lengthTick: Math.max(1, Math.round(patch.lengthTick)) }),
+    ...(patch.velocity === undefined ? {} : { velocity: Math.max(0.01, Math.min(1, patch.velocity)) }),
+    pitch: {
+      midi: patch.midi === undefined ? note.pitch.midi : Math.max(0, Math.min(127, Math.round(patch.midi))),
+      cents: patch.cents === undefined ? note.pitch.cents : Math.max(-50, Math.min(50, patch.cents)),
+    },
+  }));
+}
+
+/** MIDI 변환 한 가지. 전부 고른 음에만 */
+export type Transform =
+  | { kind: 'transpose'; semitones: number }
+  | { kind: 'velocity'; mode: 'set' | 'add' | 'scale'; value: number }
+  | { kind: 'length'; mode: 'set' | 'scale'; value: number }
+  | { kind: 'reverse' }
+  | { kind: 'invert'; axis: number }
+  | { kind: 'crescendo'; from: number; to: number };
+
+/**
+ * MIDI 변환 (Logic MIDI Transform 창의 자주 쓰는 프리셋들).
+ * 거꾸로: 고른 음들의 시간 범위 안에서 뒤집는다(끝이 처음으로). 뒤집기(invert): `axis`
+ * 를 축으로 음높이를 뒤집는다. 크레셴도: 시작 순서대로 세기를 `from`→`to` 로 고르게.
+ */
+export function transformNotes(project: Project, ids: readonly NoteId[], t: Transform): Project {
+  const set = new Set(ids);
+  const picked = project.tracks.flatMap((tr) => tr.clips.flatMap((c) => c.notes.filter((n) => set.has(n.id))));
+  if (picked.length === 0) return project;
+  const first = Math.min(...picked.map((n) => n.startTick));
+  const last = Math.max(...picked.map((n) => n.startTick + n.lengthTick));
+  const order = [...picked].sort((a, b) => a.startTick - b.startTick).map((n) => n.id);
+  const clampV = (v: number) => Math.max(0.01, Math.min(1, Math.round(v * 1000) / 1000));
+  return mapSelected(project, ids, (note) => {
+    switch (t.kind) {
+      case 'transpose':
+        return { ...note, pitch: { ...note.pitch, midi: Math.max(0, Math.min(127, note.pitch.midi + Math.round(t.semitones))) } };
+      case 'velocity': {
+        const v = t.mode === 'set' ? t.value : t.mode === 'add' ? note.velocity + t.value : note.velocity * t.value;
+        return { ...note, velocity: clampV(v) };
+      }
+      case 'length': {
+        const l = t.mode === 'set' ? t.value : note.lengthTick * t.value;
+        return { ...note, lengthTick: Math.max(1, Math.round(l)) };
+      }
+      case 'reverse':
+        return { ...note, startTick: first + (last - (note.startTick + note.lengthTick)) };
+      case 'invert':
+        return { ...note, pitch: { ...note.pitch, midi: Math.max(0, Math.min(127, 2 * t.axis - note.pitch.midi)) } };
+      case 'crescendo': {
+        const i = order.indexOf(note.id);
+        const f = order.length <= 1 ? 1 : i / (order.length - 1);
+        return { ...note, velocity: clampV(t.from + (t.to - t.from) * f) };
+      }
+      default:
+        return note;
+    }
+  });
+}
