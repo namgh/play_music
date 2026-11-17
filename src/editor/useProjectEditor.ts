@@ -53,6 +53,16 @@ export function useProjectEditor(initial: Project, options: { onBlocked?: (reaso
 
   const redo = useCallback(() => sync(history.redo()), [history, sync]);
 
+  /**
+   * 다른 곡으로 갈아탄다 — 히스토리를 새로 시작한다. **보호 검사를 거치지 않는다**:
+   * 지금 곡에 보호된 트랙이 있다고 다른 곡을 못 여는 일은 없어야 한다.
+   */
+  const load = useCallback((next: Project) => {
+    historyRef.current = new History(next);
+    setSelection([]);
+    sync(historyRef.current.state);
+  }, [sync]);
+
   const select = useCallback((ids: readonly NoteId[]) => setSelection(ids), []);
   const toggleSelect = useCallback((id: NoteId) => {
     setSelection((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]));
@@ -78,6 +88,7 @@ export function useProjectEditor(initial: Project, options: { onBlocked?: (reaso
     commitCurrent,
     undo,
     redo,
+    load,
     select,
     toggleSelect,
   };

@@ -515,6 +515,38 @@ try {
   const stop23 = await centerOf(byTitle('정지')); if (stop23) await click(stop23.x, stop23.y);
   record('MIDI 이펙트(아르페지에이터) 걸고 재생', fx23.includes('arpeggiator') && peak23 > 0.001, `${fx23} · 피크 ${peak23.toFixed(4)}`);
   await shot('19-smart-controls');
+
+  // 24. 곡 고르기 — 템플릿 새 곡, 최근 곡으로 돌아오기, 버전 남기기·돌아가기
+  const name24 = await ev(`(() => { const p = JSON.parse(localStorage.getItem('project-autosave-v1')); return (p.project ?? p).name; })()`);
+  const tracksNow = await ev(`(() => { const p = JSON.parse(localStorage.getItem('project-autosave-v1')); return (p.project ?? p).tracks.length; })()`);
+  await clickEl(`document.querySelector('button[title^="파일"]')`);
+  await clickEl(byText('새 곡 · 최근 곡 · 버전'));
+  await clickEl(`document.querySelector('[data-template="band"]')`);
+  await sleep(500);
+  const band = await ev(`(() => { const p = JSON.parse(localStorage.getItem('project-autosave-v1')); const d = p.project ?? p; return d.name + ':' + d.tracks.length; })()`);
+  record('템플릿으로 새 곡 (밴드)', band === '새 밴드:6', band);
+  await clickEl(`document.querySelector('button[title^="파일"]')`);
+  await clickEl(byText('새 곡 · 최근 곡 · 버전'));
+  const recent24 = await ev(`[...document.querySelectorAll('[data-recent]')].map((e) => e.dataset.recent).join(',')`);
+  await clickEl(`[...document.querySelectorAll('[data-recent="${name24}"] button')].find((b) => b.textContent === '열기')`);
+  await sleep(500);
+  const back24 = await ev(`(() => { const p = JSON.parse(localStorage.getItem('project-autosave-v1')); const d = p.project ?? p; return d.name + ':' + d.tracks.length; })()`);
+  record('최근 곡으로 돌아오기', recent24.includes(name24) && back24 === `${name24}:${tracksNow}`, `최근 [${recent24}] → ${back24}`);
+  await clickEl(`document.querySelector('button[title^="파일"]')`);
+  await clickEl(byText('새 곡 · 최근 곡 · 버전'));
+  await ev(`(() => { const e = document.querySelector('[aria-label="버전 이름"]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(e, '점검 전'); e.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+  await clickEl(byText('남기기'));
+  await clickEl(`[...document.querySelectorAll('[role=dialog][aria-label="곡 고르기"] button')].find((b) => b.textContent === '닫기')`);
+  await clickEl(byTitle('고른 트랙을 목록에서 숨깁니다'));
+  await sleep(300);
+  await clickEl(`document.querySelector('button[title^="파일"]')`);
+  await clickEl(byText('새 곡 · 최근 곡 · 버전'));
+  await clickEl(`[...document.querySelectorAll('[data-version="점검 전"] button')].find((b) => b.textContent === '돌아가기')`);
+  await sleep(500);
+  const hidden24 = await ev(`(() => { const p = JSON.parse(localStorage.getItem('project-autosave-v1')); const d = p.project ?? p; return d.tracks.filter((t) => t.hidden).length; })()`);
+  const versions24 = await ev(`Object.keys(localStorage).filter((k) => k.startsWith('library-version-')).length`);
+  record('버전 남기기·돌아가기 (돌아가기 전 상태도 남음)', hidden24 === 0 && versions24 >= 2, `숨긴 트랙 ${hidden24} · 버전 ${versions24}개`);
+  await shot('20-projects');
   await clickEl(`[...document.querySelectorAll('[role=tab]')].find((b) => b.textContent.includes('음 편집'))`);
   await clickEl(`[...document.querySelectorAll('[aria-label="편집기 보기"] button')][0]`);
   await clickEl(`[...document.querySelectorAll('[aria-label="편집기 보기"] button')][0]`);

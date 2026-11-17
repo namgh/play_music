@@ -211,6 +211,19 @@ export const SCREENS = [
       await sleep(200);
     },
   },
+  {
+    name: 'a13-projects', area: 13, title: '곡 고르기 — 템플릿 5종 · 최근 곡 · 버전(대안) 남기기·돌아가기',
+    run: async (b) => {
+      await b.ev(`(() => { const now = Date.now(); localStorage.setItem('library-v1', JSON.stringify([{ id: 'prj_a', name: '여름 밤 데모', updatedAt: now - 3600e3, tracks: 5, bars: 24 }, { id: 'prj_b', name: '피아노 스케치 3', updatedAt: now - 2 * 86400e3, tracks: 1, bars: 32 }])); })()`);
+      await b.clickEl(`document.querySelector('button[title^="파일"]')`);
+      await b.clickEl(`[...document.querySelectorAll('button')].find((x) => x.textContent.includes('새 곡 · 최근 곡'))`);
+      await b.type(byLabel('버전 이름'), '브리지 바꾸기 전');
+      await b.clickEl(`[...document.querySelectorAll('button')].find((x) => x.textContent === '남기기')`);
+      await b.type(byLabel('버전 이름'), '코러스 두 번');
+      await b.clickEl(`[...document.querySelectorAll('button')].find((x) => x.textContent === '남기기')`);
+      await sleep(200);
+    },
+  },
 ];
 
 async function capture(b, screen) {

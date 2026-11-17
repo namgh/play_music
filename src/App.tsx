@@ -23,6 +23,8 @@ import { PlaySurface } from './ui/PlaySurface.tsx';
 import { EventList } from './ui/EventList.tsx';
 import { StepSequencer } from './ui/StepSequencer.tsx';
 import { SmartControls } from './ui/SmartControls.tsx';
+import { ProjectPanel } from './ui/ProjectPanel.tsx';
+import { browserKv, putProject } from './editor/library.ts';
 import { extractVoice, forceLegato, humanize, removeOverlaps, scaleQuantize, scaleVelocity } from './editor/noteTools.ts';
 import type { NoteColorMode } from './ui/PianoRoll.tsx';
 import { createStack, setTrackFlag, setTrackStack } from './editor/tracks.ts';
@@ -160,6 +162,8 @@ export function App() {
   const [playOpen, setPlayOpen] = useState(false);
   /** 클립 편집기 보기 — 피아노 롤 / 이벤트 목록 */
   const [editorView, setEditorView] = useState<'roll' | 'steps' | 'list'>('roll');
+  /** 곡 고르기 판 */
+  const [projectsOpen, setProjectsOpen] = useState(false);
   /**
    * **클립별** 표시 음역. **곡이 아니라 보기 설정**이라 프로젝트에 저장하지 않는다
    * (`plan.md` 5-4 — 프로젝트 데이터는 곡 자체다).
@@ -206,6 +210,8 @@ export function App() {
     if (!pending) return;
     unsaved.current = null;
     setSaveState(saveAutosave(pending) ? 'saved' : 'failed');
+    // 보관함(최근 곡)에도 — 실패해도 자동 저장은 이미 됐으니 조용히 넘긴다
+    try { putProject(browserKv, pending, Date.now()); } catch { /* 저장소가 찼다 */ }
   }, []);
   const firstRender = useRef(true);
   useEffect(() => {
@@ -289,11 +295,23 @@ export function App() {
     editor.commit(setLoop(project, { startTick, endTick, enabled: true }));
   }, [clip, editor, project, selection]);
 
+  /** 다른 곡으로 — 히스토리를 새로 시작하고 첫 트랙·클립을 고른다 */
+  const openProject = (next: Project, message: string) => {
+    editor.load(next);
+    setSelectedTrackId(next.tracks[0]?.id ?? null);
+    setSelectedClipId(next.tracks[0]?.clips[0]?.id ?? null);
+    setCursorTick(0);
+    setGlobalSelection(null);
+    setProjectsOpen(false);
+    setNotice(message);
+  };
+
   const onOpenFile = async (file: File | undefined) => {
     if (!file) return;
     try {
       const loaded = await readProjectFile(file);
-      editor.commit(loaded);
+      putProject(browserKv, project, Date.now());
+      editor.load(loaded);
       setSelectedTrackId(loaded.tracks[0]?.id ?? null);
       setSelectedClipId(loaded.tracks[0]?.clips[0]?.id ?? null);
       editor.select([]);
@@ -312,6 +330,10 @@ export function App() {
       const meta = event.metaKey || event.ctrlKey;
       if (meta) {
         switch (event.key.toLowerCase()) {
+          case 'o':
+            event.preventDefault();
+            setProjectsOpen(true);
+            return;
           case 's':
             event.preventDefault();
             downloadProject(project);
@@ -735,6 +757,7 @@ export function App() {
           </button>
         </div>
 
+        {projectsOpen && <ProjectPanel project={project} onOpen={openProject} onClose={() => setProjectsOpen(false)} />}
         {menu === 'export' && (
           <ExportPanel project={project} exporting={engine.exporting} onBounce={engine.bounce} onClose={() => setMenu(null)} />
         )}
@@ -746,6 +769,10 @@ export function App() {
         {/* 파일 — 한 곡에 몇 번 쓰는 것들. 매분 쓰는 재생·편집과 같은 무게로 두지 않는다 */}
         {menu === 'file' && (
           <div className="scope-body absolute right-24 top-[68px] z-50 w-72 rounded-2xl border border-rule bg-body p-2 shadow-[0_12px_40px_rgba(0,0,0,0.18)]">
+            <button type="button" className={MENU_ITEM} onClick={() => { setProjectsOpen(true); setMenu(null); }}>
+              새 곡 · 최근 곡 · 버전<span className="ml-auto text-[11px] text-ink-3">⌘O</span>
+            </button>
+            <div className="my-1 h-px bg-rule" />
             <button type="button" className={MENU_ITEM}
               onClick={() => { downloadProject(project); setNotice('파일로 저장했습니다'); setMenu(null); }}>
               파일로 저장<span className="ml-auto text-[11px] text-ink-3">⌘S</span>
@@ -787,7 +814,8 @@ export function App() {
                 new Uint8Array(await file.arrayBuffer()),
                 file.name.replace(/\.midi?$/i, ''),
               );
-              editor.commit(loaded);
+              putProject(browserKv, project, Date.now());
+              editor.load(loaded);
               setSelectedTrackId(loaded.tracks[0]?.id ?? null);
               setSelectedClipId(loaded.tracks[0]?.clips[0]?.id ?? null);
               editor.select([]);
