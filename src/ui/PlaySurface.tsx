@@ -14,6 +14,8 @@ import { pitchName } from '../model/pitch.ts';
 export interface PlaySurfaceProps {
   /** 음 하나 들려주기 */
   onPlay: (midi: number, velocity: number) => void;
+  /** 뗐다 — 녹음이 음 길이를 잰다 */
+  onRelease?: (midi: number) => void;
   /** 스텝 입력 — 커서 자리에 찍기. `chord` 면 커서를 옮기지 않는다 */
   onStep: (midi: number, velocity: number, chord: boolean) => void;
   /** 스텝 입력에서 쉼표(빈 자리) — 커서만 음 길이만큼 */
@@ -23,7 +25,7 @@ export interface PlaySurfaceProps {
 
 const WHITE = [0, 2, 4, 5, 7, 9, 11];
 
-export function PlaySurface({ onPlay, onStep, onRest, onClose }: PlaySurfaceProps) {
+export function PlaySurface({ onPlay, onRelease, onStep, onRest, onClose }: PlaySurfaceProps) {
   const [octave, setOctave] = useState(4);
   const [velIndex, setVelIndex] = useState(4);
   const [step, setStep] = useState(false);
@@ -31,8 +33,8 @@ export function PlaySurface({ onPlay, onStep, onRest, onClose }: PlaySurfaceProp
   const velocity = VELOCITY_STEPS[velIndex]!;
 
   // 키 이벤트 처리기는 최신 상태를 봐야 한다 — ref 로 넘긴다
-  const live = useRef({ octave, velocity, step, onPlay, onStep, onRest });
-  live.current = { octave, velocity, step, onPlay, onStep, onRest };
+  const live = useRef({ octave, velocity, step, onPlay, onRelease, onStep, onRest });
+  live.current = { octave, velocity, step, onPlay, onRelease, onStep, onRest };
 
   const strike = (midi: number, chord: boolean) => {
     const s = live.current;
@@ -63,7 +65,10 @@ export function PlaySurface({ onPlay, onStep, onRest, onClose }: PlaySurfaceProp
     };
     const onUp = (e: KeyboardEvent) => {
       const action = typingAction(e.code, live.current.octave);
-      if (action?.kind === 'note') setDown((d) => { const n = new Set(d); n.delete(action.midi); return n; });
+      if (action?.kind === 'note') {
+        setDown((d) => { const n = new Set(d); n.delete(action.midi); return n; });
+        live.current.onRelease?.(action.midi);
+      }
     };
     // 캡처 단계에서 받는다 — 앱 단축키(Space·Delete 등)보다 먼저, 연주 키만 가로챈다
     window.addEventListener('keydown', onDown, true);
@@ -81,7 +86,7 @@ export function PlaySurface({ onPlay, onStep, onRest, onClose }: PlaySurfaceProp
   const W = 100 / whites.length;
 
   return (
-    <div className="shrink-0 border-t border-rule bg-panel px-5 py-3" data-play-surface>
+    <div className="relative z-20 shrink-0 border-t border-rule bg-panel px-5 py-3" data-play-surface>
       <div className="mb-2 flex items-center gap-2">
         <span className="font-disp text-sm text-ink">건반</span>
         <span className="text-[11px] text-ink-3">자판으로 연주 — A~' 흰 건반 · W E T Y U O P 검은 건반 · Z/X 옥타브 · C/V 세기</span>
@@ -107,8 +112,8 @@ export function PlaySurface({ onPlay, onStep, onRest, onClose }: PlaySurfaceProp
             type="button"
             data-key={m}
             onPointerDown={(e) => { setDown((d) => new Set(d).add(m)); strike(m, e.shiftKey); }}
-            onPointerUp={() => setDown((d) => { const n = new Set(d); n.delete(m); return n; })}
-            onPointerLeave={() => setDown((d) => { const n = new Set(d); n.delete(m); return n; })}
+            onPointerUp={() => { setDown((d) => { const n = new Set(d); n.delete(m); return n; }); onRelease?.(m); }}
+            onPointerLeave={() => { if (down.has(m)) { setDown((d) => { const n = new Set(d); n.delete(m); return n; }); onRelease?.(m); } }}
             style={{ left: `${i * W}%`, width: `${W}%` }}
             className={`absolute inset-y-0 flex flex-col items-center justify-end gap-0.5 rounded-b-md border border-rule pb-1.5 text-[10px] ${down.has(m) ? 'bg-acc text-acc-ink' : 'bg-keyw text-ink-3'}`}
             aria-label={pitchName({ midi: m, cents: 0 })}
@@ -126,8 +131,8 @@ export function PlaySurface({ onPlay, onStep, onRest, onClose }: PlaySurfaceProp
               type="button"
               data-key={black}
               onPointerDown={(e) => { setDown((d) => new Set(d).add(black)); strike(black, e.shiftKey); }}
-              onPointerUp={() => setDown((d) => { const n = new Set(d); n.delete(black); return n; })}
-              onPointerLeave={() => setDown((d) => { const n = new Set(d); n.delete(black); return n; })}
+              onPointerUp={() => { setDown((d) => { const n = new Set(d); n.delete(black); return n; }); onRelease?.(black); }}
+              onPointerLeave={() => { if (down.has(black)) { setDown((d) => { const n = new Set(d); n.delete(black); return n; }); onRelease?.(black); } }}
               style={{ left: `${(i + 1) * W - W * 0.32}%`, width: `${W * 0.64}%` }}
               className={`absolute top-0 z-10 flex h-[60%] items-end justify-center rounded-b-md pb-1 text-[10px] font-semibold ${down.has(black) ? 'bg-acc text-acc-ink' : 'bg-keyb text-sink-2'}`}
               aria-label={pitchName({ midi: black, cents: 0 })}

@@ -135,6 +135,17 @@ export interface Clip {
   /** 클립만 다른 색으로. 없으면 트랙 색 — 색값이 아니라 토큰(`j1`…)이다 */
   color?: string | null;
   notes: Note[];
+  /**
+   * 보관된 테이크 (Logic 테이크 폴더). 들리는 것은 언제나 `notes` 고, 이것들은 골라서
+   * 바꿔 넣을 후보다 (`src/editor/recording.ts`)
+   */
+  takes?: Take[];
+}
+
+export interface Take {
+  id: string;
+  name: string;
+  notes: Note[];
 }
 
 /**

@@ -278,7 +278,10 @@ try {
   d13 = await saved13();
   record('박자 변화', d13.signatureChanges?.[0]?.bar === 1 && d13.signatureChanges[0].timeSignature.num === 3, JSON.stringify(d13.signatureChanges));
   await clickEl(byTitle('맨 앞으로'));
-  await clickEl(`document.querySelector('[aria-label="다음 마커"]')`);
+  await ev(`document.activeElement?.blur(); 'ok'`);
+  await send('Input.dispatchKeyEvent', { type: 'keyDown', code: 'Period', key: '.', modifiers: 1 });
+  await send('Input.dispatchKeyEvent', { type: 'keyUp', code: 'Period', key: '.', modifiers: 1 });
+  await sleep(200);
   const lcdPos = await ev(`document.querySelector('[aria-label="재생 위치"]').textContent`);
   record('다음 마커로 이동', lcdPos !== '1.1.00', `LCD ${lcdPos}`);
   await clickEl(`document.querySelector('[aria-label="재생 위치"]')`);
@@ -570,6 +573,26 @@ try {
   record('⌘Z 가 한글 입력 상태에서도 먹는다 (메트로놈은 곡이 아니라 언두 대상 아님)', metroUndo === metroAfter, String(metroUndo));
   await ev(`localStorage.removeItem('settings-v1'); 'ok'`);
   await shot('21-settings');
+
+  // 26. 녹음 — 재생하며 자판으로 친 음이 클립에, 바꿔 녹음은 옛 음을 테이크로
+  await clickEl(`[...document.querySelectorAll('nav[aria-label="화면"] button')][0]`);
+  const total26 = await totalNotes();
+  await clickEl(`document.querySelector('[aria-label="녹음"]')`);
+  await ev(`document.activeElement?.blur(); 'ok'`);
+  await sleep(2800); // 카운트인 한 마디
+  for (const code of ['KeyA', 'KeyD', 'KeyG']) {
+    await send('Input.dispatchKeyEvent', { type: 'keyDown', code, key: code.slice(3).toLowerCase() });
+    await sleep(250);
+    await send('Input.dispatchKeyEvent', { type: 'keyUp', code, key: code.slice(3).toLowerCase() });
+    await sleep(150);
+  }
+  await clickEl(`document.querySelector('[aria-label="녹음"]')`);
+  await sleep(600);
+  const after26 = await totalNotes();
+  const takes26 = await ev(`(() => { const p = JSON.parse(localStorage.getItem('project-autosave-v1')); const d = p.project ?? p; return d.tracks.flatMap((t) => t.clips).reduce((n, c) => n + (c.takes ?? []).length, 0); })()`);
+  const msg26 = await ev(`document.body.innerText.match(/\\d+음을 녹음했습니다[^\\n]*/)?.[0] ?? ''`);
+  record('녹음 — 친 음이 클립에 (바꿔 녹음)', msg26.startsWith('3음') && after26 >= 3, `${total26} → ${after26} · 테이크 ${takes26} · ${msg26}`);
+  await shot('22-recording');
   await clickEl(`[...document.querySelectorAll('[role=tab]')].find((b) => b.textContent.includes('음 편집'))`);
   await clickEl(`[...document.querySelectorAll('[aria-label="편집기 보기"] button')][0]`);
   await clickEl(`[...document.querySelectorAll('[aria-label="편집기 보기"] button')][0]`);

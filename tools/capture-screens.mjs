@@ -233,6 +233,23 @@ export const SCREENS = [
       await sleep(150);
     },
   },
+  {
+    name: 'a15-recording', area: 15, title: '녹음 — ● 녹음(카운트인 후)·바꿔/겹쳐 · 건반·MIDI 로 침 · 테이크 바꿔 듣기·구간만 가져오기(컴핑)',
+    run: async (b) => {
+      await b.clickEl(byLabel('로즈 선택'));
+      await b.clickEl(byLabel('녹음'));
+      await b.ev(`document.activeElement?.blur(); 'ok'`);
+      await sleep(2900);
+      for (const code of ['KeyA', 'KeyG', 'KeyK', 'KeyJ', 'KeyH']) {
+        await b.send('Input.dispatchKeyEvent', { type: 'keyDown', code, key: code.slice(3).toLowerCase() });
+        await sleep(220);
+        await b.send('Input.dispatchKeyEvent', { type: 'keyUp', code, key: code.slice(3).toLowerCase() });
+        await sleep(120);
+      }
+      await b.clickEl(byLabel('녹음'));
+      await sleep(600);
+    },
+  },
 ];
 
 async function capture(b, screen) {

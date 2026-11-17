@@ -174,6 +174,14 @@ function parseClip(value: unknown, seen: Set<string>): Clip {
     ...(raw.muted == null ? {} : { muted: bool(raw.muted, false) }),
     ...(raw.color == null ? {} : { color: str(raw.color, 'j1') }),
     notes: asArray(raw.notes ?? [], '음 목록').map((note) => parseNote(note, seen)),
+    ...(raw.takes == null ? {} : {
+      takes: asArray(raw.takes, '테이크').map((entry) => {
+        const t = asRecord(entry, '테이크');
+        // 테이크 안의 음은 클립 음과 id 가 겹칠 수 있다(자리를 바꾸므로) — 따로 센다
+        const own = new Set<string>();
+        return { id: str(t.id, 'tk'), name: str(t.name, '테이크'), notes: asArray(t.notes ?? [], '테이크 음').map((n) => parseNote(n, own)) };
+      }),
+    }),
   };
 }
 

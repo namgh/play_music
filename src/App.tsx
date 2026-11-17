@@ -24,6 +24,7 @@ import { EventList } from './ui/EventList.tsx';
 import { StepSequencer } from './ui/StepSequencer.tsx';
 import { SmartControls } from './ui/SmartControls.tsx';
 import { ProjectPanel } from './ui/ProjectPanel.tsx';
+import { commitRecording, compFromTake, NoteRecorder, playedToNotes, switchTake } from './editor/recording.ts';
 import { SettingsPanel } from './ui/SettingsPanel.tsx';
 import { useMidiInput } from './audio/midiInput.ts';
 import { resolveCommand } from './ui/shortcuts.ts';
@@ -143,6 +144,14 @@ export function App() {
   const taps = useRef<number[]>([]);
   /** 단축키 처리기가 늘 최신 마커 이동을 부르게 */
   const jumpMarkerRef = useRef<(d: 1 | -1) => void>(() => {});
+  /**
+   * 녹음 — 재생하면서 건반·MIDI 로 친 것을 받는다 (`recording.ts`). 멈추면 클립에 넣는다.
+   * 받는 틱은 재생 헤드를 ref 로 읽는다 — 키 처리기가 매 프레임 다시 만들어지지 않게
+   */
+  const [recordMode, setRecordMode] = useState<'replace' | 'overdub'>('replace');
+  const recording = useRef<{ recorder: NoteRecorder; clipId: ClipId; fromTick: number; started: boolean } | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const playheadRef = useRef<number | null>(null);
   /** 상단 바에서 열린 띄움 창. 한 번에 하나만 */
   const [menu, setMenu] = useState<'file' | 'theme' | 'export' | null>(null);
   const theme = useThemeState();
@@ -204,11 +213,13 @@ export function App() {
   // MIDI 입력 — 설정에서 장치를 골랐거나 설정 창이 열려 있을 때만 켠다(처음에 권한을 묻는다)
   const [midiLast, setMidiLast] = useState<string | null>(null);
   const midiNoteRef = useRef<(midi: number, velocity: number) => void>(() => {});
+  const midiOffRef = useRef<(midi: number) => void>(() => {});
   const midiDevice = useMidiInput(settings.midiInputId !== null || settingsOpen, settings.midiInputId, (m) => {
     if (m?.kind === 'noteOn') {
       setMidiLast(`${pitchName({ midi: m.midi, cents: 0 })} · 세기 ${Math.round(m.velocity * 127)}`);
       midiNoteRef.current(m.midi, m.velocity);
     }
+    if (m?.kind === 'noteOff') midiOffRef.current(m.midi);
   });
 
   // **튜닝 도구로 넘어가면 곡 재생을 멈춘다.** 그 화면은 자체 엔진으로 소리를 내므로
@@ -270,8 +281,50 @@ export function App() {
     [engine, track],
   );
 
-  // MIDI 건반 → 고른 트랙으로 연주 (녹음은 녹음 기능이 이 ref 를 감싼다)
-  midiNoteRef.current = (midi, velocity) => { if (track) void engine.audition(track.id, midi, 0, velocity); };
+  // MIDI 건반 → 고른 트랙으로 연주, 녹음 중이면 받는다
+  midiNoteRef.current = (midi, velocity) => {
+    if (track) void engine.audition(track.id, midi, 0, velocity);
+    if (recording.current && playheadRef.current !== null) recording.current.recorder.noteOn(midi, velocity, playheadRef.current);
+  };
+  midiOffRef.current = (midi) => {
+    if (recording.current && playheadRef.current !== null) recording.current.recorder.noteOff(midi, playheadRef.current);
+  };
+  playheadRef.current = engine.playheadTick;
+
+  // 재생이 멈추면 녹음을 클립에 넣는다 (정지 버튼·Space·곡 끝 어느 쪽이든)
+  useEffect(() => {
+    const rec = recording.current;
+    if (!rec) return;
+    if (engine.state === 'playing') { rec.started = true; return; }
+    if (!rec.started) return;
+    recording.current = null;
+    setIsRecording(false);
+    const found = project.tracks.flatMap((t) => t.clips).find((c) => c.id === rec.clipId);
+    if (!found) return;
+    const stopTick = lastPlayhead.current ?? rec.fromTick;
+    const played = rec.recorder.finish(stopTick);
+    const notes = playedToNotes(played, found.startTick);
+    if (notes.length === 0) { setNotice('녹음된 음이 없습니다'); return; }
+    runEdit(() => {
+      editor.commit(commitRecording(project, rec.clipId, notes, recordMode, {
+        from: rec.fromTick - found.startTick, to: stopTick - found.startTick,
+      }));
+      setNotice(`${notes.length}음을 녹음했습니다${recordMode === 'replace' ? ' — 바뀐 음은 테이크로 남겼습니다' : ''}`);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [engine.state]);
+  const lastPlayhead = useRef<number | null>(null);
+  if (engine.playheadTick !== null) lastPlayhead.current = engine.playheadTick;
+
+  const startRecording = () => {
+    if (!clip || !track) { setNotice('녹음할 클립을 고르세요'); return; }
+    if (track.locked) { setNotice(`"${track.name}" 트랙은 보호돼 있습니다`); return; }
+    const from = cursorTick + clip.startTick;
+    recording.current = { recorder: new NoteRecorder(), clipId: clip.id, fromTick: from, started: false };
+    setIsRecording(true);
+    setPlayOpen(true);
+    void engine.play(from, { countInBars: settings.countInBars });
+  };
 
   // 메트로놈 상태를 엔진에 반영한다. `engine` 전체가 아니라 setter 에만 의존한다 —
   // `engine` 은 렌더마다 새 객체라 매 렌더 실행된다
@@ -576,12 +629,15 @@ export function App() {
             <button type="button" title="맨 앞으로" onClick={() => { engine.stop(); setCursorTick(0); }} className={ROUND_BTN}>
               <IconRewind />
             </button>
-            <button type="button" title="이전 마커로" aria-label="이전 마커" onClick={() => jumpMarker(-1)} className={ROUND_BTN}>
+            {/* 마커 이동은 넓은 화면에서만 단추로 — 좁으면 ⌥, ⌥. 로 (단추가 내보내기를 밀어낸다) */}
+            <span className="hidden 2xl:contents">
+            <button type="button" title="이전 마커로 (⌥,)" aria-label="이전 마커" onClick={() => jumpMarker(-1)} className={ROUND_BTN}>
               <span className="text-[11px] font-semibold">◂M</span>
             </button>
-            <button type="button" title="다음 마커로" aria-label="다음 마커" onClick={() => jumpMarker(1)} className={ROUND_BTN}>
+            <button type="button" title="다음 마커로 (⌥.)" aria-label="다음 마커" onClick={() => jumpMarker(1)} className={ROUND_BTN}>
               <span className="text-[11px] font-semibold">M▸</span>
             </button>
+            </span>
             <button
               type="button"
               onClick={togglePlay}
@@ -590,6 +646,21 @@ export function App() {
             >
               {engine.state === 'playing' ? <IconStop /> : <IconPlay />}
             </button>
+            <button
+              type="button"
+              onClick={() => (isRecording ? engine.stop() : startRecording())}
+              aria-pressed={isRecording}
+              aria-label="녹음"
+              title={isRecording ? '녹음 멈추기' : `커서부터 녹음 — 건반 칸·MIDI 건반으로 칩니다 (${recordMode === 'replace' ? '바꿔 녹음: 옛 음은 테이크로' : '겹쳐 녹음'})`}
+              className={`${ROUND_BTN} ${isRecording ? 'border-rec bg-rec text-body' : ''}`}
+            ><i className={`h-3 w-3 rounded-full ${isRecording ? 'bg-body' : 'bg-rec'}`} /></button>
+            <button
+              type="button"
+              onClick={() => setRecordMode((m) => (m === 'replace' ? 'overdub' : 'replace'))}
+              aria-label="녹음 방식"
+              title="바꿔 녹음(옛 음은 테이크로 남김) / 겹쳐 녹음(더하기)"
+              className="h-7 rounded-md border border-rule bg-panel px-1.5 text-[10px] text-ink-2"
+            >{recordMode === 'replace' ? '바꿔' : '겹쳐'}</button>
             <button
               type="button"
               onClick={() => setMetronome((on) => !on)}
@@ -1176,6 +1247,27 @@ export function App() {
                     {track.name} · {clip.notes.length}음
                     {selection.length > 0 ? ` · ${selection.length}개 선택` : ''}
                   </span>
+                  {(clip.takes?.length ?? 0) > 0 && (
+                    <span className="flex items-center gap-1.5" data-takes>
+                      <select aria-label="테이크" value="" className="h-6 rounded border border-rule bg-panel px-1 text-[11px]"
+                        onChange={(e) => { if (e.target.value) runEdit(() => editor.commit(switchTake(project, clip.id, e.target.value))); }}>
+                        <option value="">테이크 {clip.takes!.length}개 · 바꿔 듣기…</option>
+                        {clip.takes!.map((t) => <option key={t.id} value={t.id}>{t.name} ({t.notes.length}음)</option>)}
+                      </select>
+                      <select aria-label="반복 구간만 테이크에서" value="" disabled={!project.loop}
+                        title="반복 구간(⌘L)만 그 테이크의 음으로 — 컴핑"
+                        className="h-6 rounded border border-rule bg-panel px-1 text-[11px] disabled:opacity-40"
+                        onChange={(e) => {
+                          const id = e.target.value;
+                          if (!id || !project.loop) return;
+                          runEdit(() => editor.commit(compFromTake(project, clip.id, id,
+                            project.loop!.startTick - clip.startTick, project.loop!.endTick - clip.startTick)));
+                        }}>
+                        <option value="">구간만 가져오기…</option>
+                        {clip.takes!.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                      </select>
+                    </span>
+                  )}
                   <span className="flex-1" />
                   {/* 같은 클립을 보는 두 방식 — 그림(피아노 롤) / 숫자(이벤트 목록) */}
                   <div className="flex gap-0.5 self-center rounded-md bg-panel p-0.5" role="tablist" aria-label="편집기 보기">
@@ -1283,7 +1375,8 @@ export function App() {
       )}
       {view === 'editor' && playOpen && (
         <PlaySurface
-          onPlay={(midi, velocity) => { if (track) void engine.audition(track.id, midi, 0, velocity); }}
+          onPlay={(midi, velocity) => midiNoteRef.current(midi, velocity)}
+          onRelease={(midi) => midiOffRef.current(midi)}
           onStep={(midi, velocity, chord) => {
             if (!clip) { setNotice('찍을 클립이 없습니다 — 트랙 영역에서 클립을 고르세요'); return; }
             runEdit(() => {
