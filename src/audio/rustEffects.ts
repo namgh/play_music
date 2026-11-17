@@ -41,6 +41,11 @@ const unit = (label: string, def: number, max = 1, min = 0): EffectParamSpec => 
 const choice = (label: string, options: string[], def = 0): EffectParamSpec => ({ label, min: 0, max: options.length - 1, default: def, options, automatable: false });
 const GR = { label: '게인 감소', unit: 'dB', min: -40, max: 0 };
 
+/** 박 나누기 (Rust `DIVISIONS` 순서) */
+const DIVISION_LABELS = ['1/1', '1/2', '1/4', '1/8', '1/16', '1/32', '1/8 셋잇단', '1/16 셋잇단'];
+/** 페달 종류 (Rust `pedal_spec` 번호) */
+const PEDALS = ['비움', '오버드라이브', '퍼즈', '코러스', '페이저', '플랜저', '트레몰로', '딜레이', '와우', '컴프', '비트크러셔'];
+
 /** 딜레이 디자이너 탭 하나 (Rust 순서: 시간·크기·좌우) */
 function tap(n: number, ms: number, level: number, pan: number): Record<string, EffectParamSpec> {
   return {
@@ -724,6 +729,96 @@ export const RUST_EFFECT_SPECS = {
       intensity: unit('세기', 0.5),
       lowHz: hz('아래', 50, 2000, 300),
       highHz: hz('위', 100, 20000, 8000),
+    },
+  },
+  // --- 7단계: 멀티·창작 (박자는 곡 위치·템포를 따른다) ---
+  trancegate: {
+    label: '트랜스 게이트', category: 'creative',
+    params: {
+      ...Object.fromEntries(Array.from({ length: 16 }, (_, k) => [`step${k + 1}`, choice(`${k + 1}칸`, ['끔', '켬'], k % 2 === 0 ? 1 : 0)])),
+      division: choice('칸 길이', DIVISION_LABELS, 4),
+      attackMs: msec('어택', 0.1, 50, 2),
+      decay: unit('칸 안 감쇠', 0.2),
+      depth: unit('깊이', 1),
+      mix: unit('섞기', 1),
+    },
+  },
+  stepfx: {
+    label: '스텝 FX', category: 'creative',
+    params: {
+      ...Object.fromEntries(Array.from({ length: 8 }, (_, k) => [`cut${k + 1}`, unit(`필터 ${k + 1}`, [0.9, 0.3, 0.6, 0.2, 0.8, 0.4, 0.7, 0.1][k]!)])),
+      ...Object.fromEntries(Array.from({ length: 8 }, (_, k) => [`vol${k + 1}`, unit(`볼륨 ${k + 1}`, k % 4 === 3 ? 0.4 : 1)])),
+      division: choice('칸 길이', DIVISION_LABELS, 4),
+      resonance: { label: '공명', min: 0.5, max: 15, default: 2.5, curve: 'log' },
+      lowHz: hz('아래', 20, 5000, 200),
+      highHz: hz('위', 100, 20000, 9000),
+      smoothMs: msec('매끄러움', 0.5, 200, 8),
+      pan: unit('좌우 번갈이', 0.3),
+      mix: unit('섞기', 1),
+    },
+  },
+  remixfx: {
+    label: '리믹스 FX', category: 'creative',
+    params: {
+      filter: unit('필터 (− 로우패스 · + 하이패스)', 0, 1, -1),
+      resonance: { label: '공명', min: 0.5, max: 12, default: 1.5, curve: 'log' },
+      gateDivision: choice('게이트 칸', DIVISION_LABELS, 4),
+      gateAmount: unit('게이트', 0),
+      crush: unit('다운샘플', 0),
+      reverse: choice('리버스', ['끔', '켬'], 0),
+      mix: unit('섞기', 1),
+    },
+  },
+  beatbreaker: {
+    label: '비트 브레이커', category: 'creative',
+    params: {
+      pattern: choice('패턴', ['뒤섞기', '되감기', '두 번씩', '엇갈리기', '무작위 (씨앗)'], 0),
+      seed: { label: '씨앗', min: 0, max: 999, default: 7 },
+      fadeMs: msec('조각 경계', 0.5, 20, 2, false),
+      mix: unit('섞기', 1),
+    },
+  },
+  stutter: {
+    label: '스터터 (반복)', category: 'creative',
+    params: {
+      active: choice('켜기', ['끔', '켬'], 0),
+      division: choice('칸 길이', DIVISION_LABELS, 4),
+      decay: unit('되풀이 감쇠', 0.1),
+      mix: unit('섞기', 1),
+    },
+  },
+  tapestop: {
+    label: '테이프 스톱', category: 'creative', meters: [{ label: '속도', min: 0, max: 1 }],
+    params: {
+      stop: choice('멈춤', ['돈다', '멈춘다'], 0),
+      stopMs: msec('멈추는 시간', 50, 4000, 700),
+      startMs: msec('다시 도는 시간', 20, 4000, 250),
+      curve: unit('곡선', 0.5),
+    },
+  },
+  phatfx: {
+    label: '팻 FX', category: 'creative', latency: 16,
+    params: {
+      bassDb: db('저역 보강', 0, 12, 3),
+      drive: unit('드라이브', 0.3),
+      squeeze: unit('스퀴즈', 0.3),
+      cutoffHz: hz('필터', 40, 20000, 6000),
+      resonance: { label: '공명', min: 0.5, max: 15, default: 1.5, curve: 'log' },
+      envOct: { label: '엔벨로프 양', min: -4, max: 6, default: 1, unit: '옥' },
+      lfoDivision: choice('LFO 칸', DIVISION_LABELS, 2),
+      lfoOct: { label: 'LFO 깊이', min: 0, max: 5, default: 0, unit: '옥' },
+      mix: unit('섞기', 1),
+      outputDb: db('출력', -24, 24, -3),
+    },
+  },
+  pedalboard: {
+    label: '페달보드', category: 'creative', latency: 96,
+    params: {
+      ...Object.fromEntries(Array.from({ length: 6 }, (_, k) => [
+        [`pedal${k + 1}`, choice(`페달 ${k + 1}`, PEDALS, [9, 1, 3, 7, 0, 0][k]!)],
+        [`amount${k + 1}`, unit(`페달 ${k + 1} 양`, 0.5)],
+      ]).flat()),
+      outputDb: db('출력', -24, 24, 0),
     },
   },
 } satisfies Record<string, RustEffectDecl>;

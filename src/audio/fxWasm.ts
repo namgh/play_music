@@ -15,6 +15,7 @@ interface FxExports {
   fx_meters(): number;
   fx_create(kind: number, sampleRate: number): number;
   fx_process(frames: number): void;
+  fx_transport(position: number, bpm: number): void;
   fx_kind_count(): number;
   fx_kind_name(kind: number): number;
   fx_kind_name_len(kind: number): number;
@@ -55,6 +56,11 @@ export class FxWasm {
   setParams(type: RustEffectType, params: Record<string, number>): void {
     const at = this.fx.fx_params();
     new Float32Array(this.fx.memory.buffer, at, RUST_PARAM_SLOTS).set(rustParamValues(type, params));
+  }
+
+  /** 곡 위치(샘플)·템포 — 다음 블록부터 (그 뒤로는 블록마다 저절로 늘어난다) */
+  transport(position: number, bpm: number): void {
+    this.fx.fx_transport(position, bpm);
   }
 
   /** 스테레오를 128 블록으로 나눠 처리한 새 배열 */

@@ -40,7 +40,7 @@ import { buildEffectChain } from './effectGraph.ts';
 import type { EffectChain } from './effectGraph.ts';
 import { scheduleClick } from './metronome.ts';
 import { BusGraph } from './busGraph.ts';
-import { markWorkletContext } from './fxRuntime.ts';
+import { markWorkletContext, setTransport } from './fxRuntime.ts';
 import { planAudio, scheduleAudioRegions } from './audioRegions.ts';
 import { decodeAsset } from './assets.ts';
 import { countInSeconds } from './scheduler.ts';
@@ -165,6 +165,7 @@ export class WorkletRenderer implements AudioRenderer {
     // 이미 예약된 음은 그대로 울린다
     this.scheduler.setProject(project);
     this.masterGain.gain.value = project.master.gain;
+    setTransport(this.ctx, { bpm: project.tempo.bpm });
 
     const masterKey = JSON.stringify(project.master.effects);
     if (masterKey !== this.masterEffectsKey) this.rebuildMasterEffects(project.master.effects, masterKey);
@@ -263,6 +264,11 @@ export class WorkletRenderer implements AudioRenderer {
     // 카운트인이 있으면 곡(과 오토메이션)이 그만큼 뒤에서 시작한다
     const preRoll = countInSeconds(this.project, fromTick, options.countInBars ?? 0);
     const anchorTime = this.ctx.currentTime + preRoll;
+    // 박자 이펙트: 곡 0 초가 놓인 프레임 (템포 변화는 시작 템포로 근사)
+    setTransport(this.ctx, {
+      anchor: Math.round((anchorTime - ticksToSeconds(fromTick, this.project.tempo)) * this.ctx.sampleRate),
+      bpm: this.project.tempo.bpm,
+    });
     this.scheduler.start(this.project, fromTick, preRoll);
     this.pumpTimer = setInterval(() => this.scheduler.pump(), PUMP_INTERVAL_MS);
     this.scheduleTrackAutomation(fromTick, anchorTime);

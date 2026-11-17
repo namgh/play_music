@@ -2,6 +2,7 @@
 //! 새 이펙트는 끝에 붙인다(가운데 끼우면 저장된 곡의 번호가 밀린다 — 사실 TS 는 이름으로
 //! 찾지만, 테스트가 이름 목록 전체를 비교하므로 어디에 붙여도 어긋나면 깨진다).
 
+pub mod creative;
 pub mod delays;
 pub mod distortion;
 pub mod dynamics;
@@ -33,6 +34,9 @@ pub trait Effect {
     }
     /// 화면에 보여 줄 값 (게인 감소 dB 등). 이펙트마다 뜻이 다르다 — TS 선언에 적는다
     fn meters(&self, _out: &mut Meters) {}
+    /// 곡 위치(이 블록 첫 샘플이 곡 시작에서 몇 샘플째인가)와 템포 — 박자에 맞추는 이펙트만 쓴다.
+    /// 처리 전에 블록마다 불린다
+    fn transport(&mut self, _position: f64, _bpm: f32) {}
 }
 
 /// (이름, 만드는 함수). 만들 때 파라미터 첫 값을 받는다 — 구조가 파라미터에 달린 이펙트
@@ -173,6 +177,21 @@ pub const KINDS: &[(&str, Factory)] = &[
     }),
     ("stereospread", |sr, p| {
         Box::new(utility::StereoSpread::new(sr, p))
+    }),
+    // 7단계 — 멀티·창작
+    ("trancegate", |sr, p| {
+        Box::new(creative::TranceGate::new(sr, p))
+    }),
+    ("stepfx", |sr, p| Box::new(creative::StepFx::new(sr, p))),
+    ("remixfx", |sr, p| Box::new(creative::RemixFx::new(sr, p))),
+    ("beatbreaker", |sr, p| {
+        Box::new(creative::BeatBreaker::new(sr, p))
+    }),
+    ("stutter", |sr, p| Box::new(creative::Stutter::new(sr, p))),
+    ("tapestop", |sr, p| Box::new(creative::TapeStop::new(sr, p))),
+    ("phatfx", |sr, p| Box::new(creative::PhatFx::new(sr, p))),
+    ("pedalboard", |sr, p| {
+        Box::new(creative::Pedalboard::new(sr, p))
     }),
 ];
 

@@ -326,8 +326,16 @@ class RustFxProcessor extends AudioWorkletProcessor {
     // 미터가 있는 이펙트만 초당 20번 보낸다 — 노드가 수십 개면 메시지가 쌓인다
     this.meterEvery = opts.meters ? Math.round(sampleRate / 20) : 0;
     this.sinceMeter = 0;
+    // 곡 위치 = 지금 프레임 − 곡 0 초가 놓인 프레임(anchor). 박자 이펙트(스텝·게이트·스터터…)가 쓴다
+    this.anchor = opts.anchor ?? 0;
+    this.bpm = opts.bpm ?? 120;
     this.port.onmessage = (event) => {
-      if (event.data?.type === 'dispose') this.alive = false;
+      const m = event.data;
+      if (m?.type === 'dispose') this.alive = false;
+      else if (m?.type === 'transport') {
+        if (typeof m.anchor === 'number') this.anchor = m.anchor;
+        if (typeof m.bpm === 'number') this.bpm = m.bpm;
+      }
     };
     try {
       if (!fxModule && opts.bytes) fxModule = new WebAssembly.Module(opts.bytes);
@@ -377,6 +385,7 @@ class RustFxProcessor extends AudioWorkletProcessor {
     const inL = input[0];
     const inR = input[1] ?? input[0];
     if (inL) { this.lView.set(inL); this.rView.set(inR); } else { this.lView.fill(0, 0, frames); this.rView.fill(0, 0, frames); }
+    this.fx.fx_transport(currentFrame - this.anchor, this.bpm);
     this.fx.fx_process(frames);
     if (this.fx.memory.buffer !== this.mem) this.views();
     out[0].set(this.lView.subarray(0, frames));

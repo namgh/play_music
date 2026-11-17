@@ -22,7 +22,7 @@ import type { InstrumentDefinition } from '../instruments/types.ts';
 import { instrumentParams, resolveInstrument } from '../instruments/resolve.ts';
 import { scheduleTrackLanes } from './automation.ts';
 import { BusGraph } from './busGraph.ts';
-import { markWorkletContext } from './fxRuntime.ts';
+import { markWorkletContext, setTransport } from './fxRuntime.ts';
 import { planAudio, scheduleAudioRegions } from './audioRegions.ts';
 import { decodeAll } from './assets.ts';
 import { vcaScale } from '../model/project.ts';
@@ -57,6 +57,7 @@ export async function renderOfflineWithWorklet(
   });
   await offline.audioWorklet.addModule(WORKLET_URL);
   markWorkletContext(offline);
+  setTransport(offline, { anchor: 0, bpm: project.tempo.bpm });
 
   const master = buildEffectChain(offline, project.master.effects);
   const masterGain = offline.createGain();

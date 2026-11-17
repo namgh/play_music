@@ -13,6 +13,21 @@ import { RUST_EFFECT_SPECS, RUST_KIND, RUST_PARAM_SLOTS } from './rustEffects.ts
 import type { RustEffectType } from './rustEffects.ts';
 
 let fxBytes: ArrayBuffer | null = null;
+
+/** 컨텍스트마다 곡 0 초가 놓인 프레임과 템포 — 박자에 맞추는 이펙트용 */
+interface Transport { anchor: number; bpm: number }
+const transports = new WeakMap<BaseAudioContext, Transport>();
+const liveNodes = new WeakMap<BaseAudioContext, Set<AudioWorkletNode>>();
+
+/**
+ * 재생 시작(곡 위치 기준 프레임)·템포가 바뀌면 부른다. 이미 있는 Rust 노드에 모두 알리고,
+ * 새로 만드는 노드는 이 값으로 시작한다. 내보내기는 곡 0 초 = 프레임 0 이라 anchor 0.
+ */
+export function setTransport(ctx: BaseAudioContext, patch: Partial<Transport>): void {
+  const next = { ...(transports.get(ctx) ?? { anchor: 0, bpm: 120 }), ...patch };
+  transports.set(ctx, next);
+  for (const node of liveNodes.get(ctx) ?? []) node.port.postMessage({ type: 'transport', ...next });
+}
 /** 몇 개를 실제 노드로 만들었고 몇 개가 통과로 떨어졌나 — 브라우저 점검이 본다 */
 export const rustFxStats = { created: 0, passthrough: 0 };
 (globalThis as { __rustFx?: typeof rustFxStats }).__rustFx = rustFxStats;
@@ -69,10 +84,14 @@ export function createRustFxNode(ctx: BaseAudioContext, type: RustEffectType, pa
       params: values,
       latency: decl.latency ?? 0,
       meters: (decl.meters?.length ?? 0) > 0,
+      ...(transports.get(ctx) ?? { anchor: 0, bpm: 120 }),
       ...(first ? { bytes: fxBytes!.slice(0) } : {}),
     },
   });
   bytesSent.add(ctx);
+  let live = liveNodes.get(ctx);
+  if (!live) liveNodes.set(ctx, (live = new Set()));
+  live.add(node);
   const meters = new Float32Array(16);
   node.port.onmessage = (event: MessageEvent<{ type: string; values?: number[]; message?: string }>) => {
     if (event.data.type === 'meters' && event.data.values) meters.set(event.data.values);
@@ -90,6 +109,7 @@ export function createRustFxNode(ctx: BaseAudioContext, type: RustEffectType, pa
     meters,
     dispose: () => {
       node.port.postMessage({ type: 'dispose' });
+      live.delete(node);
       node.port.onmessage = null;
       node.disconnect();
     },

@@ -244,7 +244,9 @@ test('Rust 이펙트 — 하나하나가 실시간의 몇 배인가', async () =
   // 앰프는 비선형 3단 + 톤 스택을 4배 속도에서 돌린다 — 무거운 쪽
   const HEAVY = new Set(['spacedesigner', 'linearphaseeq', 'ampdesigner', 'bassamp',
     // 스펙트럼(STFT)·음정 감지·대역 20개 — 원래 무겁다
-    'vocaltransformer', 'spectralgate', 'denoiser', 'freeze', 'pitchcorrection', 'vocoder', 'matcheq', 'tuner']);
+    'vocaltransformer', 'spectralgate', 'denoiser', 'freeze', 'pitchcorrection', 'vocoder', 'matcheq', 'tuner',
+    // 페달 여섯 개를 한 노드에 — 기본값에 드라이브·컴프가 들어 있다
+    'pedalboard']);
   const seconds = 2;
   const n = 48000 * seconds;
   const x = Float32Array.from({ length: n }, (_, i) => 0.3 * Math.sin(i * 0.031) + 0.1 * Math.sin(i * 0.47));

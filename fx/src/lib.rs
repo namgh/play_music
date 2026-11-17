@@ -20,6 +20,8 @@ struct State {
     fx: Option<Box<dyn Effect>>,
     params: Params,
     meters: Meters,
+    position: f64,
+    bpm: f32,
     l: Vec<f32>,
     r: Vec<f32>,
 }
@@ -34,6 +36,8 @@ fn state() -> &'static mut State {
             fx: None,
             params: [0.0; MAX_PARAMS],
             meters: [0.0; MAX_METERS],
+            position: 0.0,
+            bpm: 120.0,
             l: vec![0.0; MAX_BLOCK],
             r: vec![0.0; MAX_BLOCK],
         })
@@ -81,10 +85,20 @@ pub extern "C" fn fx_process(frames: u32) {
     let s = state();
     let n = (frames as usize).min(MAX_BLOCK);
     if let Some(fx) = s.fx.as_mut() {
+        fx.transport(s.position, s.bpm);
         fx.set_params(&s.params);
         fx.process(&mut s.l[..n], &mut s.r[..n]);
         fx.meters(&mut s.meters);
     }
+    s.position += n as f64;
+}
+
+/// 다음 블록의 곡 위치(샘플)와 템포. 부르지 않으면 위치는 블록마다 저절로 늘어난다
+#[no_mangle]
+pub extern "C" fn fx_transport(position: f64, bpm: f32) {
+    let s = state();
+    s.position = position;
+    s.bpm = bpm.clamp(20.0, 400.0);
 }
 
 #[no_mangle]
