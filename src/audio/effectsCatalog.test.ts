@@ -13,8 +13,8 @@ import { createTrack } from '../model/factory.ts';
 
 const TYPES = Object.keys(EFFECT_SPECS) as EffectType[];
 
-test('이펙트 13종 — 기본값이 범위 안이고 그대로 해석된다', () => {
-  assert.equal(TYPES.length, 13);
+test('이펙트 14종 — 기본값이 범위 안이고 그대로 해석된다', () => {
+  assert.equal(TYPES.length, 14);
   for (const type of TYPES) {
     const fx = createEffect(type);
     const resolved = resolveEffectParams(fx);
@@ -48,4 +48,13 @@ test('디스토션 곡선 — ±1 안, 0 은 0, 단조 증가, 드라이브를 �
   const soft = distortionCurve(0, 1025)[640]!;
   const hard = distortionCurve(24, 1025)[640]!;
   assert.ok(hard > soft, '같은 입력에서 드라이브가 크면 더 크게');
+});
+
+test('3D 패너 좌표 — 앞은 −z, 오른쪽은 +x, 위는 +y', async () => {
+  const { spatialPosition } = await import('./effects.ts');
+  const r = (v: { x: number; y: number; z: number }) => [v.x, v.y, v.z].map((n) => Math.round(n * 1000) / 1000 + 0);
+  assert.deepEqual(r(spatialPosition(0, 0, 2)), [0, 0, -2]);
+  assert.deepEqual(r(spatialPosition(90, 0, 1)), [1, 0, 0]);
+  assert.deepEqual(r(spatialPosition(180, 0, 1)), [0, 0, 1]);
+  assert.deepEqual(r(spatialPosition(0, 90, 1)), [0, 1, 0]);
 });

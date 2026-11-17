@@ -14,7 +14,8 @@ import type { EffectSpec } from '../model/project.ts';
 
 export type EffectType =
   | 'eq' | 'compressor' | 'reverb' | 'delay'
-  | 'limiter' | 'highpass' | 'autofilter' | 'distortion' | 'chorus' | 'flanger' | 'phaser' | 'tremolo' | 'width';
+  | 'limiter' | 'highpass' | 'autofilter' | 'distortion' | 'chorus' | 'flanger' | 'phaser' | 'tremolo' | 'width'
+  | 'spatial';
 
 export interface EffectParamSpec {
   label: string;
@@ -137,7 +138,28 @@ export const EFFECT_SPECS: Record<EffectType, { label: string; params: Record<st
       width: { label: '폭', min: 0, max: 2, default: 1 },
     },
   },
+  // 3D 패너 — 헤드폰으로 들으면 앞뒤·위아래까지 (HRTF 바이노럴, Logic 바이노럴 패너).
+  // 스피커 서라운드(5.1·Atmos)는 브라우저가 다채널 출력을 안 주므로 이 길로 간다
+  spatial: {
+    label: '3D 패너 (바이노럴)',
+    params: {
+      azimuth: { label: '방향', min: -180, max: 180, default: 0, unit: '°' },
+      elevation: { label: '높이', min: -60, max: 60, default: 0, unit: '°' },
+      distance: { label: '거리', min: 0.5, max: 20, default: 1.5, unit: 'm', curve: 'log' },
+    },
+  },
 };
+
+/** 방향·높이·거리 → 듣는 사람 기준 좌표 (오른쪽 +x, 위 +y, 앞 −z — Web Audio 기본 자세) */
+export function spatialPosition(azimuthDeg: number, elevationDeg: number, distance: number): { x: number; y: number; z: number } {
+  const az = (azimuthDeg * Math.PI) / 180;
+  const el = (elevationDeg * Math.PI) / 180;
+  return {
+    x: Math.sin(az) * Math.cos(el) * distance,
+    y: Math.sin(el) * distance,
+    z: -Math.cos(az) * Math.cos(el) * distance,
+  };
+}
 
 /**
  * 디스토션 곡선 — tanh 소프트 클립. **순수 함수**라 테스트한다.

@@ -300,6 +300,31 @@ export const SCREENS = [
       await sleep(1200);
     },
   },
+  {
+    name: 'a19-spatial-video', area: 19, title: '서라운드·영상 — 3D 패너(바이노럴, 방향 오토메이션) · 영상 창(재생 따라감·장면 마커·소리 꺼내기)',
+    run: async (b) => {
+      const b64 = await b.ev(`(async () => {
+        const c = document.createElement('canvas'); c.width = 640; c.height = 360; const g = c.getContext('2d');
+        const rec = new MediaRecorder(c.captureStream(30), { mimeType: 'video/webm' }); const parts = [];
+        rec.ondataavailable = (e) => parts.push(e.data);
+        let f = 0; const draw = setInterval(() => { const grd = g.createLinearGradient(0, 0, 640, 360); grd.addColorStop(0, '#1d2b4f'); grd.addColorStop(1, 'hsl(' + (200 + f) + ',60%,45%)'); g.fillStyle = grd; g.fillRect(0, 0, 640, 360); g.fillStyle = 'rgba(255,255,255,0.85)'; g.font = 'bold 34px sans-serif'; g.fillText('비 오는 새벽 — 장면 1', 40, 200); f++; }, 33);
+        rec.start(); await new Promise((r) => setTimeout(r, 1500)); rec.stop(); await new Promise((r) => rec.onstop = r); clearInterval(draw);
+        const buf = new Uint8Array(await new Blob(parts).arrayBuffer()); let s = ''; for (const x of buf) s += String.fromCharCode(x); return btoa(s);
+      })()`);
+      const path = join(tmpdir(), '뮤직비디오 초안.webm');
+      writeFileSync(path, Buffer.from(b64, 'base64'));
+      const doc = await b.send('DOM.getDocument', {});
+      const node = await b.send('DOM.querySelector', { nodeId: doc.root.nodeId, selector: 'input[aria-label="영상 파일"]' });
+      await b.send('DOM.setFileInputFiles', { nodeId: node.nodeId, files: [path] });
+      for (let i = 0; i < 20 && !(await b.ev(`!!document.querySelector('[data-video-panel] video')`)); i++) await sleep(300);
+      await b.clickEl(`[...document.querySelectorAll('nav[aria-label="화면"] button')][1]`);
+      await sleep(300);
+      await b.choose(`document.querySelector('[data-strip="패드"] [aria-label="이펙트 추가"]')`, 'spatial');
+      await sleep(400);
+      await b.ev(`(() => { const v = document.querySelector('[data-video-panel] video'); if (v) v.currentTime = 0.8; })()`);
+      await sleep(400);
+    },
+  },
 ];
 
 async function capture(b, screen) {

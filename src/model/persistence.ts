@@ -367,6 +367,12 @@ function optionalGlobals(raw: Record<string, unknown>, seen: Set<string>): Parti
       return { bar: Math.round(num(c.bar, 1, 1)), timeSignature: parseTimeSignature(c.timeSignature, '박자') };
     }));
   }
+  if (raw.video != null) {
+    const v = asRecord(raw.video, '영상');
+    if (typeof v.assetId === 'string' && v.assetId) {
+      out.video = { assetId: v.assetId, name: str(v.name, '영상'), durationSec: num(v.durationSec, 0, 0), offsetSec: num(v.offsetSec, 0, -3600, 3600) };
+    }
+  }
   if (raw.liveScenes != null) {
     out.liveScenes = asArray(raw.liveScenes, '라이브 루프').map((entry) => {
       const sc = asRecord(entry, '장면');

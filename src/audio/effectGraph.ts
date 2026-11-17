@@ -12,7 +12,7 @@
 
 import type { EffectSpec } from '../model/project.ts';
 import {
-  dbToGain, distortionCurve, isEffectType, resolveEffectParams, reverbMixGains, synthesizeReverbIr,
+  dbToGain, distortionCurve, isEffectType, spatialPosition, resolveEffectParams, reverbMixGains, synthesizeReverbIr,
 } from './effects.ts';
 import type { EffectType } from './effects.ts';
 
@@ -392,6 +392,35 @@ function buildWidth(ctx: BaseAudioContext, p: Record<string, number>): EffectCha
   };
 }
 
+/**
+ * 3D 패너 — HRTF. 거리는 역제곱이 아니라 완만한 'inverse' 모델로 (가까이 1m 기준) —
+ * 실제처럼 줄이면 몇 m 만 떨어져도 거의 안 들려 믹스에 못 쓴다.
+ */
+function buildSpatial(ctx: BaseAudioContext, p: Record<string, number>): EffectChain {
+  const panner = ctx.createPanner();
+  panner.panningModel = 'HRTF';
+  panner.distanceModel = 'inverse';
+  panner.refDistance = 1;
+  panner.rolloffFactor = 0.6;
+  const pos = spatialPosition(p.azimuth!, p.elevation!, p.distance!);
+  panner.positionX.value = pos.x;
+  panner.positionY.value = pos.y;
+  panner.positionZ.value = pos.z;
+  // 방향 오토메이션: 지금 높이·거리를 고정하고 방향만 돈다 (원을 그리는 움직임)
+  const at = (az: number) => spatialPosition(az, p.elevation!, p.distance!);
+  return {
+    input: panner, output: panner,
+    dispose: () => panner.disconnect(),
+    bindings: {
+      azimuth: [
+        { param: panner.positionX, map: (v) => at(v).x },
+        { param: panner.positionZ, map: (v) => at(v).z },
+      ],
+      elevation: [{ param: panner.positionY, map: (v) => spatialPosition(p.azimuth!, v, p.distance!).y }],
+    },
+  };
+}
+
 const BUILDERS: Record<EffectType, (ctx: BaseAudioContext, p: Record<string, number>) => EffectChain> = {
   eq: buildEq,
   compressor: buildCompressor,
@@ -406,6 +435,7 @@ const BUILDERS: Record<EffectType, (ctx: BaseAudioContext, p: Record<string, num
   phaser: buildPhaser,
   tremolo: buildTremolo,
   width: buildWidth,
+  spatial: buildSpatial,
 };
 
 /** 섞기(mix) 하나가 드라이·웨트 두 게인을 함께 움직인다 */

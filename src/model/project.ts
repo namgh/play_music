@@ -441,6 +441,8 @@ export interface Project {
   keyChanges?: KeyChange[];
   /** 트랙 스택 */
   stacks?: TrackStack[];
+  /** 영상 (Logic 무비 트랙) — 소리처럼 에셋 저장소에 있고, 곡 처음과 `offsetSec` 만큼 어긋나 시작한다 */
+  video?: { assetId: string; name: string; durationSec: number; offsetSec: number };
   /** 라이브 루프 장면들 (`src/editor/liveLoops.ts`) */
   liveScenes?: LiveScene[];
   /** 버스(Aux) */

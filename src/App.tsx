@@ -27,6 +27,8 @@ import { ProjectPanel } from './ui/ProjectPanel.tsx';
 import { LiveLoops } from './ui/LiveLoops.tsx';
 import { ScoreView } from './ui/ScoreView.tsx';
 import { AudioEditor } from './ui/AudioEditor.tsx';
+import { VideoPanel } from './ui/VideoPanel.tsx';
+import { putAsset } from './audio/assets.ts';
 import { importAudioBytes, MicRecorder, placeAudio } from './ui/audioUi.ts';
 import { commitRecording, compFromTake, NoteRecorder, playedToNotes, switchTake } from './editor/recording.ts';
 import { SettingsPanel } from './ui/SettingsPanel.tsx';
@@ -163,6 +165,7 @@ export function App() {
   const fileInput = useRef<HTMLInputElement | null>(null);
   const midiInput = useRef<HTMLInputElement | null>(null);
   const audioInput = useRef<HTMLInputElement | null>(null);
+  const videoInput = useRef<HTMLInputElement | null>(null);
   /** 마이크 녹음 (오디오 트랙) */
   const mic = useRef<{ recorder: MicRecorder; fromTick: number; trackId: TrackId } | null>(null);
 
@@ -859,6 +862,9 @@ export function App() {
           </button>
         </div>
 
+        {project.video && view !== 'tuning' && (
+          <VideoPanel editor={editor} songTick={songCursor} playing={engine.state === 'playing'} onNotice={setNotice} />
+        )}
         {settingsOpen && (
           <SettingsPanel editor={editor} settings={settings} onSettings={setSettings}
             midi={{ ...midiDevice, lastNote: midiLast }} onClose={() => setSettingsOpen(false)} />
@@ -891,6 +897,7 @@ export function App() {
             <button type="button" className={MENU_ITEM} onClick={() => { exportMidi(); setMenu(null); }}>MIDI 내보내기</button>
             <button type="button" className={MENU_ITEM} onClick={() => { midiInput.current?.click(); setMenu(null); }}>MIDI 가져오기</button>
             <button type="button" className={MENU_ITEM} onClick={() => { audioInput.current?.click(); setMenu(null); }}>오디오 가져오기<span className="ml-auto text-[11px] text-ink-3">WAV·MP3…</span></button>
+            <button type="button" className={MENU_ITEM} onClick={() => { videoInput.current?.click(); setMenu(null); }}>영상 가져오기<span className="ml-auto text-[11px] text-ink-3">MP4·MOV</span></button>
             <div className="my-1 h-px bg-rule" />
             {/* 클라우드는 **얹는 기능**이다 — 로그인하지 않아도 위의 파일 저장·열기는 그대로 된다 */}
             <div className="px-2 py-1.5">
@@ -906,6 +913,34 @@ export function App() {
           accept="application/json,.json"
           className="hidden"
           onChange={(e) => { void onOpenFile(e.target.files?.[0]); e.target.value = ''; }}
+        />
+        <input
+          ref={videoInput}
+          type="file"
+          accept="video/*"
+          aria-label="영상 파일"
+          className="hidden"
+          onChange={async (e) => {
+            const file = e.target.files?.[0];
+            e.target.value = '';
+            if (!file) return;
+            try {
+              setNotice(`"${file.name}" 을 읽는 중…`);
+              const bytes = await file.arrayBuffer();
+              const assetId = await putAsset(bytes);
+              const durationSec = await new Promise<number>((resolve) => {
+                const v = document.createElement('video');
+                v.preload = 'metadata';
+                v.onloadedmetadata = () => { resolve(Number.isFinite(v.duration) ? v.duration : 0); URL.revokeObjectURL(v.src); };
+                v.onerror = () => resolve(0);
+                v.src = URL.createObjectURL(file);
+              });
+              editor.commit({ ...project, video: { assetId, name: file.name, durationSec, offsetSec: 0 } });
+              setNotice(`영상 "${file.name}" (${durationSec.toFixed(1)}초) — 재생하면 따라 움직입니다`);
+            } catch (err) {
+              setNotice(err instanceof Error ? err.message : String(err));
+            }
+          }}
         />
         <input
           ref={audioInput}

@@ -142,6 +142,7 @@ const AUTOMATABLE: Record<EffectType, string[]> = {
   phaser: ['rateHz', 'depth', 'feedback', 'mix'],
   tremolo: ['rateHz', 'depth'],
   width: ['width'],
+  spatial: ['azimuth', 'elevation'],
 };
 
 /**

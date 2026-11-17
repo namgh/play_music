@@ -390,7 +390,7 @@ try {
   await clickEl(byTitle('커서부터 재생'));
   let peak17 = 0; for (let i = 0; i < 12; i++) { await sleep(150); peak17 = Math.max(peak17, await ev('window.__peak()')); }
   const stop17 = await centerOf(byTitle('정지')); if (stop17) await click(stop17.x, stop17.y);
-  record(`이펙트 ${fxTypes.length}종을 한 트랙에 걸고 재생`, fxTypes.length === 13 && /\|\|13\b/.test(String(fxCount)) && peak17 > 0.0005 && problems.length === n17,
+  record(`이펙트 ${fxTypes.length}종을 한 트랙에 걸고 재생`, fxTypes.length === 14 && /\|\|14\b/.test(String(fxCount)) && peak17 > 0.0005 && problems.length === n17,
     `종류 ${fxTypes.length} · 걸린 수 ${fxCount} · 피크 ${peak17.toFixed(4)} · 새 오류 ${problems.length - n17}`);
   await shot('13-effects');
 
@@ -668,6 +668,38 @@ try {
   const mic29 = await ev(`(() => { const p = JSON.parse(localStorage.getItem('project-autosave-v1')); const d = p.project ?? p; return d.tracks.flatMap((t) => t.clips.filter((c) => c.audio && c.audio.name.startsWith('녹음')).map((c) => c.audio.assetSec.toFixed(1))).join(','); })()`);
   record('마이크 녹음 (가짜 장치)', mic29.length > 0 && Number(mic29.split(',')[0]) > 0.5, `${mic29}초 · ${await ev(`document.body.innerText.match(/오디오 [\\d.]+초를 녹음|마이크를 열지[^\\n]*|녹음을 저장하지[^\\n]*/)?.[0] ?? ''`)}`);
   await shot('25-audio');
+
+  // 30. 영상 — 가져오면 창이 뜨고 재생을 따라간다, 3D 패너가 걸린다
+  //     ffmpeg 없이 브라우저에서 2초짜리 webm(캔버스 + 사인) 을 만들어 쓴다
+  const b64 = await ev(`(async () => {
+    const c = document.createElement('canvas'); c.width = 320; c.height = 180; const g = c.getContext('2d');
+    const ac = new AudioContext(); const osc = ac.createOscillator(); const dest = ac.createMediaStreamDestination(); osc.connect(dest); osc.start();
+    const stream = new MediaStream([...c.captureStream(30).getVideoTracks(), ...dest.stream.getAudioTracks()]);
+    const rec = new MediaRecorder(stream, { mimeType: 'video/webm' }); const parts = [];
+    rec.ondataavailable = (e) => parts.push(e.data);
+    let f = 0; const draw = setInterval(() => { g.fillStyle = 'hsl(' + (f++ * 12) + ',70%,50%)'; g.fillRect(0, 0, 320, 180); g.fillStyle = '#fff'; g.font = '40px sans-serif'; g.fillText(String(f), 140, 100); }, 33);
+    rec.start(); await new Promise((r) => setTimeout(r, 2000)); rec.stop(); await new Promise((r) => rec.onstop = r); clearInterval(draw); osc.stop(); ac.close();
+    const buf = new Uint8Array(await new Blob(parts).arrayBuffer()); let s = ''; for (const x of buf) s += String.fromCharCode(x); return btoa(s);
+  })()`);
+  const videoPath = join(OUT, '장면.webm');
+  writeFileSync(videoPath, Buffer.from(b64, 'base64'));
+  const doc30 = await send('DOM.getDocument', {});
+  const node30 = await send('DOM.querySelector', { nodeId: doc30.root.nodeId, selector: 'input[aria-label="영상 파일"]' });
+  await send('DOM.setFileInputFiles', { nodeId: node30.nodeId, files: [videoPath] });
+  for (let i = 0; i < 20 && !(await ev(`!!document.querySelector('[data-video-panel] video')`)); i++) await sleep(300);
+  await sleep(800);
+  const video30 = await ev(`(() => { const v = document.querySelector('[data-video-panel] video'); return v ? v.readyState + ':' + v.duration.toFixed(1) : 'none'; })()`);
+  await clickEl(byTitle('맨 앞으로'));
+  await clickEl(byTitle('커서부터 재생'));
+  await sleep(1200);
+  const playingT = await ev(`document.querySelector('[data-video-panel] video')?.currentTime ?? -1`);
+  const stop30 = await centerOf(byTitle('정지')); if (stop30) await click(stop30.x, stop30.y);
+  record('영상 가져오기·재생 따라가기', video30 !== 'none' && playingT > 0.3, `영상 ${video30} · 재생 1.2초 뒤 영상 ${Number(playingT).toFixed(2)}초`);
+  await clickEl(byText('장면 마커'));
+  await sleep(300);
+  const scene30 = await ev(`(() => { const p = JSON.parse(localStorage.getItem('project-autosave-v1')); const d = p.project ?? p; return (d.markers ?? []).filter((m) => m.name.startsWith('장면')).length; })()`);
+  record('장면 마커', scene30 >= 1, `${scene30}개`);
+  await shot('26-video');
   await clickEl(`[...document.querySelectorAll('[aria-label="편집기 보기"] button')][0]`);
   await clickEl(`[...document.querySelectorAll('nav[aria-label="화면"] button')][0]`);
   await clickEl(`[...document.querySelectorAll('[role=tab]')].find((b) => b.textContent.includes('음 편집'))`);
