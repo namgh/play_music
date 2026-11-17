@@ -19,8 +19,8 @@
 import type {
   AudioRenderer, ExportOptions, ExportResult, InstrumentCapabilities, TransportPosition,
 } from './renderer.ts';
-import type { EffectSpec, Note, Project, Track, TrackId } from '../model/project.ts';
-import { audibleTracks } from '../model/project.ts';
+import type { EffectSpec, Note, Project, Track, TrackId, BusId } from '../model/project.ts';
+import { audibleTracks, vcaScale } from '../model/project.ts';
 import type { Ticks } from '../model/time.ts';
 import { ticksToSeconds } from '../model/time.ts';
 import { projectLengthTicks } from '../model/factory.ts';
@@ -39,6 +39,7 @@ import { voiceKindIndex } from '../instruments/types.ts';
 import { buildEffectChain } from './effectGraph.ts';
 import type { EffectChain } from './effectGraph.ts';
 import { scheduleClick } from './metronome.ts';
+import { BusGraph } from './busGraph.ts';
 import { countInSeconds } from './scheduler.ts';
 import type { PlayOptions } from './renderer.ts';
 import { renderOfflineWithWorklet } from './offlineExport.ts';
@@ -96,6 +97,8 @@ export class WorkletRenderer implements AudioRenderer {
   private levelBuffer = new Float32Array(1024);
   private masterEffects: EffectChain;
   private masterEffectsKey = '';
+  /** Aux 버스·트랙 출력·센드 (`busGraph.ts`) */
+  private busGraph: BusGraph;
   /** 예약된 메트로놈 오실레이터. 정지할 때 끊어야 한다 */
   private readonly clickNodes = new Set<OscillatorNode>();
 
@@ -114,6 +117,7 @@ export class WorkletRenderer implements AudioRenderer {
     this.masterGain.connect(this.masterAnalyser).connect(ctx.destination);
     this.masterEffects = buildEffectChain(ctx, []);
     this.masterEffects.output.connect(this.masterGain);
+    this.busGraph = new BusGraph(ctx, this.masterEffects.input);
 
     this.scheduler = new LookaheadScheduler({
       now: () => this.ctx.currentTime,
@@ -158,9 +162,11 @@ export class WorkletRenderer implements AudioRenderer {
     const masterKey = JSON.stringify(project.master.effects);
     if (masterKey !== this.masterEffectsKey) this.rebuildMasterEffects(project.master.effects, masterKey);
 
+    this.busGraph.syncBuses(project);
     for (const [id, runtime] of this.tracks) {
       if (!project.tracks.some((t) => t.id === id)) {
         this.disposeTrack(runtime);
+        this.busGraph.removeTrack(id);
         this.tracks.delete(id);
       }
     }
@@ -202,7 +208,7 @@ export class WorkletRenderer implements AudioRenderer {
       const analyser = this.ctx.createAnalyser();
       // 미터는 파형만 보면 되므로 크게 잡을 이유가 없다. 1024 = 48kHz 에서 21ms
       analyser.fftSize = 1024;
-      analyser.connect(this.masterEffects.input);
+      // 분석 노드 뒤는 버스 그래프가 잇는다 (마스터 또는 버스, 그리고 센드)
       node.connect(gainNode).connect(panNode).connect(effects.input);
       effects.output.connect(automationGain).connect(analyser);
 
@@ -216,8 +222,9 @@ export class WorkletRenderer implements AudioRenderer {
     runtime.instrument = instrument;
     runtime.params = params;
     runtime.voiceKind = voiceKindIndex(instrument.voice);
-    runtime.gainNode.gain.value = track.gain * instrument.baseLevel;
+    runtime.gainNode.gain.value = track.gain * instrument.baseLevel * (this.project ? vcaScale(this.project, track) : 1);
     runtime.panNode.pan.value = track.pan;
+    this.busGraph.routeTrack(track, runtime.analyser);
 
     // **발음 중인 소리에도 파라미터를 반영한다.** 스무딩이 클릭을 막아 준다
     runtime.node.port.postMessage({
@@ -275,9 +282,12 @@ export class WorkletRenderer implements AudioRenderer {
    * `peak >= 1` 이면 그 지점에서 이미 넘친 것이다. 마스터에서 넘치면 파일이 잘린다.
    */
   readLevel(trackId: TrackId | null): { peak: number; rms: number } | null {
+    // 버스 id 도 받는다 — 믹서의 Aux 스트립 미터
     const analyser = trackId === null
       ? this.masterAnalyser
-      : this.tracks.get(trackId)?.analyser;
+      : (trackId as string).startsWith('bus_')
+        ? this.busGraph.busAnalyser(trackId as unknown as BusId)
+        : this.tracks.get(trackId)?.analyser;
     if (!analyser) return null;
     const buffer = this.levelBuffer.length === analyser.fftSize
       ? this.levelBuffer
@@ -455,10 +465,10 @@ export class WorkletRenderer implements AudioRenderer {
     next.output.connect(this.masterGain);
     this.masterEffects = next;
     this.masterEffectsKey = key;
-    for (const runtime of this.tracks.values()) {
-      runtime.effects.output.disconnect();
-      runtime.effects.output.connect(next.input);
-    }
+    // 예전에는 트랙 이펙트 출력을 마스터에 **바로** 다시 이어서, 마스터 이펙트를
+    // 바꾸는 순간 오토메이션 게인과 미터를 건너뛰었다 (2026-11-17 발견).
+    // 이제 트랙 끝(분석 노드)에서 나가는 연결은 버스 그래프 하나가 관리한다
+    this.busGraph.setMaster(next.input);
     previous.dispose();
   }
 

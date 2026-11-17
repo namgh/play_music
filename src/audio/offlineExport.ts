@@ -21,6 +21,8 @@ import { applyLegato, applySwing, collectNoteEvents, legatoLookup } from './sche
 import type { InstrumentDefinition } from '../instruments/types.ts';
 import { instrumentParams, resolveInstrument } from '../instruments/resolve.ts';
 import { scheduleTrackLanes } from './automation.ts';
+import { BusGraph } from './busGraph.ts';
+import { vcaScale } from '../model/project.ts';
 import { expressionParams } from './articulation.ts';
 import {
   curveToParams, noteOffFields, toFreeCurve, variationSeed, WASM_PARAM_ORDER,
@@ -57,6 +59,8 @@ export async function renderOfflineWithWorklet(
   masterGain.gain.value = project.master.gain;
   master.output.connect(masterGain).connect(offline.destination);
 
+  const buses = new BusGraph(offline, master.input);
+  buses.syncBuses(project);
   const subset: Project = { ...project, tracks };
   const events = applyLegato(
     applySwing(collectNoteEvents(subset, 0, projectLengthTicks(project)), project.swing ?? 0),
@@ -74,7 +78,7 @@ export async function renderOfflineWithWorklet(
 
     const node = new AudioWorkletNode(offline, 'ks-string', { outputChannelCount: [2] });
     const gain = offline.createGain();
-    gain.gain.value = track.gain * instrument.baseLevel;
+    gain.gain.value = track.gain * instrument.baseLevel * vcaScale(project, track);
     const pan = offline.createStereoPanner();
     pan.pan.value = track.pan;
     const effects = buildEffectChain(offline, track.effects);
@@ -85,7 +89,8 @@ export async function renderOfflineWithWorklet(
     const automationGain = offline.createGain();
     scheduleTrackLanes(track, { automationGain, panNode: pan, bindings: effects.bindings }, project.tempo, 0, 0);
     node.connect(gain).connect(pan).connect(effects.input);
-    effects.output.connect(automationGain).connect(master.input);
+    effects.output.connect(automationGain);
+    buses.routeTrack(track, automationGain);
 
     // 워크렛이 wasm 을 준비했다고 알려 줄 때까지 기다린다. 준비 전에 예약하면
     // 그 메시지들이 무시돼 **음이 빠진 파일**이 나온다

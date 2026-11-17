@@ -21,7 +21,7 @@ import type {
   AudioRenderer, ExportOptions, ExportResult, InstrumentCapabilities, TransportPosition,
 } from './renderer.ts';
 import type { EffectSpec, Note, PitchCurve, Project, Track, TrackId } from '../model/project.ts';
-import { audibleTracks } from '../model/project.ts';
+import { audibleTracks, vcaScale } from '../model/project.ts';
 import type { Ticks } from '../model/time.ts';
 import { ticksToSeconds } from '../model/time.ts';
 import { projectLengthTicks } from '../model/factory.ts';
@@ -38,6 +38,7 @@ import { voiceKindIndex } from '../instruments/types.ts';
 import type { VoiceType } from '../instruments/types.ts';
 import { buildEffectChain } from './effectGraph.ts';
 import { scheduleClick } from './metronome.ts';
+import { BusGraph } from './busGraph.ts';
 import { countInSeconds } from './scheduler.ts';
 import type { PlayOptions } from './renderer.ts';
 import type { EffectChain } from './effectGraph.ts';
@@ -91,6 +92,8 @@ export class BufferRenderer implements AudioRenderer {
   private masterGain: GainNode;
   private masterEffects: EffectChain | null = null;
   private masterEffectsKey = '';
+  /** Aux 버스·트랙 출력·센드 — 마스터 체인이 처음 생길 때 만든다 */
+  private busGraph: BusGraph | null = null;
   /** 예약된 메트로놈 오실레이터. 정지할 때 끊어야 한다 */
   private readonly clickNodes = new Set<OscillatorNode>();
 
@@ -146,6 +149,7 @@ export class BufferRenderer implements AudioRenderer {
     if (masterKey !== this.masterEffectsKey) {
       this.rebuildMasterEffects(project.master.effects, masterKey);
     }
+    this.busGraph!.syncBuses(project);
 
     // 없어진 트랙 정리
     for (const [id, runtime] of this.tracks) {
@@ -154,6 +158,7 @@ export class BufferRenderer implements AudioRenderer {
         runtime.automationGain.disconnect();
         runtime.panNode.disconnect();
         runtime.effects.dispose();
+        this.busGraph?.removeTrack(id);
         this.tracks.delete(id);
       }
     }
@@ -171,7 +176,8 @@ export class BufferRenderer implements AudioRenderer {
       const panNode = this.ctx.createStereoPanner();
       const effects = buildEffectChain(this.ctx, []);
       gainNode.connect(panNode).connect(effects.input);
-      effects.output.connect(automationGain).connect(this.masterEffects!.input);
+      // 오토메이션 게인 뒤는 버스 그래프가 잇는다 (마스터 또는 버스, 그리고 센드)
+      effects.output.connect(automationGain);
       runtime = {
         wasm: null, gainNode, automationGain, panNode, effects, effectsKey: '[]',
         instrument, params, paramsKey: '',
@@ -190,8 +196,9 @@ export class BufferRenderer implements AudioRenderer {
     runtime.params = params;
     runtime.paramsKey = `${instrument.id}|${JSON.stringify(params)}`;
     // 음소거·솔로는 스케줄러가 걸러내므로 여기서는 레벨과 팬만 본다
-    runtime.gainNode.gain.value = track.gain * instrument.baseLevel;
+    runtime.gainNode.gain.value = track.gain * instrument.baseLevel * (this.project ? vcaScale(this.project, track) : 1);
     runtime.panNode.pan.value = track.pan;
+    this.busGraph?.routeTrack(track, runtime.automationGain);
 
     // 이펙트는 구성이 바뀔 때만 다시 만든다. 매번 만들면 리버브 IR 을 계속 재합성한다
     const effectsKey = JSON.stringify(track.effects);
@@ -212,11 +219,9 @@ export class BufferRenderer implements AudioRenderer {
     this.masterEffects = next;
     this.masterEffectsKey = key;
 
-    // 트랙들을 새 마스터 체인으로 옮긴다
-    for (const runtime of this.tracks.values()) {
-      runtime.automationGain.disconnect();
-      runtime.automationGain.connect(next.input);
-    }
+    // 트랙·버스를 새 마스터 체인으로 옮긴다
+    if (this.busGraph) this.busGraph.setMaster(next.input);
+    else this.busGraph = new BusGraph(this.ctx, next.input);
     previous?.dispose();
   }
 
@@ -319,17 +324,19 @@ export class BufferRenderer implements AudioRenderer {
       master.output.connect(masterGain).connect(offline.destination);
 
       const subset: Project = { ...project, tracks };
+      const buses = new BusGraph(offline, master.input);
+      buses.syncBuses(project);
       for (const track of tracks) {
         const instrument = resolveInstrument(track.instrumentId, this.registry);
         const params = instrumentParams(instrument, track.toneId, track.toneParams);
 
         const gain = offline.createGain();
-        gain.gain.value = track.gain;
+        gain.gain.value = track.gain * vcaScale(project, track);
         const pan = offline.createStereoPanner();
         pan.pan.value = track.pan;
         const effects = buildEffectChain(offline, track.effects);
         gain.connect(pan).connect(effects.input);
-        effects.output.connect(master.input);
+        buses.routeTrack(track, effects.output);
 
         // 이 트랙의 음을 시각대로 예약한다
         for (const event of collectNoteEvents(subset, 0, projectLengthTicks(project))) {

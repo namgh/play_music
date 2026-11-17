@@ -14,7 +14,7 @@
 import { CHORD_QUALITIES, SCHEMA_VERSION } from './project.ts';
 import type {
   AutomationLane, AutomationMode, AutomationPoint, AutomationTarget, ChordId, ChordQuality, Clip, ClipId, EffectSpec, LoopRegion,
-  MarkerId, MusicalKey, Note, NoteId, Origin, PitchCurve, Project, ProjectId, SectionId, StackId, Track, TrackId,
+  MarkerId, MusicalKey, Note, NoteId, Origin, PitchCurve, Project, ProjectId, SectionId, StackId, Track, TrackId, BusId, VcaId, GroupId,
 } from './project.ts';
 import { normalizeSignatureChanges } from './meter.ts';
 import { DEFAULT_TEMPO, DEFAULT_TIME_SIGNATURE, PPQ } from './time.ts';
@@ -236,6 +236,16 @@ function parseTrack(value: unknown, seen: Set<string>): Track {
     ...(raw.hidden == null ? {} : { hidden: bool(raw.hidden, false) }),
     ...(raw.locked == null ? {} : { locked: bool(raw.locked, false) }),
     ...(typeof raw.stackId === 'string' && raw.stackId.startsWith('stk_') ? { stackId: raw.stackId as StackId } : {}),
+    ...(typeof raw.output === 'string' && raw.output.startsWith('bus_') ? { output: raw.output as BusId } : {}),
+    ...(raw.sends == null ? {} : {
+      sends: asArray(raw.sends, '센드').flatMap((entry) => {
+        const send = asRecord(entry, '센드');
+        return typeof send.busId === 'string' && send.busId.startsWith('bus_')
+          ? [{ busId: send.busId as BusId, level: num(send.level, 0.5, 0, 1) }] : [];
+      }),
+    }),
+    ...(typeof raw.vcaId === 'string' && raw.vcaId.startsWith('vca_') ? { vcaId: raw.vcaId as VcaId } : {}),
+    ...(typeof raw.groupId === 'string' && raw.groupId.startsWith('grp_') ? { groupId: raw.groupId as GroupId } : {}),
   };
 }
 
@@ -331,6 +341,27 @@ function optionalGlobals(raw: Record<string, unknown>, seen: Set<string>): Parti
       const c = asRecord(entry, '박자 변화');
       return { bar: Math.round(num(c.bar, 1, 1)), timeSignature: parseTimeSignature(c.timeSignature, '박자') };
     }));
+  }
+  if (raw.buses != null) {
+    out.buses = asArray(raw.buses, '버스').map((entry) => {
+      const b = asRecord(entry, '버스');
+      return {
+        id: id<BusId>(b.id, 'bus', seen), name: str(b.name, '버스'), gain: num(b.gain, 1, 0, 1.5),
+        pan: num(b.pan, 0, -1, 1), mute: bool(b.mute, false), effects: parseEffects(b.effects),
+      };
+    });
+  }
+  if (raw.vcas != null) {
+    out.vcas = asArray(raw.vcas, 'VCA').map((entry) => {
+      const v = asRecord(entry, 'VCA');
+      return { id: id<VcaId>(v.id, 'vca', seen), name: str(v.name, 'VCA'), gain: num(v.gain, 1, 0, 1.5), mute: bool(v.mute, false) };
+    });
+  }
+  if (raw.groups != null) {
+    out.groups = asArray(raw.groups, '그룹').map((entry) => {
+      const g = asRecord(entry, '그룹');
+      return { id: id<GroupId>(g.id, 'grp', seen), name: str(g.name, '그룹') };
+    });
   }
   if (raw.stacks != null) {
     out.stacks = asArray(raw.stacks, '트랙 스택').map((entry) => {

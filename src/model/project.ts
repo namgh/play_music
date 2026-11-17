@@ -29,6 +29,9 @@ export type MarkerId = `mrk_${string}`;
 export type SectionId = `sec_${string}`;
 export type ChordId = `chd_${string}`;
 export type StackId = `stk_${string}`;
+export type BusId = `bus_${string}`;
+export type VcaId = `vca_${string}`;
+export type GroupId = `grp_${string}`;
 
 /** 스키마 버전. 필드 추가는 자유, 제거·개명은 마이그레이션 함수 동반 (`sound.md` 9-8) */
 export const SCHEMA_VERSION = 1;
@@ -208,6 +211,46 @@ export interface Track {
   locked?: boolean;
   /** 속한 트랙 스택. 스택 멤버는 목록에서 붙어 있다 */
   stackId?: StackId;
+  /** 출력. 없으면 마스터, 있으면 그 버스(Aux)로 간다 — 합 스택도 이것이다 */
+  output?: BusId;
+  /** 센드 — 페이더·이펙트 뒤에서 갈라져 버스로 간다 (포스트 페이더) */
+  sends?: Send[];
+  /** VCA — 이 트랙 게인에 VCA 페이더가 곱해진다 */
+  vcaId?: VcaId;
+  /** 믹서 그룹 — 같은 그룹은 볼륨·뮤트·솔로를 함께 움직인다 (편집 쪽에서) */
+  groupId?: GroupId;
+}
+
+export interface Send {
+  busId: BusId;
+  /** 0~1 */
+  level: number;
+}
+
+/** 버스(Aux 채널) — 센드·트랙 출력을 받아 이펙트를 거쳐 마스터로 */
+export interface Bus {
+  id: BusId;
+  name: string;
+  /** 0~1.5 */
+  gain: number;
+  pan: number;
+  mute: boolean;
+  effects: EffectSpec[];
+}
+
+/** VCA 페이더 — 소리는 지나가지 않고, 묶인 트랙들의 게인을 한 손잡이로 곱한다 */
+export interface Vca {
+  id: VcaId;
+  name: string;
+  /** 0~1.5. 1 이면 그대로 */
+  gain: number;
+  mute: boolean;
+}
+
+/** 믹서 그룹 (Logic Group) */
+export interface MixGroup {
+  id: GroupId;
+  name: string;
 }
 
 /**
@@ -331,6 +374,10 @@ export interface Project {
   keyChanges?: KeyChange[];
   /** 트랙 스택 */
   stacks?: TrackStack[];
+  /** 버스(Aux) */
+  buses?: Bus[];
+  vcas?: Vca[];
+  groups?: MixGroup[];
   tracks: Track[];
   master: {
     gain: number;
@@ -355,6 +402,14 @@ export function countEditedNotes(clip: Clip): number {
 
 export function clipEndTick(clip: Clip): Ticks {
   return clip.startTick + clip.lengthTick;
+}
+
+/** 트랙 게인에 곱해지는 VCA 배율. VCA 가 뮤트면 0 */
+export function vcaScale(project: Pick<Project, 'vcas'>, track: Pick<Track, 'vcaId'>): number {
+  if (!track.vcaId) return 1;
+  const vca = project.vcas?.find((v) => v.id === track.vcaId);
+  if (!vca) return 1;
+  return vca.mute ? 0 : vca.gain;
 }
 
 /** 소리가 나는 클립인가 — 클립 뮤트를 한 곳에서 판정한다 */

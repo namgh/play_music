@@ -101,6 +101,27 @@ export const SCREENS = [
       await b.clickEl(`document.querySelector('[aria-label="스네어 오토메이션 모드"] [role=radio]:nth-child(3)')`);
     },
   },
+  {
+    name: 'a05-mixer', area: 5, title: '믹서 — 채널 스트립 · 인서트 · 센드 · 버스(Aux) · VCA · 그룹',
+    run: async (b) => {
+      await b.clickEl(`[...document.querySelectorAll('nav[aria-label="화면"] button')][1]`);
+      await sleep(400);
+      await b.clickEl(byText('＋ 버스'));
+      await b.clickEl(byText('＋ VCA'));
+      await b.clickEl(byText('＋ 그룹'));
+      await sleep(200);
+      await b.choose(`document.querySelector('[data-strip="버스 1"] [aria-label="이펙트 추가"]')`, 'reverb');
+      await sleep(200);
+      for (const name of ['킥', '스네어']) {
+        await b.choose(byLabel(`${name} 그룹`), await b.ev(`document.querySelector('[aria-label="${name} 그룹"] option:nth-child(2)').value`));
+        await b.choose(byLabel(`${name} VCA`), await b.ev(`document.querySelector('[aria-label="${name} VCA"] option:nth-child(2)').value`));
+      }
+      await b.ev(`(() => { for (const n of ['어쿠스틱 기타', '로즈', '패드']) { const e = document.querySelector('[aria-label="' + n + ' → 버스 1 센드"]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(e, '0.4'); e.dispatchEvent(new Event('input', { bubbles: true })); e.dispatchEvent(new PointerEvent('pointerup', { bubbles: true })); } })()`);
+      await sleep(300);
+      await b.choose(`document.querySelector('[data-strip="베이스"] [aria-label="이펙트 추가"]')`, 'compressor');
+      await sleep(300);
+    },
+  },
 ];
 
 async function capture(b, screen) {

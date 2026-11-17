@@ -342,6 +342,33 @@ try {
   await clickEl(byTitle('되돌리기')); await sleep(300);
   record('기록은 언두 한 단계', (await auto15()).includes('volume:2'), await auto15());
   await shot('11-automation');
+
+  // 16. 믹서 — 버스·센드·인서트·VCA, 버스를 거쳐도 소리와 내보내기가 난다
+  await clickEl(`[...document.querySelectorAll('nav[aria-label="화면"] button')][1]`);
+  await sleep(400);
+  await clickEl(byText('＋ 버스')); await clickEl(byText('＋ VCA')); await sleep(200);
+  const pick16 = (sel, v) => ev(`(() => { const e = ${sel}; Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(e, ${JSON.stringify(v)}); e.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+  await pick16(`document.querySelector('[data-strip="버스 1"] [aria-label="이펙트 추가"]')`, 'reverb');
+  await pick16(`document.querySelector('[data-strip="마스터"] [aria-label="이펙트 추가"]')`, 'eq');
+  await sleep(200);
+  const strip16 = await ev(`document.querySelector('[data-strip]').dataset.strip`);
+  const busId16 = await ev(`document.querySelector('[aria-label="${strip16} 출력"] option:nth-child(2)').value`);
+  await pick16(`document.querySelector('[aria-label="${strip16} 출력"]')`, busId16);
+  await sleep(300);
+  const d16 = await ev(`(() => { const p = JSON.parse(localStorage.getItem('project-autosave-v1')); const d = p.project ?? p; return { buses: (d.buses ?? []).length, vcas: (d.vcas ?? []).length, out: d.tracks[0].output ?? null, busFx: d.buses?.[0]?.effects?.length, masterFx: d.master.effects.length }; })()`);
+  record('버스·VCA·인서트·출력 경로', d16.buses === 1 && d16.vcas === 1 && d16.out === busId16 && d16.busFx === 1 && d16.masterFx >= 1, JSON.stringify(d16));
+  await clickEl(byTitle('맨 앞으로'));
+  await clickEl(byTitle('커서부터 재생'));
+  let peak16 = 0; for (let i = 0; i < 12; i++) { await sleep(150); peak16 = Math.max(peak16, await ev('window.__peak()')); }
+  const stop16 = await centerOf(byTitle('정지')); if (stop16) await click(stop16.x, stop16.y);
+  record('버스를 거쳐도 재생됨 (마스터 이펙트 바꾼 뒤)', peak16 > 0.001, `피크 ${peak16.toFixed(4)}`);
+  for (const f of readdirSync(DL)) rmSync(join(DL, f));
+  await clickEl(byText('WAV 내보내기'));
+  let wav16 = null;
+  for (let i = 0; i < 60 && !wav16; i++) { await sleep(500); wav16 = readdirSync(DL).find((f) => f.endsWith('.wav')) ?? null; }
+  if (wav16) { await sleep(500); const a = analyzeWav(join(DL, wav16)); record('버스 경로 내보내기', a.ok && a.peak > 0.001, a.ok ? `피크 ${a.peak.toFixed(3)} · ${a.seconds.toFixed(1)}초` : a.why); }
+  else record('버스 경로 내보내기', false, '파일이 안 내려옴');
+  await shot('12-mixer');
 } catch (err) {
   record('스크립트 실행', false, String(err.stack ?? err).slice(0, 500));
 } finally {
