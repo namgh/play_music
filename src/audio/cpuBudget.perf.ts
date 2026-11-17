@@ -257,7 +257,9 @@ test('Rust 이펙트 — 하나하나가 실시간의 몇 배인가', async () =
     const factor = (seconds * 1000) / ms;
     rows.push(`${type.padEnd(18)} ${factor.toFixed(0).padStart(6)}배`);
     const latency = (RUST_EFFECT_SPECS[type] as { latency?: number }).latency ?? 0;
-    const floor = HEAVY.has(type) ? 40 : latency === 16 ? 100 : 200;
+    // 리버브는 원래 무겁다(지연 여러 개·컨볼루션) — 트랙마다가 아니라 버스에 하나 거는 것이라 40배
+    const heavy = HEAVY.has(type) || RUST_EFFECT_SPECS[type].category === 'reverb';
+    const floor = heavy ? 40 : latency === 16 ? 100 : 200;
     if (factor <= floor) failures.push(`${type} 가 실시간의 ${factor.toFixed(0)}배 — 기준 ${floor}배`);
   }
   console.log(rows.join('\n'));

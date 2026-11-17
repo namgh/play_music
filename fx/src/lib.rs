@@ -6,6 +6,9 @@
 //! 흐름: `fx_create(종류, 샘플레이트)` → 매 블록 `fx_params()` 에 값 쓰기 ·
 //! `fx_in_l/r()` 에 입력 쓰기 → `fx_process(n)` → 같은 버퍼에서 출력 읽기 → `fx_meters()`.
 
+// DSP 는 여러 배열을 같은 번호로 함께 도는 일이 많다 — 반복자로 바꾸면 오히려 읽기 어렵다
+#![allow(clippy::needless_range_loop)]
+
 pub mod blocks;
 pub mod effects;
 

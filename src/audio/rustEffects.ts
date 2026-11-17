@@ -462,6 +462,92 @@ export const RUST_EFFECT_SPECS = {
       dry: unit('원음', 1),
     },
   },
+  // --- 4단계: 리버브 ---
+  chromaverb: {
+    label: '크로마버브', category: 'reverb',
+    params: {
+      space: choice('공간', ['방', '체임버', '콘서트 홀', '성당', '신스 홀', '빽빽한 방', '부드러운 공간'], 2),
+      decaySec: { label: '길이', min: 0.1, max: 30, default: 2.2, unit: 's', curve: 'log' },
+      size: { label: '크기', min: 0.3, max: 2, default: 1, curve: 'log' },
+      predelayMs: msec('프리딜레이', 0, 250, 20, false),
+      highDecay: unit('고역 길이 비율', 0.5, 1, 0.05),
+      modulation: unit('흔들림', 1, 2),
+      diffusion: unit('확산', 0.7),
+      lowCutHz: hz('로우컷', 20, 1000, 120),
+      width: unit('폭', 1, 1.5),
+      mix: unit('섞기', 0.25),
+      freeze: choice('얼리기', ['끔', '켬'], 0),
+    },
+  },
+  platereverb: {
+    label: '플레이트 리버브', category: 'reverb',
+    params: {
+      decay: unit('길이', 0.7, 0.97),
+      predelayMs: msec('프리딜레이', 0, 250, 10, false),
+      bandwidthHz: hz('입력 대역', 1000, 20000, 12000),
+      dampingHz: hz('고역 감쇠', 500, 20000, 7000),
+      lowCutHz: hz('로우컷', 20, 1000, 150),
+      width: unit('폭', 1, 1.5),
+      mix: unit('섞기', 0.25),
+    },
+  },
+  springreverb: {
+    label: '스프링 리버브', category: 'reverb',
+    params: {
+      tensionMs: msec('장력 (길이)', 15, 100, 38, false),
+      decay: unit('감쇠', 0.75, 0.92),
+      dispersion: unit('분산', 0.6),
+      toneHz: hz('톤', 1000, 8000, 4200),
+      drip: unit('드립', 1, 2),
+      mix: unit('섞기', 0.3),
+    },
+  },
+  roomreverb: {
+    label: '룸 (초기 반사)', category: 'reverb',
+    params: {
+      sizeM: { label: '방 크기', min: 2, max: 30, default: 7, unit: 'm', curve: 'log' },
+      decaySec: { label: '길이', min: 0.1, max: 5, default: 0.7, unit: 's', curve: 'log' },
+      earlyLate: unit('반사 ↔ 꼬리', 0.5),
+      damping: unit('밝기', 0.6, 1, 0.05),
+      predelayMs: msec('프리딜레이', 0, 200, 0, false),
+      width: unit('폭', 1, 1.5),
+      mix: unit('섞기', 0.25),
+    },
+  },
+  gatedreverb: {
+    label: '게이트 리버브', category: 'reverb', meters: [{ label: '게이트', min: 0, max: 1 }],
+    params: {
+      thresholdDb: db('스레숄드', -60, 0, -24),
+      holdMs: msec('홀드', 10, 1000, 220),
+      closeMs: msec('닫힘', 1, 200, 12),
+      size: { label: '크기', min: 0.3, max: 2, default: 1, curve: 'log' },
+      brightness: unit('밝기', 0.6, 1, 0.05),
+      mix: unit('섞기', 0.4),
+    },
+  },
+  shimmer: {
+    label: '쉬머 리버브', category: 'reverb',
+    params: {
+      decaySec: { label: '길이', min: 0.5, max: 20, default: 5, unit: 's', curve: 'log' },
+      pitchSemis: { label: '음정', min: -12, max: 24, default: 12, unit: '반음' },
+      amount: unit('쉬머', 0.4, 0.9),
+      brightness: unit('밝기', 0.6, 1, 0.05),
+      mix: unit('섞기', 0.35),
+    },
+  },
+  enverb: {
+    label: '엔버브 (모양 리버브)', category: 'reverb', latency: 1024,
+    params: {
+      attackMs: { ...msec('차오름', 0, 2000, 30, false), automatable: false },
+      holdMs: { ...msec('홀드', 0, 2000, 50, false), automatable: false },
+      decayMs: { ...msec('감쇠', 20, 8000, 1500), automatable: false },
+      curve: { ...unit('감쇠 곡선', 0, 1, -1), automatable: false },
+      dampingHz: { ...hz('고역 감쇠', 500, 18000, 7000), automatable: false },
+      lowCutHz: hz('로우컷', 20, 1000, 120),
+      width: unit('폭', 1, 1.5),
+      mix: unit('섞기', 0.3),
+    },
+  },
 } satisfies Record<string, RustEffectDecl>;
 
 export type RustEffectType = keyof typeof RUST_EFFECT_SPECS;

@@ -10,6 +10,7 @@ pub mod filters;
 pub mod gate;
 pub mod modulation;
 pub mod multipressor;
+pub mod reverbs;
 pub mod spacedesigner;
 
 pub const MAX_PARAMS: usize = 24;
@@ -113,6 +114,22 @@ pub const KINDS: &[(&str, Factory)] = &[
     ("cabinet", |sr, p| Box::new(distortion::Cabinet::new(sr, p))),
     ("exciter", |sr, p| Box::new(distortion::Exciter::new(sr, p))),
     ("subbass", |sr, p| Box::new(distortion::SubBass::new(sr, p))),
+    // 4단계 — 리버브
+    ("chromaverb", |sr, p| {
+        Box::new(reverbs::ChromaVerb::new(sr, p))
+    }),
+    ("platereverb", |sr, p| Box::new(reverbs::Plate::new(sr, p))),
+    ("springreverb", |sr, p| {
+        Box::new(reverbs::SpringReverb::new(sr, p))
+    }),
+    ("roomreverb", |sr, p| {
+        Box::new(reverbs::RoomReverb::new(sr, p))
+    }),
+    ("gatedreverb", |sr, p| {
+        Box::new(reverbs::GatedReverb::new(sr, p))
+    }),
+    ("shimmer", |sr, p| Box::new(reverbs::Shimmer::new(sr, p))),
+    ("enverb", |sr, p| Box::new(reverbs::EnVerb::new(sr, p))),
 ];
 
 pub fn create(kind: usize, sample_rate: f32, params: &Params) -> Option<Box<dyn Effect>> {
