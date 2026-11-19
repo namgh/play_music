@@ -11,6 +11,7 @@ import {
 import { createEffect, EFFECT_SPECS, isEffectType } from '../audio/effects.ts';
 import type { EffectParamSpec, EffectType } from '../audio/effects.ts';
 import { EFFECT_CATEGORIES } from '../audio/rustEffects.ts';
+import { eqCurveDb, hasEqCurve } from '../audio/eqCurve.ts';
 import type { EffectCategory } from '../audio/rustEffects.ts';
 
 /**
@@ -329,6 +330,86 @@ export function Mixer({ editor, readLevel, readEffectMeters, compensationSamples
   );
 }
 
+/** 스텝 패턴 손잡이 — 슬라이더 대신 칸으로 그린다 (트랜스 게이트 step1…16, 스텝 FX cut1…8·vol1…8) */
+const STEP_KEY = /^(step|cut|vol)\d+$/;
+
+function numericParams(effect: EffectSpec, decl: Record<string, EffectParamSpec>): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const [k, spec] of Object.entries(decl)) {
+    const v = effect.params[k];
+    out[k] = typeof v === 'number' ? v : spec.default;
+  }
+  return out;
+}
+
+/** EQ 응답 곡선 — 20Hz…20kHz, ±24dB */
+function EqCurve({ type, params }: { type: string; params: Record<string, number> }) {
+  const W = 600;
+  const H = 120;
+  const { db } = eqCurveDb(type, params, 160);
+  const y = (v: number) => H / 2 - (Math.max(-24, Math.min(24, v)) / 24) * (H / 2 - 4);
+  const path = db.map((v, i) => `${i === 0 ? 'M' : 'L'}${((i / (db.length - 1)) * W).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
+  const grid = [100, 1000, 10000].map((f) => (Math.log10(f / 20) / 3) * W);
+  return (
+    <div className="relative mt-3" data-eq-curve>
+      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="h-28 w-full rounded-md bg-body" role="img" aria-label="EQ 곡선">
+        {grid.map((x) => <line key={x} x1={x} x2={x} y1={0} y2={H} stroke="var(--color-rule)" vectorEffect="non-scaling-stroke" />)}
+        {[-12, 0, 12].map((v) => <line key={v} x1={0} x2={W} y1={y(v)} y2={y(v)} stroke="var(--color-rule)" vectorEffect="non-scaling-stroke" strokeDasharray={v === 0 ? undefined : '3 4'} />)}
+        <path d={path} fill="none" stroke="var(--color-ink)" strokeWidth={2} vectorEffect="non-scaling-stroke" />
+      </svg>
+      {/* 눈금 글자는 SVG 밖에 — 늘어나는 그림 안에 두면 글자가 찌그러진다 */}
+      {['100', '1k', '10k'].map((t, i) => (
+        <span key={t} className="pointer-events-none absolute bottom-1 font-num text-[11px] text-ink-3" style={{ left: `calc(${(grid[i]! / W) * 100}% + 4px)` }}>{t}</span>
+      ))}
+      <span className="pointer-events-none absolute left-1 top-1 font-num text-[11px] text-ink-3">+24dB</span>
+    </div>
+  );
+}
+
+function StepGrids({ effect, params, onChange }: {
+  effect: EffectSpec;
+  params: Record<string, EffectParamSpec>;
+  onChange: (next: EffectSpec, commit: boolean) => void;
+}) {
+  const rows = (['step', 'cut', 'vol'] as const)
+    .map((prefix) => ({ prefix, keys: Object.keys(params).filter((k) => new RegExp(`^${prefix}\\d+$`).test(k)) }))
+    .filter((r) => r.keys.length > 0);
+  if (rows.length === 0) return null;
+  const value = (k: string) => { const v = effect.params[k]; return typeof v === 'number' ? v : params[k]!.default; };
+  // 끄는 동안은 미리보기, 손을 떼면 한 번에 기록 (되돌리기 한 단계)
+  const set = (k: string, v: number, commit = true) => onChange({ ...effect, params: { ...effect.params, [k]: v } }, commit);
+  return (
+    <div className="mt-3 flex flex-col gap-2" data-step-grid>
+      {rows.map(({ prefix, keys }) => (
+        <div key={prefix} className="flex items-end gap-1">
+          <span className="w-12 shrink-0 text-[10px] text-ink-3">{prefix === 'step' ? '칸' : prefix === 'cut' ? '필터' : '볼륨'}</span>
+          {keys.map((k, i) => prefix === 'step' ? (
+            <button key={k} type="button" aria-pressed={value(k) >= 0.5} aria-label={params[k]!.label}
+              onClick={() => set(k, value(k) >= 0.5 ? 0 : 1)}
+              className={`h-7 flex-1 rounded-sm border ${value(k) >= 0.5 ? 'border-ink bg-ink' : 'border-rule bg-body'} ${i % 4 === 0 ? 'ml-1' : ''}`} />
+          ) : (
+            <div key={k} className="relative h-12 flex-1 cursor-ns-resize rounded-sm border border-rule bg-body" aria-label={params[k]!.label} role="slider"
+              aria-valuemin={0} aria-valuemax={1} aria-valuenow={value(k)} tabIndex={0}
+              onPointerDown={(e) => {
+                const el = e.currentTarget;
+                const at = (ev: { clientY: number }) => {
+                  const box = el.getBoundingClientRect();
+                  return Math.max(0, Math.min(1, 1 - (ev.clientY - box.top) / box.height));
+                };
+                set(k, Math.round(at(e) * 100) / 100, false);
+                el.setPointerCapture(e.pointerId);
+                el.onpointermove = (ev) => set(k, Math.round(at(ev) * 100) / 100, false);
+                el.onpointerup = (ev) => { el.onpointermove = null; set(k, Math.round(at(ev) * 100) / 100, true); };
+              }}>
+              <div className="absolute inset-x-0 bottom-0 rounded-sm bg-ink" style={{ height: `${value(k) * 100}%` }} />
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /** 지연 보정 표시 — 지연 있는 이펙트를 쓰면 "PDC 21ms" */
 function CompensationBadge({ read }: { read?: (() => number) | undefined }) {
   const [samples, setSamples] = useState(0);
@@ -382,7 +463,7 @@ function EffectMeters({ type, read }: { type: EffectType; read: () => Float32Arr
       {decl.map((m, i) => {
         const v = values[i] ?? m.max;
         const t = Math.max(0, Math.min(1, (v - m.min) / (m.max - m.min || 1)));
-        const reduction = m.unit === 'dB' && m.max === 0 && m.label !== '감지';
+        const reduction = m.reduction === true;
         return (
           <div key={m.label} className="flex w-28 flex-col gap-1">
             <span className="text-[10px] text-ink-3">{m.label}</span>
@@ -435,8 +516,11 @@ function EffectPanel({
         <button type="button" onClick={onClose} className="h-7 rounded-md border border-rule bg-body px-2.5 text-xs text-ink-2">닫기</button>
       </div>
 
+      {hasEqCurve(effect.type) && <EqCurve type={effect.type} params={numericParams(effect, declared.params)} />}
+      <StepGrids effect={effect} params={declared.params} onChange={onChange} />
+
       <div className="mt-3 grid gap-x-6 gap-y-2 sm:grid-cols-2 xl:grid-cols-3">
-        {Object.entries(declared.params).map(([key, spec]) => {
+        {Object.entries(declared.params).filter(([key]) => !STEP_KEY.test(key)).map(([key, spec]) => {
           const raw = effect.params[key];
           const value = typeof raw === 'number' ? raw : spec.default;
           const set = (v: number, commit: boolean) => onChange({ ...effect, params: { ...effect.params, [key]: v } }, commit);

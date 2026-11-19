@@ -340,7 +340,75 @@ export const SCREENS = [
       await sleep(300);
     },
   },
+  // --- 21 · 이펙트 (Rust 코어, EFFECTS_PLAN.md) ---
+  {
+    name: 'a21-fx-channeleq', area: 21, title: '이펙트 — 채널 EQ 8밴드 · 응답 곡선 · 분류별 추가 메뉴',
+    run: async (b) => {
+      await withEffects(b, '패드', [{ type: 'channeleq', params: { lowCutHz: 90, p1Db: -4, p1Hz: 300, p3Db: 5, p3Hz: 3000, p3Q: 1.4, highShelfDb: 3 } }]);
+      await openInsert(b, '패드', 0);
+    },
+  },
+  {
+    name: 'a21-fx-comp-meters', area: 21, title: '이펙트 — 컴프레서 회로 모델(FET) · 게인 감소·입출력 미터(재생 중) · 지연 16샘플',
+    run: async (b) => {
+      await withEffects(b, '베이스', [{ type: 'compmodel', params: { model: 2, thresholdDb: -34, ratio: 6, attackMs: 2, releaseMs: 80, makeupDb: 6, color: 0.3 } }]);
+      await openInsert(b, '베이스', 0);
+      await b.clickEl(byTitle('커서부터 재생'));
+      await sleep(1800);
+    },
+  },
+  {
+    name: 'a21-fx-trancegate', area: 21, title: '이펙트 — 트랜스 게이트 16칸 (곡 위치·템포를 따라 마디에 맞음)',
+    run: async (b) => {
+      const steps = Object.fromEntries([1, 0, 1, 1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 1, 0, 1].map((v, k) => [`step${k + 1}`, v]));
+      await withEffects(b, '패드', [{ type: 'trancegate', params: steps }]);
+      await openInsert(b, '패드', 0);
+    },
+  },
+  {
+    name: 'a21-fx-stepfx', area: 21, title: '이펙트 — 스텝 FX (필터·볼륨 8칸 막대, 좌우 번갈이)',
+    run: async (b) => {
+      await withEffects(b, '로즈', [{ type: 'stepfx', params: {} }]);
+      await openInsert(b, '로즈', 0);
+    },
+  },
+  {
+    name: 'a21-fx-chain-pdc', area: 21, title: '이펙트 — 인서트 여러 개(리니어 페이즈 EQ·스페이스 디자이너·어댑티브 리미터) · 지연 보정(PDC) 표시',
+    run: async (b) => {
+      await withEffects(b, '어쿠스틱 기타', [
+        { type: 'linearphaseeq', params: { p2Db: -3 } }, { type: 'ampdesigner', params: {} },
+        { type: 'spacedesigner', params: {} }, { type: 'adaptivelimiter', params: { inputDb: 4 } },
+      ]);
+      await openInsert(b, '어쿠스틱 기타', 2);
+      // 엔진이 켜져야 지연 보정 표시가 뜬다 — 잠깐 재생했다 멈춘다
+      await b.clickEl(byTitle('커서부터 재생'));
+      await sleep(1200);
+      await b.clickEl(byTitle('정지'));
+      await sleep(800);
+    },
+  },
+
 ];
+
+/** 데모 곡의 한 트랙에 이펙트를 넣고 다시 열어 믹서로 간다 (기본값은 앱의 선언에서 채워진다) */
+async function withEffects(b, trackName, effects) {
+  await b.ev(`(() => {
+    const raw = JSON.parse(localStorage.getItem('project-autosave-v1'));
+    const p = raw.project ?? raw;
+    const t = p.tracks.find((x) => x.name === ${JSON.stringify('TRACK')}.replace('TRACK', ${JSON.stringify(trackName)}));
+    t.effects = ${JSON.stringify(effects)}.map((e) => ({ type: e.type, bypass: false, params: e.params }));
+    localStorage.setItem('project-autosave-v1', JSON.stringify(raw));
+    return 'ok';
+  })()`);
+  await b.goto(URL_APP, 2500);
+  await b.clickEl(`[...document.querySelectorAll('nav[aria-label="화면"] button')][1]`);
+  await sleep(400);
+}
+
+async function openInsert(b, trackName, index) {
+  await b.clickEl(`[...document.querySelectorAll('[data-strip=' + JSON.stringify(${JSON.stringify(trackName)}) + '] button')].filter((x) => x.querySelector('.truncate'))[${index}]`);
+  await sleep(500);
+}
 
 async function capture(b, screen) {
   // 매번 같은 곡으로 시작한다

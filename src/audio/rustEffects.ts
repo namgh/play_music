@@ -30,7 +30,8 @@ export interface RustEffectDecl {
   /** 처리 지연(샘플, 48kHz 기준이 아니라 **샘플레이트와 무관한 고정 블록**) — Rust 가 보고하는 값과 같아야 한다 */
   latency?: number;
   /** 미터 칸 이름 (Rust `meters()` 순서) */
-  meters?: { label: string; unit?: string; min: number; max: number }[];
+  /** `reduction` 이면 게인 감소 — 오른쪽에서 왼쪽으로 차는 붉은 막대 */
+  meters?: { label: string; unit?: string; min: number; max: number; reduction?: true }[];
   params: Record<string, EffectParamSpec>;
 }
 
@@ -39,7 +40,7 @@ const hz = (label: string, min: number, max: number, def: number): EffectParamSp
 const msec = (label: string, min: number, max: number, def: number, log = true): EffectParamSpec => ({ label, min, max, default: def, unit: 'ms', ...(log ? { curve: 'log' as const } : {}) });
 const unit = (label: string, def: number, max = 1, min = 0): EffectParamSpec => ({ label, min, max, default: def });
 const choice = (label: string, options: string[], def = 0): EffectParamSpec => ({ label, min: 0, max: options.length - 1, default: def, options, automatable: false });
-const GR = { label: '게인 감소', unit: 'dB', min: -40, max: 0 };
+const GR = { label: '게인 감소', unit: 'dB', min: -40, max: 0, reduction: true as const };
 
 /** 박 나누기 (Rust `DIVISIONS` 순서) */
 const DIVISION_LABELS = ['1/1', '1/2', '1/4', '1/8', '1/16', '1/32', '1/8 셋잇단', '1/16 셋잇단'];
