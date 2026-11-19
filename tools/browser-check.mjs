@@ -693,6 +693,20 @@ try {
   await mouse('mouseReleased', knob.x, knob.y - 40); await sleep(300);
   const knobAfter = await ev(`document.querySelector('[data-smart-controls] svg[role=slider]').getAttribute('aria-valuenow')`);
   record('스마트 컨트롤 손잡이 끌기', Number(knobAfter) > Number(knob.v), `${knob.v} → ${knobAfter}`);
+  // 매핑 — 손잡이 1 에 팬을 함께 물리고 거꾸로, 돌리면 볼륨과 팬이 같이 움직인다
+  await clickEl(`document.querySelector('[aria-label="손잡이 1 매핑"]')`);
+  await sleep(200);
+  await ev(`(() => { const e = document.querySelector('[aria-label="함께 움직일 대상"]'); const opt = [...e.options].find((o) => o.value === 'pan'); Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(e, opt ? 'pan' : e.options[1].value); e.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+  await sleep(300);
+  const before23 = await ev(`(() => { const p = JSON.parse(localStorage.getItem('project-autosave-v1')); const d = p.project ?? p; const t = d.tracks.find((x) => x.smartMaps); return t ? t.gain.toFixed(2) + '/' + t.pan.toFixed(2) + ' ' + JSON.stringify(t.smartMaps[0]) : ''; })()`);
+  const knob2 = await ev(`(() => { const e = document.querySelector('[data-smart-controls] svg[role=slider]'); const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+  await mouse('mouseMoved', knob2.x, knob2.y, { buttons: 0 }); await mouse('mousePressed', knob2.x, knob2.y);
+  for (let i = 1; i <= 5; i++) { await mouse('mouseMoved', knob2.x, knob2.y + i * 8); await sleep(30); }
+  await mouse('mouseReleased', knob2.x, knob2.y + 40); await sleep(300);
+  const after23 = await ev(`(() => { const p = JSON.parse(localStorage.getItem('project-autosave-v1')); const d = p.project ?? p; const t = d.tracks.find((x) => x.smartMaps); return t ? t.gain.toFixed(2) + '/' + t.pan.toFixed(2) : ''; })()`);
+  const [g0, p0] = before23.split(' ')[0].split('/').map(Number);
+  const [g1, p1] = after23.split('/').map(Number);
+  record('스마트 컨트롤 매핑 — 한 손잡이가 대상 둘', before23.includes('"extra"') && g1 !== g0 && p1 !== p0, `${before23} → ${after23}`);
   await ev(`(() => { const e = document.querySelector('[aria-label="MIDI 이펙트 추가"]'); Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(e, 'arpeggiator'); e.dispatchEvent(new Event('change', { bubbles: true })); })()`);
   await sleep(300);
   const fx23 = await ev(`(() => { const p = JSON.parse(localStorage.getItem('project-autosave-v1')); const d = p.project ?? p; return d.tracks.map((t) => (t.midiEffects ?? []).map((f) => f.type).join('+')).join(','); })()`);

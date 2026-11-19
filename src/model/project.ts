@@ -293,6 +293,21 @@ export interface Track {
   midiEffects?: MidiEffect[];
   /** 스마트 컨트롤에 내놓을 손잡이 (대상 목록). 없으면 자동으로 고른다 */
   smartControls?: string[];
+  /** 손잡이마다 매핑 (`smartControls` 와 같은 자리, `PARITY_ROUND2.md` 15) — 없으면 곧게 한 대상 */
+  smartMaps?: SmartMap[];
+}
+
+/**
+ * 스마트 컨트롤 매핑 (Logic Smart Control Mapping) — 손잡이 위치(0~1) → 대상 값(0~1).
+ * 곡선 −1(처음에 빨리)…0(곧게)…+1(끝에서 빨리), 범위, 거꾸로. 같은 손잡이가 다른 대상도 함께 움직인다
+ */
+export interface SmartMap {
+  curve?: number;
+  min?: number;
+  max?: number;
+  invert?: boolean;
+  /** 함께 움직이는 대상 (첫 대상은 `smartControls` 의 그 자리) */
+  extra?: string[];
 }
 
 /**

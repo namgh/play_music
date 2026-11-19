@@ -282,6 +282,18 @@ function parseTrack(value: unknown, seen: Set<string>): Track {
         && ['arpeggiator', 'chordTrigger', 'transposer', 'velocity', 'noteRepeater', 'scaleQuantizer', 'randomizer'].includes(String((fx as { type?: unknown }).type))),
     } : {}),
     ...(Array.isArray(raw.smartControls) ? { smartControls: (raw.smartControls as unknown[]).filter((x): x is string => typeof x === 'string') } : {}),
+    ...(Array.isArray(raw.smartMaps) ? {
+      smartMaps: (raw.smartMaps as unknown[]).map((m) => {
+        const r = (m && typeof m === 'object' ? m : {}) as Record<string, unknown>;
+        return {
+          ...(typeof r.curve === 'number' ? { curve: num(r.curve, 0, -1, 1) } : {}),
+          ...(typeof r.min === 'number' ? { min: num(r.min, 0, 0, 1) } : {}),
+          ...(typeof r.max === 'number' ? { max: num(r.max, 1, 0, 1) } : {}),
+          ...(r.invert === true ? { invert: true } : {}),
+          ...(Array.isArray(r.extra) ? { extra: (r.extra as unknown[]).filter((x): x is string => typeof x === 'string') } : {}),
+        };
+      }),
+    } : {}),
   };
 }
 

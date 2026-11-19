@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 
 import type { MidiEffect, Project, Track } from '../model/project.ts';
 import type { ParamSpec, ResolvedInstrument } from '../instruments/types.ts';
@@ -7,6 +7,8 @@ import { updateTrack } from '../editor/edits.ts';
 import { EFFECT_SPECS, isEffectType } from '../audio/effects.ts';
 import { createMidiEffect, MIDI_EFFECT_LABELS } from '../audio/midiEffects.ts';
 import { PPQ } from '../model/time.ts';
+import type { SmartMap } from '../model/project.ts';
+import { isIdentity, mapKnob, unmapKnob } from '../editor/smartMap.ts';
 
 /**
  * 스마트 컨트롤 + MIDI 이펙트 (Logic Smart Controls · MIDI plug-ins, `LOGIC_PARITY.md` 1-10).
@@ -56,6 +58,45 @@ function targetsFor(track: Track, instrument: ResolvedInstrument | null, params:
   return out;
 }
 
+/** 손잡이 매핑 창 — 곡선 그림 · 곡선 · 범위 · 거꾸로 · 함께 움직일 대상 */
+function MapEditor({ slot, map, targets, onChange }: { slot: number; map: SmartMap; targets: Target[]; onChange: (patch: Partial<SmartMap>) => void }) {
+  const pts = Array.from({ length: 33 }, (_, i) => { const x = i / 32; return `${i === 0 ? 'M' : 'L'}${x * 100},${(1 - mapKnob(x, map)) * 40}`; }).join(' ');
+  const row = 'grid grid-cols-[3.5rem_1fr_2.5rem] items-center gap-1.5 text-[10px] text-sink-2';
+  return (
+    <div className="mt-3 flex flex-col gap-1.5 rounded-lg bg-screen-2 p-2" data-smart-map>
+      <div className="flex items-center gap-2">
+        <span className="text-[11px] font-semibold text-sink">손잡이 {slot + 1} 매핑</span>
+        <svg viewBox="0 0 100 40" preserveAspectRatio="none" className="h-8 flex-1 rounded bg-screen" aria-label="매핑 곡선">
+          <path d={pts} fill="none" stroke="var(--color-acc)" strokeWidth={2} vectorEffect="non-scaling-stroke" />
+        </svg>
+      </div>
+      <label className={row}>곡선
+        <input type="range" aria-label="매핑 곡선" min={-1} max={1} step={0.05} value={map.curve ?? 0} onChange={(e) => onChange({ curve: Number(e.target.value) })} className="accent-acc" />
+        <span className="text-right font-num text-[12px] text-sink">{(map.curve ?? 0).toFixed(2)}</span></label>
+      <label className={row}>최소
+        <input type="range" aria-label="매핑 최소" min={0} max={1} step={0.01} value={map.min ?? 0} onChange={(e) => onChange({ min: Number(e.target.value) })} className="accent-acc" />
+        <span className="text-right font-num text-[12px] text-sink">{Math.round((map.min ?? 0) * 100)}%</span></label>
+      <label className={row}>최대
+        <input type="range" aria-label="매핑 최대" min={0} max={1} step={0.01} value={map.max ?? 1} onChange={(e) => onChange({ max: Number(e.target.value) })} className="accent-acc" />
+        <span className="text-right font-num text-[12px] text-sink">{Math.round((map.max ?? 1) * 100)}%</span></label>
+      <label className="flex items-center gap-1.5 text-[10px] text-sink-2">
+        <input type="checkbox" checked={!!map.invert} onChange={(e) => onChange({ invert: e.target.checked })} />거꾸로
+      </label>
+      <div className="flex flex-wrap items-center gap-1 text-[10px] text-sink-2">함께
+        {(map.extra ?? []).map((id) => (
+          <button key={id} type="button" onClick={() => onChange({ extra: (map.extra ?? []).filter((x) => x !== id) })}
+            className="rounded bg-screen px-1.5 py-0.5 text-sink" title="빼기">{targets.find((t) => t.id === id)?.label ?? id} ✕</button>
+        ))}
+        <select aria-label="함께 움직일 대상" value="" onChange={(e) => { if (e.target.value) onChange({ extra: [...(map.extra ?? []), e.target.value] }); }}
+          className="rounded bg-transparent text-[10px] text-sink-2">
+          <option value="">＋ 대상</option>
+          {targets.filter((t) => !(map.extra ?? []).includes(t.id)).map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+        </select>
+      </div>
+    </div>
+  );
+}
+
 const to01 = (t: Target, v: number) => (t.log ? Math.log(v / t.min) / Math.log(t.max / t.min) : (v - t.min) / (t.max - t.min));
 const from01 = (t: Target, x: number) => {
   const c = Math.max(0, Math.min(1, x));
@@ -82,6 +123,27 @@ export function SmartControls({ editor, track, instrument, params }: SmartContro
     ids[slot] = id;
     editor.commit(updateTrack(project, track.id, { smartControls: ids }));
   };
+  // 매핑 — 손잡이마다 곡선·범위·거꾸로·함께 움직일 대상 (`PARITY_ROUND2.md` 15)
+  const maps = track.smartMaps ?? [];
+  const [editing, setEditing] = useState<number | null>(null);
+  const setMap = (slot: number, patch: Partial<SmartMap>) => {
+    const next = chosen.map((_, i) => ({ ...(maps[i] ?? {}) }));
+    next[slot] = { ...next[slot], ...patch };
+    // 손잡이 매핑을 저장하려면 대상 목록도 굳힌다 (자동 고르기가 바뀌면 자리가 어긋난다)
+    editor.commit(updateTrack(project, track.id, { smartMaps: next, smartControls: chosen.map((t) => t.id) }));
+  };
+  /** 손잡이 위치 x → 첫 대상과 함께 움직이는 대상 모두에 */
+  const turn = (slot: number, x: number) => {
+    const map = maps[slot];
+    const y = mapKnob(x, map);
+    let next = chosen[slot]!.set(project, from01(chosen[slot]!, y));
+    for (const id of map?.extra ?? []) {
+      // 대상은 지금 곡 상태로 다시 찾는다 — 앞 대상을 바꾼 결과 위에 쓴다
+      const t = targetsFor(next.tracks.find((x) => x.id === track.id) ?? track, instrument, params).find((o) => o.id === id);
+      if (t) next = t.set(next, from01(t, y));
+    }
+    editor.preview(next);
+  };
 
   const fxList = track.midiEffects ?? [];
   const setFx = (list: MidiEffect[]) => editor.commit(updateTrack(project, track.id, { midiEffects: list }));
@@ -99,12 +161,17 @@ export function SmartControls({ editor, track, instrument, params }: SmartContro
             <div key={`${slot}-${t.id}`} className="flex flex-col items-center gap-1">
               <Knob
                 label={t.label}
-                value01={to01(t, t.get())}
-                onPreview={(x) => editor.preview(t.set(project, from01(t, x)))}
+                value01={unmapKnob(to01(t, t.get()), maps[slot])}
+                onPreview={(x) => turn(slot, x)}
                 onCommit={() => editor.commitCurrent()}
                 onReset={() => editor.commit(t.set(project, t.id === 'pan' ? 0 : t.get()))}
               />
-              <span className="font-num text-[12px] text-sink">{fmt(t.get())}</span>
+              <span className="flex items-center gap-1 font-num text-[12px] text-sink">
+                {fmt(t.get())}
+                <button type="button" aria-label={`손잡이 ${slot + 1} 매핑`} aria-pressed={editing === slot}
+                  onClick={() => setEditing(editing === slot ? null : slot)}
+                  className={`rounded px-0.5 text-[10px] ${!isIdentity(maps[slot]) ? 'text-acc' : 'text-sink-3'} hover:text-sink`}>⚙</button>
+              </span>
               <select aria-label={`손잡이 ${slot + 1} 대상`} value={t.id} onChange={(e) => remap(slot, e.target.value)}
                 className="w-full truncate rounded bg-transparent text-center text-[10px] text-sink-2 hover:text-sink">
                 {all.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
@@ -112,6 +179,14 @@ export function SmartControls({ editor, track, instrument, params }: SmartContro
             </div>
           ))}
         </div>
+        {editing !== null && chosen[editing] && (
+          <MapEditor
+            slot={editing}
+            map={maps[editing] ?? {}}
+            targets={all.filter((o) => o.id !== chosen[editing]!.id)}
+            onChange={(patch) => setMap(editing, patch)}
+          />
+        )}
       </div>
 
       <div className="rounded-xl border border-rule bg-panel p-2.5">
