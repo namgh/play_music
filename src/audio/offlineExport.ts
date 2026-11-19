@@ -101,9 +101,10 @@ export async function renderOfflineWithWorklet(
     panOf.set(track.id, pan);
     const automationGain = offline.createGain();
     scheduleTrackLanes(track, { automationGain, panNode: pan, bindings: effects.bindings }, project.tempo, 0, 0);
+    const preTap = offline.createGain();
     node.connect(gain).connect(pan).connect(effects.input);
-    effects.output.connect(automationGain);
-    buses.routeTrack(track, automationGain, effects.latency ?? 0);
+    effects.output.connect(preTap).connect(automationGain);
+    buses.routeTrack(track, automationGain, effects.latency ?? 0, preTap, track.gain * vcaScale(project, track));
     trackEnds.set(track.id, automationGain);
     owners.push({ owner: track.id, chain: effects });
 

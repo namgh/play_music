@@ -79,3 +79,20 @@ test('그룹 — 볼륨은 비율로, 뮤트는 함께', () => {
   assert.deepEqual(roundTrip(p), p);
   assert.ok(deleteGroup(p, g.groupId).tracks.every((t) => !('groupId' in t)));
 });
+
+test('프리 페이더 센드 — 켜고 끄고, 저장해도 남는다', async () => {
+  const { setSendPre } = await import('./mixer.ts');
+  const { roundTrip } = await import('../model/persistence.ts');
+  const { addBus, setSend } = await import('./mixer.ts');
+  const { createEmptyProject, createTrack } = await import('../model/factory.ts');
+  let p = createEmptyProject('s');
+  const t = createTrack({ name: 'a', instrumentId: 'kick' });
+  p.tracks.push(t);
+  const made = addBus(p);
+  p = setSend(made.project, t.id, made.busId, 0.5);
+  p = setSendPre(p, t.id, made.busId, true);
+  assert.equal(p.tracks[0]!.sends![0]!.pre, true);
+  assert.equal(roundTrip(p).tracks[0]!.sends![0]!.pre, true);
+  p = setSendPre(p, t.id, made.busId, false);
+  assert.equal('pre' in p.tracks[0]!.sends![0]!, false);
+});

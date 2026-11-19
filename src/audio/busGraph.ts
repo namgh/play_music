@@ -123,7 +123,11 @@ export class BusGraph {
    * 트랙 끝(`source`)을 출력·센드에 잇는다. 매번 불러도 된다 — 바뀐 연결만 고친다.
    * 없는 버스로 가라고 하면 마스터로 보낸다 (버스를 지웠는데 트랙이 소리를 잃으면 안 된다).
    */
-  routeTrack(track: Pick<Track, 'id' | 'output' | 'sends'>, source: AudioNode, latency = 0): void {
+  /**
+   * `preTap` 이 있으면 프리 페이더 센드는 거기서(인서트 뒤·볼륨 곡선 앞) 갈라진다.
+   * `trackGain` 은 인서트 앞에 걸린 트랙 게인 — 프리 센드에서 되돌린다(페이더를 내려도 버스로는 그대로)
+   */
+  routeTrack(track: Pick<Track, 'id' | 'output' | 'sends'>, source: AudioNode, latency = 0, preTap?: AudioNode, trackGain = 1): void {
     const busInput = track.output ? this.buses.get(track.output)?.input : undefined;
     const destination: AudioNode = busInput ?? this.master;
     let route = this.routes.get(track.id);
@@ -142,22 +146,26 @@ export class BusGraph {
     route.latency = latency;
     route.output = busInput ? track.output! : null;
 
-    const wanted = new Map((track.sends ?? []).filter((s) => this.buses.has(s.busId)).map((s) => [s.busId, s.level]));
-    for (const [busId, gain] of route.sends) {
-      if (!wanted.has(busId)) {
-        route.comp.disconnect(gain);
+    // 열쇠에 프리/포스트를 넣는다 — 바꾸면 끊고 새로 잇는다(갈라지는 자리가 다르다)
+    const wanted = new Map((track.sends ?? []).filter((s) => this.buses.has(s.busId))
+      .map((s) => [`${s.busId}|${s.pre && preTap ? 'pre' : 'post'}`, s]));
+    for (const [key, gain] of route.sends) {
+      if (!wanted.has(key as BusId)) {
         gain.disconnect();
-        route.sends.delete(busId);
+        try { route.comp.disconnect(gain); } catch { /* 프리 센드였다 */ }
+        try { preTap?.disconnect(gain); } catch { /* 포스트 센드였다 */ }
+        route.sends.delete(key as BusId);
       }
     }
-    for (const [busId, level] of wanted) {
-      let gain = route.sends.get(busId);
+    for (const [key, send] of wanted) {
+      let gain = route.sends.get(key as BusId);
+      const pre = key.endsWith('|pre');
       if (!gain) {
         gain = this.ctx.createGain();
-        route.comp.connect(gain).connect(this.buses.get(busId)!.input);
-        route.sends.set(busId, gain);
+        (pre ? preTap! : route.comp).connect(gain).connect(this.buses.get(send.busId)!.input);
+        route.sends.set(key as BusId, gain);
       }
-      gain.gain.value = level;
+      gain.gain.value = pre ? (trackGain > 0.001 ? send.level / trackGain : 0) : send.level;
     }
     this.compensate();
   }

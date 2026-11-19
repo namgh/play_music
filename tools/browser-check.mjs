@@ -386,6 +386,19 @@ try {
   for (let i = 0; i < 60 && !wav16; i++) { await sleep(500); wav16 = readdirSync(DL).find((f) => f.endsWith('.wav')) ?? null; }
   if (wav16) { await sleep(500); const a = analyzeWav(join(DL, wav16)); record('버스 경로 내보내기', a.ok && a.peak > 0.001, a.ok ? `피크 ${a.peak.toFixed(3)} · ${a.seconds.toFixed(1)}초` : a.why); }
   else record('버스 경로 내보내기', false, '파일이 안 내려옴');
+  // 16b. 프리 페이더 센드 — 둘째 트랙 → 버스 센드를 켜고 프리로, 재생해도 오류 없이
+  const strip16b = await ev(`[...document.querySelectorAll('[data-strip]')][1]?.dataset.strip ?? ''`);
+  await ev(`(() => { const e = document.querySelector('[aria-label="${strip16b} → 버스 1 센드"]'); if (!e) return 'none'; Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(e, '0.6'); e.dispatchEvent(new Event('input', { bubbles: true })); e.dispatchEvent(new PointerEvent('pointerup', { bubbles: true })); return 'ok'; })()`);
+  await sleep(300);
+  await clickEl(`document.querySelector('[aria-label="${strip16b} → 버스 1 프리 페이더"]')`);
+  await sleep(300);
+  const n16b = problems.length;
+  await clickEl(byTitle('맨 앞으로'));
+  await clickEl(byTitle('커서부터 재생'));
+  let peak16b = 0; for (let i = 0; i < 8; i++) { await sleep(150); peak16b = Math.max(peak16b, await ev('window.__peak()')); }
+  const stop16b = await centerOf(byTitle('정지')); if (stop16b) await click(stop16b.x, stop16b.y);
+  const pre16 = await ev(`(() => { const p = JSON.parse(localStorage.getItem('project-autosave-v1')); const d = p.project ?? p; return d.tracks.flatMap((t) => (t.sends ?? []).map((x) => t.name + ':' + x.level + (x.pre ? ':pre' : ''))).join(' '); })()`);
+  record('프리 페이더 센드', /:pre/.test(pre16) && peak16b > 0.001 && problems.length === n16b, `${pre16} · 피크 ${peak16b.toFixed(4)}`);
   await shot('12-mixer');
 
   // 17. 이펙트 13종 — 전부 실제 노드로 만들어지고, 걸린 채로 소리가 난다

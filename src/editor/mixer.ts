@@ -68,6 +68,19 @@ export function setSend(project: Project, trackId: TrackId, busId: BusId, level:
   });
 }
 
+/** 센드를 프리/포스트 페이더로 */
+export function setSendPre(project: Project, trackId: TrackId, busId: BusId, pre: boolean): Project {
+  return mapTrack(project, trackId, (t) => ({
+    ...t,
+    sends: (t.sends ?? []).map((s) => {
+      if (s.busId !== busId) return s;
+      const next = { ...s };
+      if (pre) next.pre = true; else delete next.pre;
+      return next;
+    }),
+  }));
+}
+
 /**
  * 고른 트랙들을 새 버스로 보내는 합 스택 (Logic Summing Stack) — 버스를 만들고
  * 트랙 출력을 전부 그 버스로. 스택 멤버를 한 페이더·한 리버브로 다룰 때 쓴다.

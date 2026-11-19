@@ -5,7 +5,7 @@ import { LevelMeter } from './LevelMeter.tsx';
 import { updateTrack } from '../editor/edits.ts';
 import type { ProjectEditor } from '../editor/useProjectEditor.ts';
 import {
-  addBus, addGroup, addVca, assignGroup, assignVca, deleteBus, deleteVca, setGroupedFlag, setGroupedGain, setSend,
+  addBus, addGroup, addVca, assignGroup, assignVca, deleteBus, deleteVca, setGroupedFlag, setGroupedGain, setSend, setSendPre,
   setTrackOutput, updateBus, updateVca,
 } from '../editor/mixer.ts';
 import { createEffect, EFFECT_SPECS, isEffectType } from '../audio/effects.ts';
@@ -174,6 +174,12 @@ export function Mixer({ editor, readLevel, readEffectMeters, compensationSamples
                   onPointerUp={() => editor.commitCurrent()}
                   className="w-full min-w-0 accent-ink"
                 />
+                {send && (
+                  <button type="button" aria-pressed={!!send.pre} aria-label={`${track.name} → ${bus.name} 프리 페이더`}
+                    title="프리 페이더 — 볼륨(페이더·곡선)과 상관없이 보낸다 (인서트 뒤에서 갈라짐)"
+                    onClick={(e) => { e.preventDefault(); editor.commit(setSendPre(project, track.id, bus.id, !send.pre)); }}
+                    className={`h-4 shrink-0 rounded px-1 text-[9px] ${send.pre ? 'bg-ink text-body' : 'border border-rule text-ink-3'}`}>프리</button>
+                )}
               </label>
             );
           })}

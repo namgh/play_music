@@ -79,6 +79,8 @@ interface TrackRuntime {
   automationGain: GainNode;
   panNode: StereoPannerNode;
   effects: EffectChain;
+  /** 프리 페이더 센드가 갈라지는 자리 — 인서트 뒤·볼륨 곡선 앞 (`PARITY_ROUND2.md` 8) */
+  preTap: GainNode;
   effectsKey: string;
   instrument: ResolvedInstrument;
   params: Record<string, ParamValue>;
@@ -233,11 +235,12 @@ export class WorkletRenderer implements AudioRenderer {
       // 미터는 파형만 보면 되므로 크게 잡을 이유가 없다. 1024 = 48kHz 에서 21ms
       analyser.fftSize = 1024;
       // 분석 노드 뒤는 버스 그래프가 잇는다 (마스터 또는 버스, 그리고 센드)
+      const preTap = this.ctx.createGain();
       node.connect(gainNode).connect(panNode).connect(effects.input);
-      effects.output.connect(automationGain).connect(analyser);
+      effects.output.connect(preTap).connect(automationGain).connect(analyser);
 
       runtime = {
-        node, gainNode, automationGain, panNode, effects, effectsKey: '[]', instrument, params, analyser,
+        node, gainNode, automationGain, panNode, effects, preTap, effectsKey: '[]', instrument, params, analyser,
         voiceKind: voiceKindIndex(instrument.voice),
       };
       this.tracks.set(track.id, runtime);
@@ -260,10 +263,11 @@ export class WorkletRenderer implements AudioRenderer {
       // 바뀐 칸만 새로 — 입력 노드가 그대로라 팬 → 입력 연결은 살아 있다
       runtime.effects = updateEffectChain(this.ctx, runtime.effects, track.effects);
       runtime.effectsKey = effectsKey;
-      runtime.effects.output.connect(runtime.automationGain);
+      runtime.effects.output.connect(runtime.preTap);
     }
     // 이펙트를 다시 지은 **뒤에** 잇는다 — 체인 지연이 바뀌었으면 지연 보정이 그 값을 써야 한다
-    this.busGraph.routeTrack(track, runtime.analyser, runtime.effects.latency ?? 0);
+    this.busGraph.routeTrack(track, runtime.analyser, runtime.effects.latency ?? 0, runtime.preTap,
+      track.gain * (this.project ? vcaScale(this.project, track) : 1));
   }
 
   /** 모든 트랙 워크렛이 준비될 때까지 기다린다. 재생·시청 전에 호출한다 */

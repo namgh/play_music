@@ -261,7 +261,7 @@ function parseTrack(value: unknown, seen: Set<string>): Track {
       sends: asArray(raw.sends, '센드').flatMap((entry) => {
         const send = asRecord(entry, '센드');
         return typeof send.busId === 'string' && send.busId.startsWith('bus_')
-          ? [{ busId: send.busId as BusId, level: num(send.level, 0.5, 0, 1) }] : [];
+          ? [{ busId: send.busId as BusId, level: num(send.level, 0.5, 0, 1), ...(send.pre === true ? { pre: true as const } : {}) }] : [];
       }),
     }),
     ...(typeof raw.vcaId === 'string' && raw.vcaId.startsWith('vca_') ? { vcaId: raw.vcaId as VcaId } : {}),
