@@ -6,7 +6,7 @@
 
 | 파일 | 내용 |
 |---|---|
-| `studio-app.figcraft` | FigCraft 문서. 영역마다 페이지 하나 (`01 · 편곡·글로벌 트랙` …) |
+| `studio-app.figcraft` | FigCraft 문서. 영역마다 페이지 하나 (`01 · 편곡·글로벌 트랙` … `21 · 이펙트`) |
 | `screens/<이름>.svg` | **고칠 수 있는 SVG** — 상자·글자·아이콘이 레이어로 살아 있다. FigCraft 가 이걸 가져온다. 글로 된 파일이라 git diff 로 화면 변화를 볼 수 있다 |
 | `screens/<이름>.png` | 같은 화면의 실제 캡처 (대조용) |
 | `screens/index.json` | 화면 목록 — 이름 · 영역 번호 · 제목 |

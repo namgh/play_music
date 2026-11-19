@@ -140,6 +140,13 @@ Tier 0·1 편집 조작까지 커밋됨 (2026-08-09).
 - 새 파일 지도: 편집 `src/editor/{arrangement,tracks,noteTools,automationEdits,mixer,steps,recording,liveLoops,library,sessionPlayers}.ts`,
   소리 `src/audio/{busGraph,midiEffects,audioRegions,assets,bounce,zip,mastering,midiInput}.ts`, 모델 `src/model/{meter,chords,notation,templates}.ts`
 
+### 이펙트 확장 — 84종 (2026-11-19, `EFFECTS_PLAN.md`)
+
+Rust 이펙트 코어 `fx/`(→ `src/generated/fx.wasm`, `npm run build:fx`) 70종 + Web Audio 14종.
+워크렛 노드 하나에 이펙트 하나(`public/ks-worklet.js` 'rust-fx'), 파라미터는 AudioParam p0…p23.
+**새 이펙트**: `fx/src/effects/*.rs` 에 구현 → `effects/mod.rs` `KINDS` 끝에 → `src/audio/rustEffects.ts` 에 같은 순서로 선언
+(지연·미터 포함). 어긋나면 `rustEffects.test.ts` 가 깨진다. 지연 보정은 `BusGraph`, 체인 갱신은 `updateEffectChain`.
+
 ### 그 밖에는 `ROADMAP.md` 를 따른다
 
 목표는 **5축(음정 정밀도·용량/로딩·악기 수·소리 사실감·완성곡 완성도) 전부 상급**.
