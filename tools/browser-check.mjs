@@ -401,6 +401,18 @@ try {
   record('지연 보정 표시 (지연 있는 이펙트의 합)', pdcMs > 21, pdc17 || '표시 없음');
   await shot('13-effects');
 
+  // 84종을 한 트랙에 건 채로는 뒤 점검(내보내기·연주)이 무거워진다 — 되돌리고,
+  // 현실적인 구성(Rust 이펙트 넷: 컴프 모델·크로마버브·어댑티브 리미터·스텝 FX)으로 내보내기까지 확인한다
+  for (let i = 0; i < fxTypes.length; i++) { await clickEl(byTitle('되돌리기')); await sleep(25); }
+  await sleep(400);
+  for (const type of ['compmodel', 'chromaverb', 'stepfx', 'adaptivelimiter']) {
+    await ev(`(() => { const e = document.querySelector('[data-strip] [aria-label="이펙트 추가"]'); Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(e, ${JSON.stringify('X')}.replace('X', ${JSON.stringify(type)})); e.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+    await sleep(150);
+  }
+  await sleep(800);
+  const fx17b = await ev(`(() => { const p = JSON.parse(localStorage.getItem('project-autosave-v1')); const d = p.project ?? p; return d.tracks.map((t) => t.effects.map((e) => e.type).join('+')).filter(Boolean).join(' ; '); })()`);
+  record('되돌린 뒤 Rust 이펙트 넷만 남김', /compmodel\+chromaverb\+stepfx\+adaptivelimiter/.test(String(fx17b)), String(fx17b));
+
   // 18. 내보내기 창 — 16bit·44.1k·노멀라이즈, 측정값 표시, 스템 ZIP
   for (const f of readdirSync(DL)) rmSync(join(DL, f));
   await openExport();

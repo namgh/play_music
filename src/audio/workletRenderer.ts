@@ -36,7 +36,7 @@ import {
   curveToParams, noteOffFields, toFreeCurve, variationSeed, WASM_PARAM_ORDER,
 } from './voice/wasmEngine.ts';
 import { voiceKindIndex } from '../instruments/types.ts';
-import { buildEffectChain } from './effectGraph.ts';
+import { buildEffectChain, updateEffectChain } from './effectGraph.ts';
 import type { EffectChain } from './effectGraph.ts';
 import { scheduleClick } from './metronome.ts';
 import { BusGraph } from './busGraph.ts';
@@ -242,11 +242,9 @@ export class WorkletRenderer implements AudioRenderer {
 
     const effectsKey = JSON.stringify(track.effects);
     if (effectsKey !== runtime.effectsKey) {
-      runtime.panNode.disconnect();
-      runtime.effects.dispose();
-      runtime.effects = buildEffectChain(this.ctx, track.effects);
+      // 바뀐 칸만 새로 — 입력 노드가 그대로라 팬 → 입력 연결은 살아 있다
+      runtime.effects = updateEffectChain(this.ctx, runtime.effects, track.effects);
       runtime.effectsKey = effectsKey;
-      runtime.panNode.connect(runtime.effects.input);
       runtime.effects.output.connect(runtime.automationGain);
     }
     // 이펙트를 다시 지은 **뒤에** 잇는다 — 체인 지연이 바뀌었으면 지연 보정이 그 값을 써야 한다
@@ -500,8 +498,7 @@ export class WorkletRenderer implements AudioRenderer {
   }
 
   private rebuildMasterEffects(specs: readonly EffectSpec[], key: string): void {
-    const previous = this.masterEffects;
-    const next = buildEffectChain(this.ctx, specs);
+    const next = updateEffectChain(this.ctx, this.masterEffects, specs);
     next.output.connect(this.masterGain);
     this.masterEffects = next;
     this.masterEffectsKey = key;
@@ -509,7 +506,6 @@ export class WorkletRenderer implements AudioRenderer {
     // 바꾸는 순간 오토메이션 게인과 미터를 건너뛰었다 (2026-11-17 발견).
     // 이제 트랙 끝(분석 노드)에서 나가는 연결은 버스 그래프 하나가 관리한다
     this.busGraph.setMaster(next.input);
-    previous.dispose();
   }
 
   private disposeTrack(runtime: TrackRuntime): void {

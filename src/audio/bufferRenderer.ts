@@ -36,7 +36,7 @@ import type { WasmVoiceEngine } from './voice/wasmEngine.ts';
 import { curveToParams } from './voice/wasmEngine.ts';
 import { voiceKindIndex } from '../instruments/types.ts';
 import type { VoiceType } from '../instruments/types.ts';
-import { buildEffectChain } from './effectGraph.ts';
+import { buildEffectChain, updateEffectChain } from './effectGraph.ts';
 import { scheduleClick } from './metronome.ts';
 import { BusGraph } from './busGraph.ts';
 import { countInSeconds } from './scheduler.ts';
@@ -203,18 +203,15 @@ export class BufferRenderer implements AudioRenderer {
     // 이펙트는 구성이 바뀔 때만 다시 만든다. 매번 만들면 리버브 IR 을 계속 재합성한다
     const effectsKey = JSON.stringify(track.effects);
     if (effectsKey !== runtime.effectsKey) {
-      runtime.panNode.disconnect();
-      runtime.effects.dispose();
-      runtime.effects = buildEffectChain(this.ctx, track.effects);
+      runtime.effects = updateEffectChain(this.ctx, runtime.effects, track.effects);
       runtime.effectsKey = effectsKey;
-      runtime.panNode.connect(runtime.effects.input);
       runtime.effects.output.connect(runtime.automationGain);
     }
   }
 
   private rebuildMasterEffects(specs: readonly EffectSpec[], key: string): void {
     const previous = this.masterEffects;
-    const next = buildEffectChain(this.ctx, specs);
+    const next = previous ? updateEffectChain(this.ctx, previous, specs) : buildEffectChain(this.ctx, specs);
     next.output.connect(this.masterGain);
     this.masterEffects = next;
     this.masterEffectsKey = key;
@@ -222,7 +219,6 @@ export class BufferRenderer implements AudioRenderer {
     // 트랙·버스를 새 마스터 체인으로 옮긴다
     if (this.busGraph) this.busGraph.setMaster(next.input);
     else this.busGraph = new BusGraph(this.ctx, next.input);
-    previous?.dispose();
   }
 
   /**

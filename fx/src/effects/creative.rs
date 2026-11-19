@@ -389,8 +389,8 @@ pub struct BeatBreaker {
 
 impl BeatBreaker {
     pub fn new(sr: f32, p: &Params) -> Self {
-        // 가장 느린 템포 40 BPM 의 두 마디까지
-        let n = (sr * 12.5) as usize;
+        // 60 BPM 한 마디(4초)까지 — 더 느리면 템포를 60 으로 보고 자른다 (인스턴스마다 메모리를 아낀다)
+        let n = (sr * 4.1) as usize;
         let mut b = Self {
             clock: Clock::new(sr),
             buf: [DelayLine::new(n), DelayLine::new(n)],
@@ -408,7 +408,7 @@ impl BeatBreaker {
 impl Effect for BeatBreaker {
     fn transport(&mut self, position: f64, bpm: f32) {
         self.clock.pos = position;
-        self.clock.bpm = bpm.max(40.0);
+        self.clock.bpm = bpm.max(60.0);
     }
 
     fn set_params(&mut self, p: &Params) {
@@ -474,6 +474,7 @@ pub struct Stutter {
     held: bool,
     div: f32,
     decay: f32,
+    /// 붙잡은 뒤 지난 샘플 (버퍼는 붙잡는 동안 쓰지 않는다 — 그래서 붙잡은 칸이 덮이지 않는다)
     t: f32,
     len: f32,
     gain: f32,
@@ -482,7 +483,7 @@ pub struct Stutter {
 
 impl Stutter {
     pub fn new(sr: f32, p: &Params) -> Self {
-        let n = (sr * 6.5) as usize;
+        let n = (sr * 3.1) as usize;
         let mut s = Self {
             clock: Clock::new(sr),
             buf: [DelayLine::new(n), DelayLine::new(n)],
@@ -516,33 +517,32 @@ impl Effect for Stutter {
 
     fn process(&mut self, l: &mut [f32], r: &mut [f32]) {
         for i in 0..l.len() {
-            self.buf[0].push(l[i]);
-            self.buf[1].push(r[i]);
             if self.on && !self.held {
                 // 붙잡기 시작 — 방금 지난 한 칸을 되풀이 재료로
                 self.held = true;
-                self.len =
-                    (self.clock.samples_per_beat() * self.div).clamp(64.0, self.clock.sr * 3.0);
+                self.len = (self.clock.samples_per_beat() * self.div)
+                    .clamp(64.0, self.buf[0].capacity() as f32 - 8.0);
                 self.t = 0.0;
                 self.gain = 1.0;
-            } else if !self.on && self.mix.value() < 1e-3 {
+            } else if !self.on && self.held && self.mix.value() < 1e-3 {
                 self.held = false;
+            }
+            if !self.held {
+                self.buf[0].push(l[i]);
+                self.buf[1].push(r[i]);
             }
             let m = self.mix.tick();
             if self.held {
-                // 되풀이: 붙잡은 칸의 처음부터 끝까지 읽고 다시 처음으로. 그동안 버퍼는 계속 쌓이므로
-                // 읽는 지연 = 붙잡은 뒤 지난 시간 + 칸 길이 − 칸 안 위치
-                self.t += 1.0;
                 let pos = self.t % self.len;
-                if pos < 1.0 && self.t > 1.0 {
+                if pos < 1.0 && self.t >= 1.0 {
                     self.gain *= 1.0 - 0.5 * self.decay;
                 }
-                let d = self.t + self.len - pos;
+                self.t += 1.0;
+                // 버퍼가 멈춰 있으니 칸의 시작은 언제나 지연 len — 칸 안 위치만큼 앞으로 읽는다
+                let d = (self.len - pos).max(1.0);
                 let edge = (pos / 32.0).min((self.len - pos) / 32.0).clamp(0.0, 1.0);
                 for (c, out) in [&mut l[i], &mut r[i]].into_iter().enumerate() {
-                    let y = self.buf[c].read(d.min(self.buf[c].capacity() as f32 - 4.0))
-                        * edge
-                        * self.gain;
+                    let y = self.buf[c].read(d) * edge * self.gain;
                     *out = *out * (1.0 - m) + y * m;
                 }
             }

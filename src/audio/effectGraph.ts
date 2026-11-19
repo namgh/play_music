@@ -12,7 +12,7 @@
 
 import type { EffectSpec } from '../model/project.ts';
 import {
-  dbToGain, distortionCurve, isEffectType, spatialPosition, resolveEffectParams, reverbMixGains, synthesizeReverbIr,
+  EFFECT_SPECS, dbToGain, distortionCurve, isEffectType, spatialPosition, resolveEffectParams, reverbMixGains, synthesizeReverbIr,
 } from './effects.ts';
 import type { WebEffectType } from './effects.ts';
 import { isRustEffect } from './rustEffects.ts';
@@ -470,14 +470,51 @@ function mixBindings(dryGain: GainNode, wetGain: GainNode): Record<string, Param
   };
 }
 
+/** 다시 쓸 수 있는 이펙트 한 칸 */
+interface Part {
+  key: string;
+  chain: EffectChain & { meterValues?: Float32Array };
+}
+
+/**
+ * 같은 칸으로 다시 쓸 수 있는지 가르는 열쇠.
+ * - Web Audio 이펙트: 파라미터 전부 (IR 등 노드를 새로 만들어야 하는 값이 섞여 있다)
+ * - Rust 이펙트: 종류 + **오토메이션 대상이 아닌** 파라미터만 — 나머지는 AudioParam 값만 바꾸면 된다.
+ *   손잡이를 돌려도 노드를 새로 만들지 않으니 리버브 꼬리가 끊기지 않고 wasm 인스턴스가 쌓이지 않는다
+ */
+function partKey(spec: EffectSpec, params: Record<string, number>): string {
+  if (!isRustEffect(spec.type)) return `${spec.type}|${JSON.stringify(params)}`;
+  const decl = EFFECT_SPECS[spec.type].params;
+  const fixed = Object.keys(decl).filter((k) => decl[k]!.automatable === false).map((k) => params[k]);
+  return `${spec.type}|${JSON.stringify(fixed)}`;
+}
+
+type ChainWithParts = EffectChain & { parts?: Part[] };
+
 /**
  * 이펙트 목록을 직렬로 이어 붙인다. 목록이 비었거나 전부 바이패스면
  * 통과용 게인 하나만 만든다 — 호출자가 분기하지 않아도 되게.
  */
 export function buildEffectChain(ctx: BaseAudioContext, specs: readonly EffectSpec[]): EffectChain {
-  const passthrough = ctx.createGain();
-  const built: EffectChain[] = [];
+  return updateEffectChain(ctx, null, specs);
+}
 
+/**
+ * 앞 체인을 고쳐 새 목록에 맞춘다 — **바뀐 칸만 새로 만든다.** 입력 노드는 그대로라 앞쪽 연결이 살아 있고,
+ * 출력은 바뀔 수 있으니 호출자가 다시 잇는다(같은 노드에 두 번 이어도 괜찮다).
+ * 예전 체인의 `dispose()` 는 부르지 않는다 — 여기서 안 쓰는 칸만 버린다.
+ *
+ * 이게 없을 때: 이펙트를 하나 넣을 때마다 체인 전체를 새로 지어, 84종을 한 트랙에 넣는 동안
+ * Rust 노드(= wasm 인스턴스)가 2,772 개 생기고 브라우저 오디오가 멎었다 (2026-11-19).
+ */
+export function updateEffectChain(ctx: BaseAudioContext, previous: EffectChain | null, specs: readonly EffectSpec[]): EffectChain {
+  const prev = previous as ChainWithParts | null;
+  const passthrough = (prev?.input as GainNode | undefined) ?? ctx.createGain();
+  const pool = [...(prev?.parts ?? [])];
+  passthrough.disconnect();
+  for (const part of pool) part.chain.output.disconnect();
+
+  const parts: Part[] = [];
   let tail: AudioNode = passthrough;
   const bindings: Record<string, ParamBinding[]> = {};
   const meters = new Map<number, Float32Array>();
@@ -489,26 +526,44 @@ export function buildEffectChain(ctx: BaseAudioContext, specs: readonly EffectSp
       throw new Error(`알 수 없는 이펙트: ${spec.type}`);
     }
     const params = resolveEffectParams(spec);
-    const chain = isRustEffect(spec.type)
-      ? buildRust(ctx, spec.type, params)
-      : BUILDERS[spec.type as WebEffectType](ctx, params);
-    tail.connect(chain.input);
-    tail = chain.output;
-    built.push(chain);
-    latency += chain.latency ?? 0;
-    if ('meterValues' in chain && chain.meterValues) meters.set(index, chain.meterValues as Float32Array);
-    for (const [name, list] of Object.entries(chain.bindings ?? {})) bindings[`${index}:${name}`] = list;
+    const key = partKey(spec, params);
+    const at = pool.findIndex((p) => p.key === key);
+    let part: Part;
+    if (at >= 0) {
+      part = pool.splice(at, 1)[0]!;
+      // Rust 이펙트: 값만 새로 (오토메이션이 걸린 파라미터는 재생할 때 오토메이션이 다시 덮는다)
+      if (isRustEffect(spec.type)) {
+        for (const [name, list] of Object.entries(part.chain.bindings ?? {})) {
+          const v = params[name];
+          if (typeof v === 'number') for (const b of list) b.param.value = b.map(v);
+        }
+      }
+    } else {
+      const chain = isRustEffect(spec.type)
+        ? buildRust(ctx, spec.type, params)
+        : BUILDERS[spec.type as WebEffectType](ctx, params);
+      part = { key, chain };
+    }
+    tail.connect(part.chain.input);
+    tail = part.chain.output;
+    parts.push(part);
+    latency += part.chain.latency ?? 0;
+    if (part.chain.meterValues) meters.set(index, part.chain.meterValues);
+    for (const [name, list] of Object.entries(part.chain.bindings ?? {})) bindings[`${index}:${name}`] = list;
   }
+  for (const unused of pool) unused.chain.dispose();
 
-  return {
+  const chain: ChainWithParts = {
     input: passthrough,
     output: tail,
     bindings,
     latency,
     meters,
+    parts,
     dispose: () => {
       passthrough.disconnect();
-      for (const chain of built) chain.dispose();
+      for (const p of parts) p.chain.dispose();
     },
   };
+  return chain;
 }

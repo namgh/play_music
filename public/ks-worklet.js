@@ -331,7 +331,8 @@ class RustFxProcessor extends AudioWorkletProcessor {
     this.bpm = opts.bpm ?? 120;
     this.port.onmessage = (event) => {
       const m = event.data;
-      if (m?.type === 'dispose') this.alive = false;
+      // 버린 노드는 wasm 인스턴스를 곧바로 놓는다 — 메모리가 GC 를 기다리며 쌓이지 않게
+      if (m?.type === 'dispose') { this.alive = false; this.fx = null; this.mem = null; }
       else if (m?.type === 'transport') {
         if (typeof m.anchor === 'number') this.anchor = m.anchor;
         if (typeof m.bpm === 'number') this.bpm = m.bpm;

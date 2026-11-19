@@ -19,7 +19,7 @@
  */
 
 import type { Bus, BusId, Project, Track, TrackId } from '../model/project.ts';
-import { buildEffectChain } from './effectGraph.ts';
+import { buildEffectChain, updateEffectChain } from './effectGraph.ts';
 import type { EffectChain } from './effectGraph.ts';
 
 interface BusRuntime {
@@ -104,11 +104,8 @@ export class BusGraph {
     runtime.pan.pan.value = bus.pan;
     const key = JSON.stringify(bus.effects);
     if (key !== runtime.effectsKey) {
-      runtime.input.disconnect();
-      runtime.effects.dispose();
-      runtime.effects = buildEffectChain(this.ctx, bus.effects);
+      runtime.effects = updateEffectChain(this.ctx, runtime.effects, bus.effects);
       runtime.effectsKey = key;
-      runtime.input.connect(runtime.effects.input);
       runtime.effects.output.connect(runtime.gain);
     }
   }
