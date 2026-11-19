@@ -115,3 +115,18 @@ test('같은 틱에 두 번 바뀌면 뒤엣것만 남는다', () => {
   assert.equal(segments.length, 2);
   assert.equal(segments[1]!.bpm, 70);
 });
+
+test('템포 램프 — 적분한 시간, 왕복, 가운데 BPM', async () => {
+  const { ticksToSeconds, secondsToTicks, bpmAt, PPQ } = await import('./time.ts');
+  // 0~4박 120 → 4박에서 60 으로 서서히 → 이후 60
+  const tempo = { bpm: 120, changes: [{ tick: PPQ * 4, bpm: 60, ramp: true }] };
+  // 4박 램프 = (60/PPQ)·L/(b1−b0)·ln(b1/b0) = 60·4/(−60)·ln(0.5) = 2.7726초
+  assert.ok(Math.abs(ticksToSeconds(PPQ * 4, tempo) - 4 * Math.log(2)) < 1e-9);
+  // 그 뒤는 60 BPM — 1박 = 1초
+  assert.ok(Math.abs(ticksToSeconds(PPQ * 5, tempo) - (4 * Math.log(2) + 1)) < 1e-9);
+  for (const t of [0, 100, PPQ, PPQ * 2.5, PPQ * 4, PPQ * 7]) {
+    assert.ok(Math.abs(secondsToTicks(ticksToSeconds(t, tempo), tempo) - t) < 1e-6, `왕복 ${t}`);
+  }
+  assert.equal(bpmAt(PPQ * 2, tempo), 90);
+  assert.equal(bpmAt(PPQ * 6, tempo), 60);
+});

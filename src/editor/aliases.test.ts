@@ -57,3 +57,21 @@ test('에일리어스 — 바로 뒤가 차 있으면 다음 빈자리', () => {
   const made = makeAlias(p, c.id);
   assert.equal(made.project.tracks[0]!.clips.find((x) => x.id === made.clipId)!.startTick, 2880);
 });
+
+test('오디오 에일리어스 — 다듬기·게인을 원본과 같이, 에일리어스에서 고쳐도 원본으로', () => {
+  const p = createEmptyProject('o');
+  const t = createTrack({ name: '보컬', instrumentId: 'acoustic-guitar' });
+  const c = createClip({ startTick: 0, lengthTick: 1920 });
+  c.audio = { assetId: 'a', name: 'v', assetSec: 4, offsetSec: 0, gainDb: 0, fadeInSec: 0, fadeOutSec: 0, reverse: false };
+  t.clips.push(c);
+  p.tracks.push(t);
+  const made = makeAlias(p, c.id);
+  const alias = made.project.tracks[0]!.clips.find((x) => x.id === made.clipId)!;
+  assert.equal(alias.audio!.assetId, 'a');
+  const edited = { ...made.project, tracks: made.project.tracks.map((tr) => ({ ...tr, clips: tr.clips.map((x) => (x.id === c.id ? { ...x, audio: { ...x.audio!, gainDb: -6 } } : x)) })) };
+  const s1 = syncAliases(made.project, edited);
+  assert.equal(s1.tracks[0]!.clips.find((x) => x.id === made.clipId)!.audio!.gainDb, -6);
+  const viaAlias = { ...s1, tracks: s1.tracks.map((tr) => ({ ...tr, clips: tr.clips.map((x) => (x.id === made.clipId ? { ...x, audio: { ...x.audio!, offsetSec: 0.5 } } : x)) })) };
+  const s2 = syncAliases(s1, viaAlias);
+  assert.equal(s2.tracks[0]!.clips.find((x) => x.id === c.id)!.audio!.offsetSec, 0.5);
+});

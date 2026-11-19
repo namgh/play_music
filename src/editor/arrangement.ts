@@ -497,6 +497,23 @@ export function moveTempoChange(project: Project, fromTick: Ticks, toTick: Ticks
   const value = Math.round(Math.min(300, Math.max(20, bpm)) * 10) / 10;
   if (fromTick === 0) return { ...project, tempo: { ...project.tempo, bpm: value } };
   const at = Math.max(1, Math.round(toTick));
+  const old = (project.tempo.changes ?? []).find((c) => c.tick === fromTick);
   const rest = (project.tempo.changes ?? []).filter((c) => c.tick !== fromTick && c.tick !== at);
-  return { ...project, tempo: { ...project.tempo, changes: [...rest, { tick: at, bpm: value }].sort((a, b) => a.tick - b.tick) } };
+  const moved = old?.ramp ? { tick: at, bpm: value, ramp: true } : { tick: at, bpm: value };
+  return { ...project, tempo: { ...project.tempo, changes: [...rest, moved].sort((a, b) => a.tick - b.tick) } };
+}
+
+/** 템포 변화를 "서서히(램프)" 로 켜고 끈다 — 앞 지점에서 이 값까지 직선으로 */
+export function toggleTempoRamp(project: Project, tick: Ticks): Project {
+  return {
+    ...project,
+    tempo: {
+      ...project.tempo,
+      changes: (project.tempo.changes ?? []).map((c) => {
+        if (c.tick !== tick) return c;
+        if (c.ramp) return { tick: c.tick, bpm: c.bpm };
+        return { ...c, ramp: true };
+      }),
+    },
+  };
 }

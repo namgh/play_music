@@ -1364,6 +1364,7 @@ export function App() {
                   // 재생 중에는 스크럽하지 않는다 (재생 소리와 겹친다)
                   if (engine.state === 'playing') return;
                   for (const n of notesInSpan(project, from, to)) void engine.audition(n.trackId, n.midi, 0, n.velocity);
+                  void engine.scrubAudio(to);
                 }}
                 onNotice={setNotice}
                 tools={<>
@@ -1403,7 +1404,7 @@ export function App() {
           >반복</button>
           <button
             type="button"
-            disabled={!clip || !!clip.audio}
+            disabled={!clip}
             onClick={() => runEdit(() => {
               if (clip!.aliasOf) {
                 editor.commit(aliasToCopy(project, clip!.id));

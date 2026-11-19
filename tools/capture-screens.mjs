@@ -453,6 +453,20 @@ export const SCREENS = [
       await sleep(300);
     },
   },
+  {
+    name: 'a22-score-marks', area: 22, title: '악보 기호 — 셈여림(세기에서 자동) · 스타카토·액센트·테누토 · 가사 · 둘째 성부(기둥 아래)',
+    run: async (b) => {
+      await b.ev(`(() => { const raw = JSON.parse(localStorage.getItem('project-autosave-v1')); const p = raw.project ?? raw; const t = p.tracks.find((x) => x.name === '어쿠스틱 기타'); const c = t.clips[0]; const words = ['비', '가', '와', '요', '창', '밖', '에']; c.notes.slice(0, 24).forEach((n, i) => { n.velocity = i < 8 ? 0.35 : i < 16 ? 0.65 : 0.92; if (i % 4 === 0) n.articulation = 'staccato'; if (i % 4 === 2) n.articulation = 'accent'; if (i % 6 === 3) n.articulation = 'tenuto'; if (i < 7) n.lyric = words[i]; if (n.pitch.midi < 55) n.voice = 2; }); localStorage.setItem('project-autosave-v1', JSON.stringify(raw)); return 'ok'; })()`);
+      await b.goto(URL_APP, 2500);
+      await b.clickEl(byLabel('어쿠스틱 기타 선택'));
+      await b.clickEl(`[...document.querySelectorAll('[aria-label="편집기 보기"] button')].find((x) => x.textContent === '악보')`);
+      await sleep(500);
+      const at = await b.ev(`(() => { const h = document.querySelector('[data-score] [data-note-head]'); const r = h.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+      await b.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: at.x, y: at.y, button: 'left', clickCount: 1 });
+      await b.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: at.x, y: at.y, button: 'left', clickCount: 1 });
+      await sleep(300);
+    },
+  },
 ];
 
 /** 데모 곡의 한 트랙에 이펙트를 넣고 다시 열어 믹서로 간다 (기본값은 앱의 선언에서 채워진다) */

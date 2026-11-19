@@ -5,7 +5,8 @@ import type { ProjectEditor } from '../editor/useProjectEditor.ts';
 import { addNote, deleteNotes, moveNotes } from '../editor/edits.ts';
 import { INSTRUMENT_CATALOG } from '../instruments/definitions.ts';
 import { barStartTick, positionAt } from '../model/meter.ts';
-import { chooseClef, GRID, keyFifths, midiFromDiatonic, notate, splitGrandStaff, toMusicXml, wantsGrandStaff } from '../model/notation.ts';
+import { chooseClef, dynamicMarks, GRID, keyFifths, midiFromDiatonic, notate, splitGrandStaff, toMusicXml, wantsGrandStaff } from '../model/notation.ts';
+import { setNoteMarks } from '../editor/noteTools.ts';
 import type { Measure, NEvent, Spelled, Step } from '../model/notation.ts';
 import { chordLabel } from '../model/chords.ts';
 import { PPQ } from '../model/time.ts';
@@ -53,17 +54,25 @@ export function ScoreView({ project, track, clip, editor, noteLength = PPQ, onAu
   const grand = !written && wantsGrandStaff(shown, category === '피아노');
   const fromBar = positionAt(project, clip.startTick).bar;
   const toBar = positionAt(project, Math.max(clip.startTick, clip.startTick + clip.lengthTick - 1)).bar;
-  const staves = useMemo((): { clef: Clef; measures: Measure[] }[] => {
+  // 성부 — 둘째 성부(voice 2)는 따로 적어 기둥을 아래로 그린다 (`PARITY_ROUND2.md` 22)
+  const staves = useMemo((): { clef: Clef; measures: Measure[]; voice2: Measure[] | null }[] => {
     const bars = toBar - fromBar + 1;
+    const make = (clef: Clef, notes: typeof shown) => {
+      const v1 = notes.filter((n) => n.voice !== 2);
+      const v2 = notes.filter((n) => n.voice === 2);
+      return {
+        clef,
+        measures: notate(project, v1, clip.startTick, fromBar, bars),
+        voice2: v2.length > 0 ? notate(project, v2, clip.startTick, fromBar, bars) : null,
+      };
+    };
     if (grand) {
       const parts = splitGrandStaff(shown);
-      return [
-        { clef: 'treble', measures: notate(project, parts.treble, clip.startTick, fromBar, bars) },
-        { clef: 'bass', measures: notate(project, parts.bass, clip.startTick, fromBar, bars) },
-      ];
+      return [make('treble', parts.treble), make('bass', parts.bass)];
     }
-    return [{ clef: chooseClef(shown), measures: notate(project, shown, clip.startTick, fromBar, bars) }];
+    return [make(chooseClef(shown), shown)];
   }, [project, shown, clip.startTick, fromBar, toBar, grand]);
+  const dynamics = useMemo(() => dynamicMarks(clip.notes, clip.startTick), [clip.notes, clip.startTick]);
   const fifths = keyFifths(project.key);
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
@@ -73,7 +82,7 @@ export function ScoreView({ project, track, clip, editor, noteLength = PPQ, onAu
       .filter((t) => INSTRUMENT_CATALOG.find((e) => e.id === t.instrumentId)?.category !== '드럼')
       .map((t) => {
         const notes = t.clips.flatMap((c) => c.notes.map((n) => ({ ...n, startTick: c.startTick + n.startTick })));
-        return { name: t.name, clef: chooseClef(notes), measures: notate(project, notes, 0, 0, project.lengthBars) };
+        return { name: t.name, clef: chooseClef(notes), measures: notate(project, notes, 0, 0, project.lengthBars), dynamics: dynamicMarks(notes, 0) };
       });
     const blob = new Blob([toMusicXml(project, parts)], { type: 'application/vnd.recordare.musicxml+xml' });
     const url = URL.createObjectURL(blob);
@@ -97,8 +106,8 @@ export function ScoreView({ project, track, clip, editor, noteLength = PPQ, onAu
 
   const measureCount = staves[0]!.measures.length;
   const lineCount = Math.ceil(measureCount / PER_LINE);
-  const STAFF_GAP = 44; // 큰보표 두 줄 사이
-  const systemH = grand ? SYSTEM_H + STAFF + STAFF_GAP : SYSTEM_H;
+  const STAFF_GAP = 56; // 큰보표 두 줄 사이 (가사·셈여림 자리)
+  const systemH = (grand ? SYSTEM_H + STAFF + STAFF_GAP : SYSTEM_H) + 18;
   const width = 1000;
   const head = 80;
   const mw = (width - head - 10) / PER_LINE;
@@ -142,6 +151,7 @@ export function ScoreView({ project, track, clip, editor, noteLength = PPQ, onAu
       onAudition?.(midi);
     } catch { /* 클립 밖 */ }
   };
+  const pick = (id: string, add: boolean) => setSelected((cur) => { const n = new Set(add ? cur : []); if (add && n.has(id)) n.delete(id); else n.add(id); return n; });
   const onKey = (e: React.KeyboardEvent) => {
     if (!editor || selected.size === 0) return;
     const ids = [...selected] as NoteId[];
@@ -165,6 +175,28 @@ export function ScoreView({ project, track, clip, editor, noteLength = PPQ, onAu
       <div className="flex shrink-0 items-center gap-2 border-b border-rule px-3 py-2">
         <span className="text-[11px] text-ink-3">{track.name} · {grand ? '큰보표' : staves[0]!.clef === 'bass' ? '낮은음자리표' : '높은음자리표'}{written ? ' · 한 옥타브 위로 적음(베이스 기보)' : ''} · {measureCount}마디{editor ? ' · 오선을 누르면 음 · 음을 누르고 ↑↓(Shift 옥타브)·Delete' : ''}</span>
         <span className="flex-1" />
+        {editor && selected.size > 0 && (
+          <div className="flex items-center gap-1" data-score-marks>
+            {([['staccato', '·', '스타카토 (반 길이)'], ['accent', '>', '액센트 (세게)'], ['tenuto', '–', '테누토 (꽉 채워)'], ['marcato', '^', '마르카토 (세고 짧게)']] as const).map(([a, sym, label]) => (
+              <button key={a} type="button" title={label} aria-label={label}
+                onClick={() => editor.commit(setNoteMarks(project, [...selected] as NoteId[], { articulation: a }))}
+                className="h-7 w-7 rounded-md border border-rule bg-panel text-sm text-ink hover:border-ink-3">{sym}</button>
+            ))}
+            <button type="button" title="기호 지우기" onClick={() => editor.commit(setNoteMarks(project, [...selected] as NoteId[], { articulation: null }))}
+              className="h-7 rounded-md border border-rule bg-panel px-1.5 text-[11px] text-ink-2">기호 ✕</button>
+            <button type="button" title="둘째 성부로 (기둥 아래) / 다시 첫째로" aria-label="성부 바꾸기"
+              onClick={() => {
+                const ids = [...selected] as NoteId[];
+                const two = clip.notes.filter((n) => ids.includes(n.id)).every((n) => n.voice === 2);
+                editor.commit(setNoteMarks(project, ids, { voice: two ? 1 : 2 }));
+              }}
+              className="h-7 rounded-md border border-rule bg-panel px-1.5 text-[11px] text-ink">성부 1↔2</button>
+            <input aria-label="가사" placeholder="가사" defaultValue={selected.size === 1 ? clip.notes.find((n) => selected.has(n.id))?.lyric ?? '' : ''}
+              key={[...selected].join()}
+              onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') { editor.commit(setNoteMarks(project, [...selected] as NoteId[], { lyric: (e.target as HTMLInputElement).value })); (e.target as HTMLInputElement).blur(); } }}
+              className="h-7 w-20 rounded-md border border-rule bg-panel px-1.5 text-xs text-ink" />
+          </div>
+        )}
         <button type="button" onClick={exportXml} className="h-7 rounded-md border border-rule bg-panel px-2.5 text-xs text-ink hover:border-ink-3"
           title="드럼을 뺀 모든 트랙을 MusicXML 로 — Logic·MuseScore·Sibelius 가 읽습니다">MusicXML 내보내기</button>
         <button type="button" onClick={print} className="h-7 rounded-md border border-rule bg-panel px-2.5 text-xs text-ink hover:border-ink-3">인쇄</button>
@@ -219,7 +251,22 @@ export function ScoreView({ project, track, clip, editor, noteLength = PPQ, onAu
                               <Glyph key={ei} e={e} x={xIn(mi, m, e.offset)} top={top} yOf={yOf}
                                 next={m.events[ei + 1] ? xIn(mi, m, m.events[ei + 1]!.offset) : x0 + mw - 2}
                                 selected={selected}
-                                onPick={editor ? (id, add) => setSelected((cur) => { const n = new Set(add ? cur : []); if (add && n.has(id)) n.delete(id); else n.add(id); return n; }) : undefined} />
+                                stem={staff.voice2 ? 'up' : undefined}
+                                onPick={editor ? pick : undefined} />
+                            ))}
+                            {/* 둘째 성부 — 음만 (쉼표는 생략), 기둥 아래 */}
+                            {staff.voice2?.[li * PER_LINE + mi]?.events.filter((e) => e.kind === 'note').map((e, ei) => (
+                              <Glyph key={`v2-${ei}`} e={e} x={xIn(mi, m, e.offset) + 3} top={top} yOf={yOf}
+                                next={x0 + mw - 2} selected={selected} stem="down" onPick={editor ? pick : undefined} />
+                            ))}
+                            {/* 가사 — 오선 아래 */}
+                            {m.events.filter((e) => e.lyric).map((e, ei) => (
+                              <text key={`ly-${ei}`} x={xIn(mi, m, e.offset)} y={top + STAFF + 26} fontSize={11} textAnchor="middle" fill="#0A0A0B" data-lyric>{e.lyric}</text>
+                            ))}
+                            {/* 셈여림 — 마지막 오선 아래, 세기에서 자동 */}
+                            {si === staves.length - 1 && dynamics.filter((d) => d.tick >= barStartTick(project, m.index) && d.tick < barStartTick(project, m.index) + lenOf(m)).map((d) => (
+                              <text key={`dy-${d.tick}`} x={xIn(mi, m, d.tick - barStartTick(project, m.index))} y={top + STAFF + 42} fontSize={13}
+                                fontStyle="italic" fontWeight="bold" fontFamily="Georgia, serif" fill="#0A0A0B" data-dynamic>{d.mark}</text>
                             ))}
                           </g>
                         );
@@ -237,9 +284,11 @@ export function ScoreView({ project, track, clip, editor, noteLength = PPQ, onAu
 }
 
 /** 음표·쉼표 하나 */
-function Glyph({ e, x, top, yOf, next, selected, onPick }: {
+function Glyph({ e, x, top, yOf, next, selected, onPick, stem }: {
   e: NEvent; x: number; top: number; yOf: (p: Spelled, top: number) => number; next: number;
   selected?: Set<string>; onPick?: ((id: string, add: boolean) => void) | undefined;
+  /** 성부가 둘이면 1 성부 위·2 성부 아래로 고정 */
+  stem?: 'up' | 'down' | undefined;
 }) {
   if (e.kind === 'rest') {
     // 쉼표는 도형으로 그린다 — 음악 기호 글꼴이 없는 환경(헤드리스·리눅스)에서 네모로 깨진다
@@ -265,7 +314,7 @@ function Glyph({ e, x, top, yOf, next, selected, onPick }: {
   const ys = e.pitches.map((p) => yOf(p, top));
   const mid = top + 2 * GAP;
   const avg = ys.reduce((a, b) => a + b, 0) / ys.length;
-  const up = avg >= mid;
+  const up = stem ? stem === 'up' : avg >= mid;
   const hollow = e.type === 'whole' || e.type === 'half';
   const stemX = up ? x + 5 : x - 5;
   const stemFrom = up ? Math.max(...ys) : Math.min(...ys);
@@ -294,6 +343,14 @@ function Glyph({ e, x, top, yOf, next, selected, onPick }: {
         );
       })}
       {e.type !== 'whole' && <line x1={stemX} x2={stemX} y1={stemFrom} y2={stemTo} stroke="#0A0A0B" strokeWidth={1.1} />}
+      {/* 아티큘레이션 — 기둥 반대쪽, 음머리 가까이 */}
+      {e.articulation && (() => {
+        const ay = up ? Math.max(...ys) + 10 : Math.min(...ys) - 10;
+        const sym = e.articulation === 'staccato' ? null : e.articulation === 'accent' ? '>' : e.articulation === 'tenuto' ? '–' : '^';
+        return sym === null
+          ? <circle cx={x} cy={ay} r={1.6} fill="#0A0A0B" data-articulation="staccato" />
+          : <text x={x} y={ay + 4} fontSize={13} fontWeight="bold" textAnchor="middle" fill="#0A0A0B" data-articulation={e.articulation}>{sym}</text>;
+      })()}
       {Array.from({ length: flags }, (_, k) => (
         <path key={k} d={up
           ? `M ${stemX} ${stemTo + k * 6} q 7 4 6 13`

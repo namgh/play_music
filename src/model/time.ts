@@ -15,6 +15,11 @@ export type Ticks = number;
 export interface TempoChange {
   tick: Ticks;
   bpm: number;
+  /**
+   * 램프 (Logic 템포 커브, `PARITY_ROUND2.md` 21) — 앞 지점에서 이 값까지 **서서히**(틱에 대해 직선으로) 바뀐다.
+   * 없으면 이 자리에서 한 번에 바뀐다
+   */
+  ramp?: boolean;
 }
 
 export interface Tempo {
@@ -55,11 +60,11 @@ export function ticksPerBar(ts: TimeSignature): Ticks {
  * 화면에서 온 값이라 여기서 정리한다 — 음수 틱, 0 이하 BPM, 뒤섞인 순서를
  * 변환 함수 안쪽까지 들이지 않는다.
  */
-export function tempoSegments(tempo: Tempo): { tick: Ticks; bpm: number }[] {
-  const segments = [{ tick: 0, bpm: tempo.bpm > 0 ? tempo.bpm : 120 }];
+export function tempoSegments(tempo: Tempo): { tick: Ticks; bpm: number; ramp?: boolean }[] {
+  const segments: { tick: Ticks; bpm: number; ramp?: boolean }[] = [{ tick: 0, bpm: tempo.bpm > 0 ? tempo.bpm : 120 }];
   for (const change of tempo.changes ?? []) {
     if (!(change.bpm > 0) || !(change.tick > 0) || !Number.isFinite(change.tick)) continue;
-    segments.push({ tick: change.tick, bpm: change.bpm });
+    segments.push(change.ramp ? { tick: change.tick, bpm: change.bpm, ramp: true } : { tick: change.tick, bpm: change.bpm });
   }
   segments.sort((a, b) => a.tick - b.tick);
   // 같은 틱이 여러 개면 마지막 것만 남긴다 — 앞의 것은 길이 0 이라 의미가 없다
@@ -67,7 +72,24 @@ export function tempoSegments(tempo: Tempo): { tick: Ticks; bpm: number }[] {
 }
 
 /**
- * 틱 → 초. 템포 구간을 **누적**한다.
+ * 구간 하나에서 `x` 틱 지나는 데 걸리는 초. 끝 지점이 램프면 BPM 이 b0→b1 로 틱에 대해 직선으로 바뀐다:
+ * 초 = (60/PPQ)·∫dτ/bpm(τ) = (60/PPQ)·L/(b1−b0)·ln(bpm(x)/b0)
+ */
+function spanSeconds(x: Ticks, b0: number, b1: number | null, length: Ticks): number {
+  if (b1 === null || Math.abs(b1 - b0) < 1e-9 || !(length > 0)) return (x / PPQ) * (60 / b0);
+  const bx = b0 + ((b1 - b0) * x) / length;
+  return (60 / PPQ) * (length / (b1 - b0)) * Math.log(bx / b0);
+}
+
+/** `spanSeconds` 의 역 — 구간 안에서 `s` 초 지나면 몇 틱 */
+function spanTicks(s: number, b0: number, b1: number | null, length: Ticks): Ticks {
+  if (b1 === null || Math.abs(b1 - b0) < 1e-9 || !(length > 0)) return (s * b0 * PPQ) / 60;
+  const bx = b0 * Math.exp((s * PPQ * (b1 - b0)) / (60 * length));
+  return ((bx - b0) * length) / (b1 - b0);
+}
+
+/**
+ * 틱 → 초. 템포 구간을 **누적**한다 (램프 구간은 적분).
  *
  * 단순 곱셈이 아닌 이유: 곡 중간에 템포가 바뀌면 그 지점 앞뒤의 초/틱 비율이
  * 다르다. 마지막 템포만 쓰면 앞부분이 통째로 밀린다.
@@ -82,7 +104,8 @@ export function ticksToSeconds(ticks: Ticks, tempo: Tempo): number {
     const to = segments[i + 1];
     const until = to === undefined ? ticks : Math.min(ticks, to.tick);
     if (until <= from.tick) break;
-    seconds += ((until - from.tick) / PPQ) * (60 / from.bpm);
+    const rampTo = to?.ramp ? to.bpm : null;
+    seconds += spanSeconds(until - from.tick, from.bpm, rampTo, to ? to.tick - from.tick : 0);
     if (to === undefined || ticks <= to.tick) break;
   }
   return seconds;
@@ -98,12 +121,26 @@ export function secondsToTicks(seconds: number, tempo: Tempo): Ticks {
     const from = segments[i]!;
     const to = segments[i + 1];
     if (to === undefined) return from.tick + (remaining * from.bpm * PPQ) / 60;
-
-    const spanSec = ((to.tick - from.tick) / PPQ) * (60 / from.bpm);
-    if (remaining <= spanSec) return from.tick + (remaining * from.bpm * PPQ) / 60;
+    const length = to.tick - from.tick;
+    const rampTo = to.ramp ? to.bpm : null;
+    const spanSec = spanSeconds(length, from.bpm, rampTo, length);
+    if (remaining <= spanSec) return from.tick + spanTicks(remaining, from.bpm, rampTo, length);
     remaining -= spanSec;
   }
   return 0;
+}
+
+/** 이 자리의 BPM (램프면 그 사이 값) — 화면 표시용 */
+export function bpmAt(ticks: Ticks, tempo: Tempo): number {
+  const segments = tempoSegments(tempo);
+  for (let i = segments.length - 1; i >= 0; i--) {
+    const seg = segments[i]!;
+    if (ticks < seg.tick) continue;
+    const next = segments[i + 1];
+    if (next?.ramp) return seg.bpm + ((next.bpm - seg.bpm) * (ticks - seg.tick)) / (next.tick - seg.tick);
+    return seg.bpm;
+  }
+  return segments[0]!.bpm;
 }
 
 /** 마디·박 표시용 (1-based) — 목업의 "1.1.00" 표시가 이것 */

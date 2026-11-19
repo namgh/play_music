@@ -10,7 +10,7 @@ import { NOTE_NAMES } from '../model/pitch.ts';
 import { INSTRUMENT_CATALOG } from '../instruments/definitions.ts';
 import type { ProjectEditor } from '../editor/useProjectEditor.ts';
 import { EditError } from '../editor/edits.ts';
-import { moveTempoChange, tempoRange } from '../editor/arrangement.ts';
+import { moveTempoChange, tempoRange, toggleTempoRamp } from '../editor/arrangement.ts';
 import {
   addChord, addMarker, addSection, deleteChord, deleteMarker, deleteSection, duplicateSection, keyAt,
   removeSectionMarker, replaceChords, setKeyChange, setSignatureChange, swapSectionWithNeighbor, transposeChords,
@@ -339,14 +339,18 @@ function TempoRow({ editor, totalTicks, nameCol, onNotice }: { editor: ProjectEd
   const { project } = editor;
   const H = 52;
   const { min, max } = tempoRange(project);
-  const points = [{ tick: 0, bpm: project.tempo.bpm }, ...(project.tempo.changes ?? [])].sort((a, b) => a.tick - b.tick);
+  const points: { tick: number; bpm: number; ramp?: boolean }[] = [{ tick: 0, bpm: project.tempo.bpm }, ...(project.tempo.changes ?? [])].sort((a, b) => a.tick - b.tick);
   const y = (bpm: number) => 4 + (1 - (bpm - min) / (max - min)) * (H - 8);
   const W = 1000;
   const x = (tick: number) => (tick / totalTicks) * W;
   let d = '';
+  // 계단: 다음 지점까지 평평하게 갔다가 거기서 바뀐다. 다음 지점이 램프면 비스듬히 그 값까지
   points.forEach((p, i) => {
-    const next = points[i + 1]?.tick ?? totalTicks;
-    d += `${i === 0 ? 'M' : 'L'}${x(p.tick)},${y(p.bpm)} L${x(next)},${y(p.bpm)} `;
+    const next = points[i + 1];
+    if (i === 0) d += `M${x(p.tick)},${y(p.bpm)} `;
+    if (!next) { d += `L${x(totalTicks)},${y(p.bpm)} `; return; }
+    if (next.ramp) d += `L${x(next.tick)},${y(next.bpm)} `;
+    else d += `L${x(next.tick)},${y(p.bpm)} L${x(next.tick)},${y(next.bpm)} `;
   });
   // 끌기는 실제로 움직였을 때만 포인터를 잡는다 — 누르자마자 잡으면 두 번 누르기(지우기)가 점에 안 간다
   const drag = useRef<{ from: number; box: DOMRect; x: number; y: number; captured: boolean } | null>(null);
@@ -361,7 +365,7 @@ function TempoRow({ editor, totalTicks, nameCol, onNotice }: { editor: ProjectEd
       <div className={`flex ${nameCol} shrink-0 items-center gap-1.5 border-r border-rule bg-body px-2`}>
         <span className="shrink-0 text-[11px] font-semibold text-ink-2">템포</span>
         <span className="font-num text-[12px] text-ink-3">{min}–{max}</span>
-        <span className="text-[10px] text-ink-3">빈 곳 = 추가 · 두 번 = 지움</span>
+        <span className="text-[10px] text-ink-3">빈 곳 = 추가 · Shift = 램프 · 두 번 = 지움</span>
       </div>
       <div
         className="relative flex-1 cursor-copy bg-screen"
@@ -397,9 +401,15 @@ function TempoRow({ editor, totalTicks, nameCol, onNotice }: { editor: ProjectEd
             type="button"
             data-tempo-point
             aria-label={`템포 ${p.bpm} BPM (${p.tick === 0 ? '시작' : `${p.tick}틱`})`}
-            title={`${p.bpm} BPM — 위아래로 끌어 바꾸기${p.tick === 0 ? '' : ' · 옆으로 끌어 옮기기 · 두 번 눌러 지우기'}`}
+            title={`${p.bpm} BPM${p.ramp ? ' (서서히)' : ''} — 위아래로 끌어 바꾸기${p.tick === 0 ? '' : ' · 옆으로 끌어 옮기기 · Shift+누르기 램프 · 두 번 눌러 지우기'}`}
             onPointerDown={(e) => {
               e.stopPropagation();
+              // Shift+누르기 = 램프(앞 지점에서 서서히) 켜고 끄기
+              if (e.shiftKey && p.tick > 0) {
+                editor.commit(toggleTempoRamp(project, p.tick));
+                onNotice(p.ramp ? '한 번에 바뀌게 했습니다' : '앞 지점에서 이 값까지 서서히 바뀌게 했습니다 (램프)');
+                return;
+              }
               const box = (e.currentTarget.parentElement as HTMLElement).getBoundingClientRect();
               drag.current = { from: p.tick, box, x: e.clientX, y: e.clientY, captured: false };
             }}
@@ -407,7 +417,7 @@ function TempoRow({ editor, totalTicks, nameCol, onNotice }: { editor: ProjectEd
             style={{ left: `${(p.tick / totalTicks) * 100}%`, top: y(p.bpm) - 5 }}
             className="absolute z-10 flex h-[10px] -translate-x-1/2 items-center"
           >
-            <span className="h-2.5 w-2.5 rounded-full border-2 border-acc bg-screen" />
+            <span className={`h-2.5 w-2.5 border-2 border-acc ${p.ramp ? 'rotate-45 bg-acc' : 'rounded-full bg-screen'}`} data-ramp={p.ramp ? 'on' : undefined} />
             <span className="ml-1 font-num text-[11px] text-sink-2">{Math.round(p.bpm)}</span>
           </button>
         ))}

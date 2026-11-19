@@ -13,6 +13,24 @@ export interface ScrubNote { trackId: TrackId; midi: number; velocity: number }
 /** 한 번에 이만큼까지만 — 빨리 끌면 수십 음이 한꺼번에 터진다 */
 export const SCRUB_LIMIT = 8;
 
+/** 스크럽 자리에 걸린 오디오 클립 — 에셋 안 몇 초를 들려줄지 (`PARITY_ROUND2.md` 20). 뮤트·솔로 따름 */
+export function audioAt(project: Project, tick: Ticks, secondsAt: (t: Ticks) => number): { assetId: string; offsetSec: number; gainDb: number }[] {
+  const soloing = project.tracks.some((t) => t.solo);
+  const out: { assetId: string; offsetSec: number; gainDb: number }[] = [];
+  for (const t of project.tracks) {
+    if (t.mute || (soloing && !t.solo)) continue;
+    for (const c of t.clips) {
+      if (!c.audio || !isClipAudible(c) || tick < c.startTick || tick >= c.startTick + c.lengthTick) continue;
+      const into = secondsAt(tick) - secondsAt(c.startTick);
+      const a = c.audio;
+      const pos = a.offsetSec + into;
+      if (pos < 0 || pos >= a.assetSec) continue;
+      out.push({ assetId: a.assetId, offsetSec: a.reverse ? Math.max(0, a.assetSec - pos) : pos, gainDb: a.gainDb });
+    }
+  }
+  return out;
+}
+
 export function notesInSpan(project: Project, a: Ticks, b: Ticks): ScrubNote[] {
   const from = Math.min(a, b);
   const to = Math.max(a, b);

@@ -78,3 +78,30 @@ test('악보 편집 — 누른 자리 → 조표 붙은 음, 큰보표 판단·�
   const ev = m[0]!.events.find((e) => e.kind === 'note')!;
   assert.deepEqual(ev.ids, [low.id, high.id]);
 });
+
+test('악보 기호 — 셈여림은 세기에서 (바뀔 때만), 아티큘레이션·가사가 이벤트와 MusicXML 에, 소리에도 반영', async () => {
+  const { dynamicMarks, notate, toMusicXml } = await import('./notation.ts');
+  const { collectNoteEvents } = await import('../audio/scheduler.ts');
+  const { createClip, createEmptyProject, createNote, createTrack } = await import('./factory.ts');
+  const { PPQ } = await import('./time.ts');
+  const a = createNote({ startTick: 0, lengthTick: PPQ, midi: 60, velocity: 0.3 });
+  const b = createNote({ startTick: PPQ, lengthTick: PPQ, midi: 62, velocity: 0.32 });
+  const c = createNote({ startTick: PPQ * 2, lengthTick: PPQ, midi: 64, velocity: 0.9 });
+  c.articulation = 'staccato';
+  c.lyric = '라';
+  assert.deepEqual(dynamicMarks([a, b, c], 0).map((d) => d.mark), ['p', 'ff']);
+  const p = createEmptyProject('n');
+  const m = notate(p, [a, b, c], 0, 0, 1);
+  const ev = m[0]!.events.find((e) => e.ids?.includes(c.id))!;
+  assert.equal(ev.articulation, 'staccato');
+  assert.equal(ev.lyric, '라');
+  const xml = toMusicXml(p, [{ name: 'x', clef: 'treble', measures: m, dynamics: dynamicMarks([a, b, c], 0) }]);
+  assert.ok(xml.includes('<staccato/>') && xml.includes('<lyric><text>라</text></lyric>') && xml.includes('<ff/>') && xml.includes('<p/>'));
+  // 소리: 스타카토는 반 길이
+  const t = createTrack({ name: 't', instrumentId: 'acoustic-piano' });
+  const clip = createClip({ startTick: 0, lengthTick: PPQ * 4 });
+  clip.notes.push(c);
+  t.clips.push(clip);
+  p.tracks.push(t);
+  assert.equal(collectNoteEvents(p, 0, PPQ * 4)[0]!.lengthTick, PPQ / 2);
+});

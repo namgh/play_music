@@ -117,7 +117,24 @@ export interface Note {
    * 울릴지는 음 id·자리에서 정한 씨앗으로 정한다 — 재생과 내보내기가 같다
    */
   probability?: number;
+  /** 아티큘레이션 (`PARITY_ROUND2.md` 22) — 악보 기호이자 **소리에도 반영**된다 (스케줄러) */
+  articulation?: Articulation;
+  /** 가사 한 마디 (이 음 아래 적힌다) */
+  lyric?: string;
+  /** 성부 — 2 면 둘째 성부(기둥 아래). 없으면 첫째 */
+  voice?: 2;
 }
+
+export type Articulation = 'staccato' | 'accent' | 'tenuto' | 'marcato';
+export const ARTICULATIONS: Articulation[] = ['staccato', 'accent', 'tenuto', 'marcato'];
+
+/** 아티큘레이션의 소리 — 길이 배율·세기 더하기 (재생·내보내기가 같은 표를 쓴다) */
+export const ARTICULATION_PLAY: Record<Articulation, { length: number; velocity: number }> = {
+  staccato: { length: 0.5, velocity: 0 },
+  accent: { length: 1, velocity: 0.15 },
+  tenuto: { length: 1, velocity: 0.03 },
+  marcato: { length: 0.75, velocity: 0.22 },
+};
 
 // ---------------------------------------------------------------------------
 // 클립 · 트랙

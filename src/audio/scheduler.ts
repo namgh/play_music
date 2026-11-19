@@ -17,6 +17,7 @@ import { beatsBetween, positionAt } from '../model/meter.ts';
 import { processedNotes } from './midiEffects.ts';
 import type { Ticks, TimeSignature } from '../model/time.ts';
 import { PPQ, secondsToTicks, ticksPerBeat, ticksToSeconds } from '../model/time.ts';
+import { ARTICULATION_PLAY } from '../model/project.ts';
 import type { Tuning } from '../model/pitch.ts';
 import { pitchToHz } from '../model/pitch.ts';
 
@@ -34,9 +35,9 @@ export interface ScheduledNote {
 }
 
 /** 0~1 결정적 난수 — 음 id·자리 해시 (FNV-1a) */
-export function chance(id: string, tick: Ticks): number {
+export function chance(id: string, tick: Ticks, pass = 0): number {
   let h = 0x811c9dc5;
-  const s = `${id}@${tick}`;
+  const s = pass === 0 ? `${id}@${tick}` : `${id}@${tick}#${pass}`;
   for (let i = 0; i < s.length; i++) {
     h ^= s.charCodeAt(i);
     h = Math.imul(h, 0x01000193) >>> 0;
@@ -50,7 +51,8 @@ export function chance(id: string, tick: Ticks): number {
  * 클립 경계를 넘어가는 음은 **클립 끝에서 자른다** — 클립을 짧게 줄였을 때
  * 안 보이는 음이 계속 울리면 사용자가 원인을 찾을 수 없다.
  */
-export function collectNoteEvents(project: Project, fromTick: Ticks, toTick: Ticks): ScheduledNote[] {
+/** `pass` — 반복 몇 번째 (확률 씨앗에 들어간다, 0 = 첫 바퀴 = 내보내기와 같다) */
+export function collectNoteEvents(project: Project, fromTick: Ticks, toTick: Ticks, pass = 0): ScheduledNote[] {
   const out: ScheduledNote[] = [];
   if (toTick <= fromTick) return out;
 
@@ -69,15 +71,17 @@ export function collectNoteEvents(project: Project, fromTick: Ticks, toTick: Tic
         const lengthTick = Math.min(note.lengthTick, clipEnd - startTick);
         if (lengthTick <= 0) continue;
         // 확률 — 음 id 와 자리에서 정한 씨앗이라 재생·내보내기가 같은 결정을 한다
-        if (note.probability !== undefined && note.probability < 1 && chance(note.id, startTick) >= note.probability) continue;
+        if (note.probability !== undefined && note.probability < 1 && chance(note.id, startTick, pass) >= note.probability) continue;
 
+        // 아티큘레이션은 소리에도 — 스타카토는 짧게, 액센트는 세게 (`ARTICULATION_PLAY`)
+        const art = note.articulation ? ARTICULATION_PLAY[note.articulation] : null;
         out.push({
           trackId: track.id,
           clipId: clip.id,
           noteId: note.id,
           startTick,
-          lengthTick,
-          note,
+          lengthTick: art ? Math.max(1, Math.round(lengthTick * art.length)) : lengthTick,
+          note: art && art.velocity ? { ...note, velocity: Math.min(1, note.velocity + art.velocity) } : note,
           pitchCurve: note.pitchCurve,
         });
       }
@@ -297,8 +301,15 @@ export class LookaheadScheduler {
   private startTime = 0;
   /** 그 시각에 해당하는 곡 위치 */
   private startTick: Ticks = 0;
-  /** 여기까지 예약을 마쳤다 (**원시 틱**, 미포함 상한) */
-  private scheduledUpToRaw: Ticks = 0;
+  /**
+   * 예약 진행도 — **오디오 시각**과 그 시각의 곡 위치, 그리고 몇 번째 반복인가.
+   * 시각으로 들고 있는 이유: 템포 변화(램프 포함)가 있으면 "시작에서 몇 틱"으로는 시각을 못 구한다.
+   * 곡 위치는 언제나 템포 지도의 **절대 초**로 바꾼다 (2026-11-19: 예전엔 틱 차이를 초로 바꿔
+   * 템포가 바뀌는 곡을 중간부터 재생하면 어긋났다)
+   */
+  private cursorTime = 0;
+  private cursorSong: Ticks = 0;
+  private pass = 0;
   /** 트랙별 직전 음. 구간을 넘어서도 레가토가 이어지려면 상태가 필요하다 */
   private readonly legatoPrevious = new Map<TrackId, ScheduledNote>();
   private running = false;
@@ -325,7 +336,9 @@ export class LookaheadScheduler {
         this.host.scheduleClick({ startTick: fromTick, accent: click.accent }, now + click.atSec);
       }
     }
-    this.scheduledUpToRaw = fromTick;
+    this.cursorTime = this.startTime;
+    this.cursorSong = fromTick;
+    this.pass = 0;
     // 되감으면 "직전 음"도 없던 것이 된다. 안 지우면 재생을 다시 시작한 첫 음이
     // 멈추기 전 마지막 음에서 미끄러져 들어온다
     this.legatoPrevious.clear();
@@ -358,7 +371,15 @@ export class LookaheadScheduler {
     if (!this.running || !this.project) return this.startTick;
     const elapsed = this.host.now() - this.startTime;
     if (elapsed < 0) return this.startTick;
-    return this.wrap(this.startTick + this.secondsToTicks(elapsed));
+    const tempo = this.project.tempo;
+    const sec0 = ticksToSeconds(this.startTick, tempo);
+    const loop = this.activeLoop();
+    if (!loop || this.startTick >= loop.endTick) return secondsToTicks(sec0 + elapsed, tempo);
+    const toEnd = ticksToSeconds(loop.endTick, tempo) - sec0;
+    if (elapsed < toEnd) return secondsToTicks(sec0 + elapsed, tempo);
+    const loopSec = ticksToSeconds(loop.endTick, tempo) - ticksToSeconds(loop.startTick, tempo);
+    const rem = loopSec > 0 ? (elapsed - toEnd) % loopSec : 0;
+    return secondsToTicks(ticksToSeconds(loop.startTick, tempo) + rem, tempo);
   }
 
   /** 유효한 루프. 꺼져 있거나 길이가 0 이면 없는 것으로 본다 */
@@ -369,76 +390,58 @@ export class LookaheadScheduler {
     return loop;
   }
 
-  /** 원시 틱 → 곡 위치 */
-  private wrap(rawTick: Ticks): Ticks {
-    const loop = this.activeLoop();
-    if (!loop) return rawTick;
-    // 루프 시작 전이거나 아직 끝에 닿지 않았으면 그대로 흐른다
-    if (rawTick < loop.endTick) return rawTick;
-    const length = loop.endTick - loop.startTick;
-    return loop.startTick + ((rawTick - loop.startTick) % length);
-  }
-
   /**
    * 타이머가 부르는 함수. 지금부터 룩어헤드 구간까지의 음을 예약한다.
    * 여러 번 불러도 같은 음이 두 번 예약되지 않는다 (`scheduledUpToRaw` 가 경계).
    */
   pump(): void {
     if (!this.running || !this.project) return;
-
-    const horizonSec = this.host.now() - this.startTime + this.lookaheadSec;
-    const horizonRaw = this.startTick + this.secondsToTicks(horizonSec);
-    if (horizonRaw <= this.scheduledUpToRaw) return;
-
+    const tempo = this.project.tempo;
+    const sec = (t: Ticks) => ticksToSeconds(t, tempo);
+    const horizonTime = this.host.now() + this.lookaheadSec;
     const loop = this.activeLoop();
 
-    // 루프 경계마다 세그먼트를 끊는다. 한 세그먼트 안에서는 원시 틱과 곡 위치의
-    // 차이가 일정하므로 `collectNoteEvents` 를 그대로 쓸 수 있다
-    while (this.scheduledUpToRaw < horizonRaw) {
-      const fromRaw = this.scheduledUpToRaw;
-      const fromSong = this.wrap(fromRaw);
-
-      let toRaw = horizonRaw;
-      if (loop) {
-        const untilBoundary = loop.endTick - fromSong;
-        // 경계 앞이면 거기서 끊는다. 이미 지났으면(루프 밖에서 시작) 그대로 간다
-        if (untilBoundary > 0) toRaw = Math.min(toRaw, fromRaw + untilBoundary);
+    // 루프 경계마다 세그먼트를 끊는다. 세그먼트 안에서 음 시각 = 세그먼트 시작 시각 + (절대 초 차이)
+    let guard = 0;
+    while (this.cursorTime < horizonTime && guard++ < 64) {
+      const fromSong = this.cursorSong;
+      let toSong = Math.max(fromSong + 1, secondsToTicks(sec(fromSong) + (horizonTime - this.cursorTime), tempo));
+      let wraps = false;
+      if (loop && fromSong < loop.endTick && toSong >= loop.endTick) {
+        toSong = loop.endTick;
+        wraps = true;
       }
-      const toSong = fromSong + (toRaw - fromRaw);
-      const offset = fromRaw - fromSong;
 
       // 스윙은 레가토 **앞**이다 — 민 뒤의 간격으로 이어졌는지 판단해야 한다
       const collected = applySwing(
-        collectNoteEvents(this.project, fromSong, toSong), this.project.swing ?? 0,
+        collectNoteEvents(this.project, fromSong, toSong, this.pass), this.project.swing ?? 0,
       );
       const legatoMsFor = this.host.legatoMsFor?.bind(this.host);
       const events = legatoMsFor
         ? applyLegato(collected, legatoMsFor, this.project.tuning, this.legatoPrevious)
         : collected;
 
+      const base = this.cursorTime - sec(fromSong);
       for (const event of events) {
-        const atTime = this.startTime
-          + this.ticksToSeconds(event.startTick + offset - this.startTick);
-        this.host.scheduleNote(event, atTime, this.ticksToSeconds(event.lengthTick));
+        const atTime = base + sec(event.startTick);
+        this.host.scheduleNote(event, atTime, sec(event.startTick + event.lengthTick) - sec(event.startTick));
       }
 
       if (this.metronome && this.host.scheduleClick) {
         for (const click of collectBeatEvents(this.project, fromSong, toSong)) {
-          const atTime = this.startTime
-            + this.ticksToSeconds(click.startTick + offset - this.startTick);
-          this.host.scheduleClick(click, atTime);
+          this.host.scheduleClick(click, base + sec(click.startTick));
         }
       }
 
-      this.scheduledUpToRaw = toRaw;
+      this.cursorTime = base + sec(toSong);
+      if (wraps) {
+        this.cursorSong = loop!.startTick;
+        this.pass += 1;
+      } else {
+        this.cursorSong = toSong;
+      }
     }
   }
 
-  private ticksToSeconds(ticks: Ticks): number {
-    return ticksToSeconds(ticks, this.project!.tempo);
-  }
 
-  private secondsToTicks(seconds: number): Ticks {
-    return secondsToTicks(seconds, this.project!.tempo);
-  }
 }

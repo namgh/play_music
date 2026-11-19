@@ -11,10 +11,10 @@
  * 반드시 동반한다. Phase 3 에서 AI 가 이 스키마로 파라미터를 생성하므로 요구가 더 높다.
  */
 
-import { CHORD_QUALITIES, SCHEMA_VERSION } from './project.ts';
+import { CHORD_QUALITIES, SCHEMA_VERSION, ARTICULATIONS } from './project.ts';
 import type {
   AutomationLane, AutomationMode, AutomationPoint, AutomationTarget, ChordId, ChordQuality, Clip, ClipId, EffectSpec, LoopRegion,
-  MarkerId, MusicalKey, Note, NoteId, Origin, PitchCurve, Project, ProjectId, SectionId, StackId, Track, TrackId, BusId, VcaId, GroupId, MidiEffect,
+  MarkerId, MusicalKey, Note, NoteId, Origin, PitchCurve, Project, ProjectId, SectionId, StackId, Track, TrackId, BusId, VcaId, GroupId, MidiEffect, Articulation,
 } from './project.ts';
 import { normalizeSignatureChanges } from './meter.ts';
 import { DEFAULT_TEMPO, DEFAULT_TIME_SIGNATURE, PPQ } from './time.ts';
@@ -161,6 +161,9 @@ function parseNote(value: unknown, seen: Set<string>): Note {
     expression: raw.expression == null ? null : (raw.expression as Note['expression']),
     origin: origin(raw.origin),
     ...(typeof raw.probability === 'number' && raw.probability < 1 ? { probability: num(raw.probability, 1, 0, 1) } : {}),
+    ...(ARTICULATIONS.includes(raw.articulation as Articulation) ? { articulation: raw.articulation as Articulation } : {}),
+    ...(typeof raw.lyric === 'string' && raw.lyric.length > 0 ? { lyric: raw.lyric.slice(0, 40) } : {}),
+    ...(raw.voice === 2 ? { voice: 2 as const } : {}),
   };
 }
 
@@ -332,12 +335,13 @@ function parseTempo(value: unknown): Project['tempo'] {
   const raw = asRecord(value ?? {}, '템포');
   const tempo: Project['tempo'] = { bpm: num(raw.bpm, DEFAULT_TEMPO.bpm, 20, 300) };
   if (raw.changes != null) {
-    const byTick = new Map<number, number>();
+    const byTick = new Map<number, { bpm: number; ramp: boolean }>();
     for (const entry of asArray(raw.changes, '템포 변화')) {
       const change = asRecord(entry, '템포 변화');
-      byTick.set(num(change.tick, 0, 0), num(change.bpm, tempo.bpm, 20, 300));
+      byTick.set(num(change.tick, 0, 0), { bpm: num(change.bpm, tempo.bpm, 20, 300), ramp: change.ramp === true });
     }
-    tempo.changes = [...byTick.entries()].sort((a, b) => a[0] - b[0]).map(([tick, bpm]) => ({ tick, bpm }));
+    tempo.changes = [...byTick.entries()].sort((a, b) => a[0] - b[0])
+      .map(([tick, c]) => (c.ramp ? { tick, bpm: c.bpm, ramp: true } : { tick, bpm: c.bpm }));
   }
   return tempo;
 }

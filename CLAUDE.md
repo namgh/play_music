@@ -136,7 +136,7 @@ Tier 0·1 편집 조작까지 커밋됨 (2026-08-09).
 오디오가 .json 저장에 안 따라감(묶음 파일·서버 필요). 각 행의 "빠진 핵심" 칸이 다음 작업 목록이다.
 
 - 화면 시안: `design/studio-app.figcraft` (영역마다 페이지) — `npm run design:capture` 로 앱에서 떠 온다 (`design/README.md`)
-- 점검: `npm run check:browser` 92항목 (개발 서버가 떠 있어야 한다). 사람이 귀로 듣는 판정은 여전히 남아 있다
+- 점검: `npm run check:browser` 95항목 (개발 서버가 떠 있어야 한다). 사람이 귀로 듣는 판정은 여전히 남아 있다
 - 새 파일 지도: 편집 `src/editor/{arrangement,tracks,noteTools,automationEdits,mixer,steps,recording,liveLoops,library,sessionPlayers}.ts`,
   소리 `src/audio/{busGraph,midiEffects,audioRegions,assets,bounce,zip,mastering,midiInput}.ts`, 모델 `src/model/{meter,chords,notation,templates}.ts`
 
@@ -152,6 +152,7 @@ Rust 이펙트 코어 `fx/`(→ `src/generated/fx.wasm`, `npm run build:fx`) 70�
 묶음 파일·누르는 동안 울리기·코드 스트립/드럼 패드·펀치·Flashback·트림/악기 오토메이션·사이드체인·프리 센드·
 바운스/프리즈·에일리어스·스크럽·템포 트랙·악보 편집/큰보표·스텝 확률/런치 퀀타이즈·스마트 매핑·스크린셋.
 시안 `design/studio-app.figcraft` 22 페이지.
+2-b(17~22): 사이드체인 서로 감지·반복마다 확률·오디오 에일리어스/스크럽·템포 램프·악보 기호 — 스케줄러는 절대 시각 커서.
 
 ### 그 밖에는 `ROADMAP.md` 를 따른다
 

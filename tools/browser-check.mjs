@@ -449,6 +449,19 @@ try {
   const stop17c = await centerOf(byTitle('정지')); if (stop17c) await click(stop17c.x, stop17c.y);
   const saved17c = await ev(`(() => { const p = JSON.parse(localStorage.getItem('project-autosave-v1')); const d = p.project ?? p; return d.tracks.flatMap((t) => t.effects.filter((e) => e.sidechain).map((e) => e.type)).join(','); })()`);
   record('사이드체인 — 컴프 감지를 다른 트랙으로, 재생', sc17.length > 0 && saved17c.includes('compmodel') && peak17c > 0.0005 && problems.length === n17c, `${sc17} · 저장 ${saved17c} · 피크 ${peak17c.toFixed(4)} · 새 오류 ${problems.length - n17c}`);
+  // 서로 감지 (2026-11-19 2-b 17) — 둘째 트랙에도 컴프를 걸어 첫째 트랙을 감지하게: 고리여도 소리가 나야 한다
+  const strip2 = await ev(`[...document.querySelectorAll('[data-strip]')][1]?.dataset.strip ?? ''`);
+  await ev(`(() => { const e = document.querySelector('[data-strip="${strip2}"] [aria-label="이펙트 추가"]'); Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(e, 'compmodel'); e.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+  await sleep(400);
+  await ev(`(() => { const e = document.querySelector('[aria-label="사이드체인"]'); const first = document.querySelector('[data-strip]').dataset.strip; const opt = [...e.options].find((o) => o.textContent === first); Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(e, opt.value); e.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+  await sleep(400);
+  const n17d = problems.length;
+  await clickEl(byTitle('맨 앞으로'));
+  await clickEl(byTitle('커서부터 재생'));
+  let peak17d = 0; for (let i = 0; i < 10; i++) { await sleep(150); peak17d = Math.max(peak17d, await ev('window.__peak()')); }
+  const stop17d = await centerOf(byTitle('정지')); if (stop17d) await click(stop17d.x, stop17d.y);
+  const mutual = await ev(`(() => { const p = JSON.parse(localStorage.getItem('project-autosave-v1')); const d = p.project ?? p; return d.tracks.filter((t) => t.effects.some((e) => e.sidechain)).length; })()`);
+  record('사이드체인 서로 감지 (고리) — 소리가 난다', mutual >= 2 && peak17d > 0.0005 && problems.length === n17d, `감지 트랙 ${mutual} · 피크 ${peak17d.toFixed(4)}`);
 
   // 18. 내보내기 창 — 16bit·44.1k·노멀라이즈, 측정값 표시, 스템 ZIP
   for (const f of readdirSync(DL)) rmSync(join(DL, f));
@@ -566,6 +579,20 @@ try {
   }
   const [tc0, tc1, tc2] = tempoLog.split(' → ').map(Number);
   record('템포 트랙 — 누르면 변화, 두 번 누르면 지움', tc1 === tc0 + 1 && tc2 === tc0, tempoLog);
+  // 램프 — 다시 하나 놓고 Shift+누르기
+  let rampLog = 'row 없음';
+  if (tempoRow) {
+    await click(tempoRow.x + tempoRow.w * 0.6, tempoRow.y + tempoRow.h * 0.7);
+    await sleep(300);
+    const rp = await centerOf(`[...document.querySelectorAll('[data-tempo-point]')].at(-1)`);
+    if (rp) {
+      await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: rp.x, y: rp.y, button: 'left', clickCount: 1, modifiers: 8 });
+      await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: rp.x, y: rp.y, button: 'left', clickCount: 1, modifiers: 8 });
+    }
+    await sleep(300);
+    rampLog = await ev(`(() => { const p = JSON.parse(localStorage.getItem('project-autosave-v1')); return JSON.stringify((p.project ?? p).tempo.changes ?? []); })()`);
+  }
+  record('템포 램프 (Shift+누르기)', /"ramp":true/.test(rampLog), rampLog);
   // 20c1. 스크럽 — 눈금자를 누른 채 끌면 지나가는 음이 들린다
   const rulerS = await ev(`(() => { const e = document.querySelector('[data-ruler]'); e.scrollIntoView({ block: 'nearest' }); const r = e.getBoundingClientRect(); return { x: r.x, y: r.y + r.height / 2, w: r.width }; })()`);
   let peakScrub = 0;
@@ -611,6 +638,16 @@ try {
   }
   const [sn0, sn1, sn2] = scoreLog.split(' → ').map(Number);
   record('악보에서 음 넣기·지우기', sn1 === sn0 + 1 && sn2 === sn0, `${scoreLog} · ${scoreDebug}`);
+  // 악보 기호 — 음을 골라 스타카토, 가사
+  await ev(`(() => { const h = document.querySelector('[data-score] [data-note-head]'); h?.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 1, button: 0, buttons: 1 })); return 'ok'; })()`);
+  await sleep(300);
+  await clickEl(`document.querySelector('[aria-label="스타카토 (반 길이)"]')`);
+  await sleep(300);
+  await ev(`(() => { const i = document.querySelector('[aria-label="가사"]'); if (!i) return 'none'; Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(i, '라'); i.dispatchEvent(new Event('input', { bubbles: true })); i.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); return 'ok'; })()`);
+  await sleep(300);
+  const marks22 = await ev(`(() => { const p = JSON.parse(localStorage.getItem('project-autosave-v1')); const d = p.project ?? p; const n = d.tracks.flatMap((t) => t.clips.flatMap((c) => c.notes)).find((x) => x.articulation); return n ? n.articulation + ':' + (n.lyric ?? '') : ''; })()`);
+  const drawn22 = await ev(`document.querySelectorAll('[data-score] [data-articulation], [data-score] [data-dynamic]').length`);
+  record('악보 기호 — 스타카토·가사 저장, 셈여림 표시', marks22 === 'staccato:라' && drawn22 > 0, `${marks22} · 그린 기호 ${drawn22}`);
   await clickEl(`[...document.querySelectorAll('[aria-label="편집기 보기"] button')].find((x) => x.textContent === '피아노 롤')`);
   // 20d. 바운스 인 플레이스 · 프리즈 — 트랙을 오디오로 렌더해 놓고, 얼렸다 녹인다
   const tracksBefore20 = await ev(`(() => { const p = JSON.parse(localStorage.getItem('project-autosave-v1')); return (p.project ?? p).tracks.length; })()`);

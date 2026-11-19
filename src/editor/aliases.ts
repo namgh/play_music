@@ -26,6 +26,8 @@ function sourceNoteId(id: NoteId): NoteId {
 }
 
 function mirror(source: Clip, alias: Clip): Clip {
+  // 오디오 클립: 음 대신 오디오 구간(에셋·다듬기·게인·페이드)과 길이를 따른다 (`PARITY_ROUND2.md` 19)
+  if (source.audio) return { ...alias, notes: [], lengthTick: source.lengthTick, audio: { ...source.audio } };
   return { ...alias, notes: source.notes.map((n) => ({ ...n, id: aliasNoteId(n.id, alias.id) })) };
 }
 
@@ -59,14 +61,16 @@ export function syncAliases(before: Project | null, after: Project): Project {
   const byId = new Map(clips.map((c) => [c.id, c]));
   const prev = before ? new Map(allClips(before).map((c) => [c.id, c])) : new Map<ClipId, Clip>();
 
-  // 1) 에일리어스에서 고친 것을 원본으로 올린다 (음 배열이 바뀐 에일리어스 — 마지막 것이 이긴다)
-  const pushUp = new Map<ClipId, Note[]>();
+  // 1) 에일리어스에서 고친 것을 원본으로 올린다 (음·오디오 구간이 바뀐 에일리어스 — 마지막 것이 이긴다)
+  const pushUp = new Map<ClipId, Partial<Clip>>();
   for (const c of clips) {
     if (!c.aliasOf) continue;
     const old = prev.get(c.id);
-    if (old && old.notes !== c.notes && byId.has(c.aliasOf)) pushUp.set(c.aliasOf, unmirror(c));
+    if (!old || !byId.has(c.aliasOf)) continue;
+    if (c.audio && old.audio !== c.audio) pushUp.set(c.aliasOf, { audio: { ...c.audio }, lengthTick: c.lengthTick });
+    else if (!c.audio && old.notes !== c.notes) pushUp.set(c.aliasOf, { notes: unmirror(c) });
   }
-  let next = pushUp.size ? mapAllClips(after, (c) => (pushUp.has(c.id) ? { ...c, notes: pushUp.get(c.id)! } : c)) : after;
+  let next = pushUp.size ? mapAllClips(after, (c) => (pushUp.has(c.id) ? { ...c, ...pushUp.get(c.id)! } : c)) : after;
 
   // 2) 원본이 없어진 에일리어스는 보통 클립으로, 나머지는 원본에서 다시 채운다
   const sources = new Map(allClips(next).map((c) => [c.id, c]));
@@ -82,6 +86,7 @@ export function syncAliases(before: Project | null, after: Project): Project {
     if (src.aliasOf) return c; // 에일리어스의 에일리어스는 만들지 않는다 (만들 때 막는다)
     const m = mirror(src, c);
     // 같으면 그대로 — 매번 새 객체를 만들면 화면이 쓸데없이 다시 그린다
+    if (src.audio) return JSON.stringify(c.audio) === JSON.stringify(m.audio) && c.lengthTick === m.lengthTick ? c : m;
     return c.notes.length === m.notes.length && c.notes.every((n, i) => JSON.stringify(n) === JSON.stringify(m.notes[i])) ? c : m;
   });
   return next;
@@ -92,7 +97,6 @@ export function makeAlias(project: Project, clipId: ClipId, atTick?: Ticks, trac
   const found = findClip(project, clipId);
   if (!found) throw new EditError(`클립 ${clipId} 없음`);
   const source = found.clip.aliasOf ? findClip(project, found.clip.aliasOf)?.clip ?? found.clip : found.clip;
-  if (source.audio) throw new EditError('오디오 클립의 에일리어스는 아직 없습니다 — 복제를 쓰세요');
   const target = trackId ? project.tracks.find((t) => t.id === trackId) : found.track;
   if (!target) throw new EditError('트랙 없음');
   const overlap = (at: number) => target.clips.find((c) => at < c.startTick + c.lengthTick && c.startTick < at + source.lengthTick);

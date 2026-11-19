@@ -440,3 +440,40 @@ test('스윙은 음 길이를 줄이지 않는다', () => {
   const swung = applySwing(raw, 0.5);
   assert.equal(swung[1]!.lengthTick, raw[1]!.lengthTick);
 });
+
+test('템포가 바뀌는 곡을 중간부터 재생해도 시각이 템포 지도와 맞는다 (2026-11-19 결함)', () => {
+  const p = createEmptyProject('t');
+  p.tempo = { bpm: 120, changes: [{ tick: PPQ * 4, bpm: 60 }] };
+  const tr = createTrack({ name: 'a', instrumentId: 'kick' });
+  const c = createClip({ startTick: 0, lengthTick: PPQ * 16 });
+  for (let b = 0; b < 16; b++) c.notes.push(createNote({ startTick: b * PPQ, lengthTick: PPQ / 2, midi: 60 }));
+  tr.clips.push(c);
+  p.tracks.push(tr);
+  const host = new FakeHost();
+  const s = new LookaheadScheduler(host);
+  // 5박째(60 BPM 구간 안)부터 — 다음 박까지는 1초여야 한다 (120 BPM 이면 0.5초)
+  s.start(p, PPQ * 5);
+  run(s, host, 3);
+  const times = host.calls.map((c) => c.atTime);
+  assert.ok(Math.abs(times[1]! - times[0]! - 1) < 1e-6, `박 간격 ${times[1]! - times[0]!}`);
+  assert.ok(Math.abs(s.positionTicks() - (PPQ * 5 + 3 * PPQ)) < 2, `재생 위치 ${s.positionTicks()}`);
+});
+
+test('확률 — 반복마다 다른 칸이 빠진다, 첫 바퀴는 내보내기와 같다', () => {
+  const p = createEmptyProject('p');
+  p.loop = { startTick: 0, endTick: PPQ * 4, enabled: true };
+  const tr = createTrack({ name: 'h', instrumentId: 'hihat' });
+  const c = createClip({ startTick: 0, lengthTick: PPQ * 4 });
+  for (let i = 0; i < 32; i++) { const n = createNote({ startTick: i * (PPQ / 8), lengthTick: 30, midi: 42 }); n.probability = 0.5; c.notes.push(n); }
+  tr.clips.push(c);
+  p.tracks.push(tr);
+  const host = new FakeHost();
+  const s = new LookaheadScheduler(host);
+  s.start(p, 0);
+  run(s, host, 2 * 2 + 0.5); // 120 BPM 한 마디 = 2초 → 두 바퀴 넘게
+  const firstLoop = host.calls.filter((c) => c.atTime < 2).map((c) => c.event.startTick).join(',');
+  const secondLoop = host.calls.filter((c) => c.atTime >= 2 && c.atTime < 4).map((c) => c.event.startTick).join(',');
+  const exported = collectNoteEvents(p, 0, PPQ * 4).map((e) => e.startTick).join(',');
+  assert.equal(firstLoop, exported, '첫 바퀴 = 내보내기');
+  assert.notEqual(secondLoop, firstLoop, '둘째 바퀴는 다르다');
+});

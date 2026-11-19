@@ -21,6 +21,8 @@ import { setFxBytes } from './fxRuntime.ts';
 import { putAsset } from './assets.ts';
 import { soloRenderProject } from '../editor/freeze.ts';
 import { ticksToNextLaunch } from '../editor/liveLoops.ts';
+import { audioAt } from '../editor/scrub.ts';
+import { decodeAsset } from './assets.ts';
 import { encodeWav, peakAmplitude } from './wav.ts';
 import { reportClipping, type ClipReport } from './headroom.ts';
 
@@ -217,6 +219,40 @@ export function useAudioEngine(
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
+  }, [ensure]);
+
+  /**
+   * 오디오 스크럽 (`PARITY_ROUND2.md` 20) — 그 자리의 소리를 70ms 조각으로 (앞뒤 5ms 페이드).
+   * 너무 자주 부르면 조각이 겹쳐 지글거린다 — 40ms 에 한 번만.
+   */
+  const lastGrain = useRef(0);
+  const scrubAudio = useCallback(async (tick: number) => {
+    const now = performance.now();
+    if (now - lastGrain.current < 40) return;
+    lastGrain.current = now;
+    const project = projectRef.current;
+    const grains = audioAt(project, tick, (t) => ticksToSeconds(t, project.tempo));
+    if (grains.length === 0) return;
+    try {
+      await ensure();
+      const ctx = ctxRef.current!;
+      for (const g of grains) {
+        const buffer = await decodeAsset(ctx, g.assetId);
+        if (!buffer) continue;
+        const src = ctx.createBufferSource();
+        src.buffer = buffer;
+        const env = ctx.createGain();
+        const at = ctx.currentTime + 0.005;
+        const level = Math.pow(10, g.gainDb / 20) * 0.8;
+        env.gain.setValueAtTime(0, at);
+        env.gain.linearRampToValueAtTime(level, at + 0.005);
+        env.gain.setValueAtTime(level, at + 0.065);
+        env.gain.linearRampToValueAtTime(0, at + 0.07);
+        src.connect(env).connect(ctx.destination);
+        src.start(at, Math.min(g.offsetSec, buffer.duration - 0.01), 0.07);
+        src.onended = () => { src.disconnect(); env.disconnect(); };
+      }
+    } catch { /* 스크럽 소리는 놓쳐도 된다 */ }
   }, [ensure]);
 
   /**
@@ -423,6 +459,6 @@ export function useAudioEngine(
 
   return {
     state, playheadTick, error, exporting, engineKind, clip, readLevel, readEffectMeters, compensationSamples,
-    play, stop, audition, liveOn, liveOff, renderTrack, previewInstrument, perform, exportWav, bounce, renderMix, setMetronome,
+    play, stop, audition, liveOn, liveOff, renderTrack, scrubAudio, previewInstrument, perform, exportWav, bounce, renderMix, setMetronome,
   };
 }

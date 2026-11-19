@@ -573,13 +573,16 @@ export function updateEffectChain(ctx: BaseAudioContext, previous: EffectChain |
   return chain;
 }
 
-/** 사이드체인 연결 하나 — 끊을 때 쓴다 */
-export interface KeyConnection { from: AudioNode; to: AudioNode }
+/** 사이드체인 연결 하나 — 끊을 때 쓴다 (`via` 는 고리를 허용하는 지연 노드) */
+export interface KeyConnection { from: AudioNode; via: DelayNode; to: AudioNode }
 
 /**
- * 사이드체인을 다시 잇는다 (`PARITY_ROUND2.md` 7). 앞서 이은 것을 모두 끊고, 체인들이 원하는 감지 소스
+ * 사이드체인을 다시 잇는다 (`PARITY_ROUND2.md` 7·17). 앞서 이은 것을 모두 끊고, 체인들이 원하는 감지 소스
  * (트랙 끝 = 페이더·이펙트 뒤)를 각 Rust 노드의 **둘째 입력**에 잇는다. 자기 자신이 소스면 잇지 않는다.
- * 두 트랙이 서로를 감지하면 지연 없는 고리가 되어 브라우저가 둘 다 무음으로 만든다 — 그런 짝은 건너뛴다.
+ *
+ * 감지 경로는 언제나 **지연 노드**를 지난다. 두 트랙이 서로를 감지하면 그래프에 고리가 생기는데,
+ * Web Audio 는 고리 안에 지연 노드가 있어야 허용한다(그 지연을 한 블록 = 128샘플로 맞춘다).
+ * 고리가 아니면 지연은 0 이라 감지가 늦지 않는다.
  */
 export function wireSidechains(
   owners: { owner: string; chain: EffectChain }[],
@@ -587,17 +590,19 @@ export function wireSidechains(
   previous: readonly KeyConnection[],
 ): KeyConnection[] {
   for (const c of previous) {
-    try { c.from.disconnect(c.to, 0, 1); } catch { /* 이미 끊겼다 */ }
+    try { c.from.disconnect(c.via); } catch { /* 이미 끊겼다 */ }
+    try { c.via.disconnect(); } catch { /* 이미 끊겼다 */ }
   }
   const wants = owners.flatMap(({ owner, chain }) => (chain.keyed ?? []).map((k) => ({ owner, ...k })));
-  const pairs = new Set(wants.map((w) => `${w.source}>${w.owner}`));
   const out: KeyConnection[] = [];
   for (const w of wants) {
-    if (w.source === w.owner || pairs.has(`${w.owner}>${w.source}`)) continue;
+    if (w.source === w.owner) continue;
     const from = sourceOf(w.source);
     if (!from) continue;
-    from.connect(w.node, 0, 1);
-    out.push({ from, to: w.node });
+    const via = from.context.createDelay(0.01);
+    via.delayTime.value = 0;
+    from.connect(via).connect(w.node, 0, 1);
+    out.push({ from, via, to: w.node });
   }
   return out;
 }

@@ -5,7 +5,7 @@
  * 세기 늘리기/줄이기 · 사람처럼(무작위). 전부 순수 함수, 선택한 음에만 작용한다.
  */
 
-import type { MusicalKey, Note, NoteId, Project, TrackId } from '../model/project.ts';
+import type { Articulation, MusicalKey, Note, NoteId, Project, TrackId } from '../model/project.ts';
 import { tonicSemitone } from '../model/pitch.ts';
 import { createClip, newNoteId } from '../model/factory.ts';
 import { addTrack, EditError, findNote } from './edits.ts';
@@ -218,5 +218,22 @@ export function transformNotes(project: Project, ids: readonly NoteId[], t: Tran
       default:
         return note;
     }
+  });
+}
+
+/**
+ * 악보 기호 (`PARITY_ROUND2.md` 22) — 고른 음들의 아티큘레이션·성부·가사. `null` 은 지운다.
+ */
+export function setNoteMarks(
+  project: Project,
+  ids: readonly NoteId[],
+  patch: { articulation?: Articulation | null; voice?: 1 | 2; lyric?: string | null },
+): Project {
+  return mapSelected(project, ids, (note) => {
+    const next = { ...note };
+    if (patch.articulation !== undefined) { if (patch.articulation) next.articulation = patch.articulation; else delete next.articulation; }
+    if (patch.voice !== undefined) { if (patch.voice === 2) next.voice = 2; else delete next.voice; }
+    if (patch.lyric !== undefined) { const l = patch.lyric?.trim(); if (l) next.lyric = l.slice(0, 40); else delete next.lyric; }
+    return next;
   });
 }
