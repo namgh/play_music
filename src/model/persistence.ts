@@ -173,6 +173,7 @@ function parseClip(value: unknown, seen: Set<string>): Clip {
     origin: origin(raw.origin),
     locked: bool(raw.locked, false),
     ...(raw.muted == null ? {} : { muted: bool(raw.muted, false) }),
+    ...(typeof raw.aliasOf === 'string' && raw.aliasOf.startsWith('clp_') ? { aliasOf: raw.aliasOf as ClipId } : {}),
     ...(raw.color == null ? {} : { color: str(raw.color, 'j1') }),
     notes: asArray(raw.notes ?? [], '음 목록').map((note) => parseNote(note, seen)),
     ...(raw.audio == null ? {} : (() => {

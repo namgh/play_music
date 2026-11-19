@@ -145,6 +145,11 @@ export interface Clip {
    * 바꿔 넣을 후보다 (`src/editor/recording.ts`)
    */
   takes?: Take[];
+  /**
+   * 에일리어스 (Logic 리전 에일리어스, `PARITY_ROUND2.md` 10) — 이 클립은 원본의 음을 그대로 따른다.
+   * `notes` 는 원본에서 늘 다시 채워진다(`src/editor/aliases.ts`) — 그래서 재생·내보내기는 에일리어스를 몰라도 된다
+   */
+  aliasOf?: ClipId;
 }
 
 /** 라이브 루프 칸 — 트랙 하나의 반복 조각 */

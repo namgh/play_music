@@ -543,6 +543,17 @@ try {
   const fb20 = await ev(`document.body.innerText.match(/방금 연주 \\d+음을 담았습니다|담을 [^\\n]*/)?.[0] ?? ''`);
   record('Flashback — 녹음 없이 친 연주를 담기', /방금 연주 [1-9]/.test(fb20), fb20);
 
+  // 20c2. 리전 에일리어스 — 고른 클립 뒤에 원본을 따르는 복사, 음 수가 같다
+  await clickEl(byText('에일리어스'));
+  await sleep(500);
+  const alias20 = await ev(`(() => { const p = JSON.parse(localStorage.getItem('project-autosave-v1')); const d = p.project ?? p; for (const t of d.tracks) for (const c of t.clips) if (c.aliasOf) { const src = t.clips.find((x) => x.id === c.aliasOf) ?? d.tracks.flatMap((x) => x.clips).find((x) => x.id === c.aliasOf); return c.label + ':' + c.notes.length + '/' + (src?.notes.length ?? -1); } return ''; })()`);
+  const m20 = /:(\d+)\/(\d+)$/.exec(alias20);
+  record('리전 에일리어스 — 원본과 같은 음', !!m20 && m20[1] === m20[2] && Number(m20[1]) > 0, alias20 || '안 생김');
+  // 만든 에일리어스가 골라져 있다 — 진짜 복사로 바꿔 둔다 (뒤 점검이 음 수를 센다)
+  await clickEl(byText('진짜 복사로'));
+  await sleep(400);
+  const real20 = await ev(`(() => { const p = JSON.parse(localStorage.getItem('project-autosave-v1')); const d = p.project ?? p; return d.tracks.flatMap((t) => t.clips).filter((c) => c.aliasOf).length; })()`);
+  record('에일리어스 → 진짜 복사', real20 === 0, `남은 에일리어스 ${real20}`);
   // 20d. 바운스 인 플레이스 · 프리즈 — 트랙을 오디오로 렌더해 놓고, 얼렸다 녹인다
   const tracksBefore20 = await ev(`(() => { const p = JSON.parse(localStorage.getItem('project-autosave-v1')); return (p.project ?? p).tracks.length; })()`);
   await clickEl(byText('바운스'));

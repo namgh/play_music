@@ -3,6 +3,7 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 import type { NoteId, Project } from '../model/project.ts';
 import { History } from './history.ts';
 import { protectedChange } from './tracks.ts';
+import { syncAliases } from './aliases.ts';
 
 /**
  * 편집 상태를 한 곳에 모은다. 컴포넌트는 프로젝트를 직접 고치지 않고 여기를 통한다.
@@ -37,8 +38,9 @@ export function useProjectEditor(initial: Project, options: { onBlocked?: (reaso
     return false;
   }, [history]);
 
-  const commit = useCallback((next: Project) => { if (allowed(next)) sync(history.commit(next)); }, [allowed, history, sync]);
-  const preview = useCallback((next: Project) => { if (allowed(next)) sync(history.replace(next)); }, [allowed, history, sync]);
+  // 에일리어스는 편집 한 번마다 원본과 맞춘다 (`aliases.ts`) — 에일리어스가 없으면 그대로
+  const commit = useCallback((raw: Project) => { const next = syncAliases(history.state, raw); if (allowed(next)) sync(history.commit(next)); }, [allowed, history, sync]);
+  const preview = useCallback((raw: Project) => { const next = syncAliases(history.state, raw); if (allowed(next)) sync(history.replace(next)); }, [allowed, history, sync]);
 
   /** 드래그처럼 중간 상태를 미리 보여준 뒤 마지막에 한 번만 커밋하는 흐름 */
   const commitCurrent = useCallback(() => {

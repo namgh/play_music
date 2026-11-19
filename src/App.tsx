@@ -32,6 +32,7 @@ import { VideoPanel } from './ui/VideoPanel.tsx';
 import { putAsset } from './audio/assets.ts';
 import { importAudioBytes, MicRecorder, placeAudio } from './ui/audioUi.ts';
 import { bounceInPlace, freezeTrack, unfreezeTrack } from './editor/freeze.ts';
+import { aliasToCopy, makeAlias } from './editor/aliases.ts';
 import { applyPunch, commitRecording, compFromTake, NoteRecorder, playedToNotes, punchAudioWindow, switchTake } from './editor/recording.ts';
 import { SettingsPanel } from './ui/SettingsPanel.tsx';
 import { useMidiInput } from './audio/midiInput.ts';
@@ -1369,6 +1370,23 @@ export function App() {
             title="고른 클립을 곡 끝(또는 다음 클립)까지 되풀이합니다"
             className={TOOL_BTN}
           >반복</button>
+          <button
+            type="button"
+            disabled={!clip || !!clip.audio}
+            onClick={() => runEdit(() => {
+              if (clip!.aliasOf) {
+                editor.commit(aliasToCopy(project, clip!.id));
+                setNotice('에일리어스를 보통 클립으로 바꿨습니다 — 이제 원본과 따로 고쳐집니다');
+                return;
+              }
+              const next = makeAlias(project, clip!.id);
+              editor.commit(next.project);
+              setSelectedClipId(next.clipId);
+              setNotice('에일리어스를 만들었습니다 — 원본이나 에일리어스 어느 쪽을 고쳐도 같이 바뀝니다');
+            })}
+            title={clip?.aliasOf ? '이 에일리어스를 보통 클립(진짜 복사)으로 바꿉니다' : '에일리어스 — 바로 뒤에, 원본을 고치면 같이 바뀌는 복사를 놓습니다'}
+            className={TOOL_BTN}
+          >{clip?.aliasOf ? '진짜 복사로' : '에일리어스'}</button>
           <button
             type="button"
             disabled={!clip}
