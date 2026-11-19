@@ -262,6 +262,13 @@ export interface Track {
   hidden?: boolean;
   /** 보호 (Logic Protect). 켜져 있으면 클립·음·오토메이션을 고칠 수 없다 */
   locked?: boolean;
+  /**
+   * 프리즈 (Logic Freeze, `PARITY_ROUND2.md` 9) — 이 트랙을 오디오로 렌더해 둔 트랙과, 얼리기 전 상태.
+   * 얼린 동안 원래 트랙은 꺼지고(뮤트) 보호된다. 풀면 렌더 트랙을 지우고 되돌린다
+   */
+  frozen?: { audioTrackId: TrackId; wasMuted: boolean; wasLocked: boolean };
+  /** 이 트랙이 어떤 트랙의 프리즈 렌더인가 */
+  freezeOf?: TrackId;
   /** 속한 트랙 스택. 스택 멤버는 목록에서 붙어 있다 */
   stackId?: StackId;
   /** 출력. 없으면 마스터, 있으면 그 버스(Aux)로 간다 — 합 스택도 이것이다 */

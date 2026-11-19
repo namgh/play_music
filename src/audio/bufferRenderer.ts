@@ -301,7 +301,7 @@ export class BufferRenderer implements AudioRenderer {
    */
   async exportAudio(options: ExportOptions): Promise<ExportResult> {
     if (!this.project) throw new Error('setProject 가 먼저 호출돼야 한다');
-    const project = this.project;
+    const project = options.project ?? this.project;
     const wasm = await this.wasmForRate(options.sampleRate);
 
     const lengthSec =

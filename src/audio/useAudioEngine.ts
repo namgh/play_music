@@ -18,6 +18,8 @@ import { WasmVoiceEngine } from './voice/wasmEngine.ts';
 import wasmUrl from '../generated/dsp.wasm?url';
 import fxUrl from '../generated/fx.wasm?url';
 import { setFxBytes } from './fxRuntime.ts';
+import { putAsset } from './assets.ts';
+import { soloRenderProject } from '../editor/freeze.ts';
 import { encodeWav, peakAmplitude } from './wav.ts';
 import { reportClipping, type ClipReport } from './headroom.ts';
 
@@ -327,6 +329,30 @@ export function useAudioEngine(
     }
   }, [ensure]);
 
+  /**
+   * 트랙 하나를 인서트까지 거친 소리로 (바운스 인 플레이스·프리즈, `PARITY_ROUND2.md` 9) — 에셋 저장소에 넣고
+   * 에셋 id 를 돌려준다. 곡 끝까지 + 꼬리, 마스터 이펙트는 빼고.
+   */
+  const renderTrack = useCallback(async (trackId: TrackId): Promise<{ assetId: string; seconds: number } | null> => {
+    setExporting(true);
+    try {
+      const renderer = await ensure();
+      renderer.setProject(projectRef.current);
+      const project = soloRenderProject(projectRef.current, trackId);
+      const result = await renderer.exportAudio({ sampleRate: 48000, stems: false, project });
+      const channels = result.buffers[0]?.channels;
+      if (!channels || channels.length === 0) throw new Error('렌더 결과가 비었다');
+      const wav = encodeWav(channels, { sampleRate: result.sampleRate, bitDepth: 24 });
+      const assetId = await putAsset(wav.slice().buffer as ArrayBuffer);
+      return { assetId, seconds: channels[0]!.length / result.sampleRate };
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      return null;
+    } finally {
+      setExporting(false);
+    }
+  }, [ensure]);
+
   const bounce = useCallback(async (options: BounceOptions = DEFAULT_BOUNCE): Promise<BounceReport | null> => {
     setExporting(true);
     try {
@@ -385,6 +411,6 @@ export function useAudioEngine(
 
   return {
     state, playheadTick, error, exporting, engineKind, clip, readLevel, readEffectMeters, compensationSamples,
-    play, stop, audition, liveOn, liveOff, previewInstrument, perform, exportWav, bounce, renderMix, setMetronome,
+    play, stop, audition, liveOn, liveOff, renderTrack, previewInstrument, perform, exportWav, bounce, renderMix, setMetronome,
   };
 }

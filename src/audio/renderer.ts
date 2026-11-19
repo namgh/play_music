@@ -46,6 +46,8 @@ export interface ExportOptions {
   sampleRate: number;
   /** 트랙별로 따로 뽑을지 (스템 내보내기) */
   stems: boolean;
+  /** 지금 곡 대신 이 곡을 그린다 — 재생 중인 엔진을 건드리지 않고 트랙 하나만 렌더할 때(바운스·프리즈) */
+  project?: Project;
 }
 
 export interface ExportResult {

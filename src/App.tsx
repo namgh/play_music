@@ -31,6 +31,7 @@ import { AudioEditor } from './ui/AudioEditor.tsx';
 import { VideoPanel } from './ui/VideoPanel.tsx';
 import { putAsset } from './audio/assets.ts';
 import { importAudioBytes, MicRecorder, placeAudio } from './ui/audioUi.ts';
+import { bounceInPlace, freezeTrack, unfreezeTrack } from './editor/freeze.ts';
 import { applyPunch, commitRecording, compFromTake, NoteRecorder, playedToNotes, punchAudioWindow, switchTake } from './editor/recording.ts';
 import { SettingsPanel } from './ui/SettingsPanel.tsx';
 import { useMidiInput } from './audio/midiInput.ts';
@@ -1431,6 +1432,42 @@ export function App() {
             title="고른 트랙을 악기·이펙트·클립째 복제해 바로 아래에 놓습니다"
             className={TOOL_BTN}
           >트랙 복제</button>
+          <button
+            type="button"
+            disabled={!track || track.kind === 'audio' || !!track.freezeOf || engine.exporting}
+            onClick={() => void (async () => {
+              const t = track!;
+              setNotice(`"${t.name}" 을 오디오로 렌더하는 중…`);
+              const audio = await engine.renderTrack(t.id);
+              if (!audio) return;
+              runEdit(() => {
+                const next = bounceInPlace(projectRef.current, t.id, audio);
+                editor.commit(next.project);
+                setSelectedTrackId(next.trackId);
+                setNotice(`"${t.name}" 을 오디오 트랙으로 바운스했습니다 — 원래 트랙은 뮤트해 두었습니다`);
+              });
+            })()}
+            title="바운스 인 플레이스 — 고른 트랙을 인서트까지 거친 소리로 렌더해 바로 아래 오디오 트랙에 놓고, 원래 트랙은 뮤트"
+            className={TOOL_BTN}
+          >바운스</button>
+          <button
+            type="button"
+            disabled={!track || track.kind === 'audio' || !!track.freezeOf || engine.exporting}
+            aria-pressed={!!track?.frozen}
+            onClick={() => void (async () => {
+              const t = track!;
+              if (t.frozen) { runEdit(() => { editor.commit(unfreezeTrack(projectRef.current, t.id)); setNotice(`"${t.name}" 을 녹였습니다`); }); return; }
+              setNotice(`"${t.name}" 을 얼리는 중…`);
+              const audio = await engine.renderTrack(t.id);
+              if (!audio) return;
+              runEdit(() => {
+                editor.commit(freezeTrack(projectRef.current, t.id, audio));
+                setNotice(`"${t.name}" 을 얼렸습니다 — 렌더한 소리로 재생해 가볍습니다. 고치려면 녹이세요`);
+              });
+            })()}
+            title="프리즈 — 악기·인서트를 오디오로 구워 CPU 를 아낍니다. 얼린 동안은 고칠 수 없고, 다시 누르면 녹습니다"
+            className={`${TOOL_BTN} ${track?.frozen ? 'border-ink bg-ink text-body' : ''}`}
+          >{track?.frozen ? '❄ 녹이기' : '❄ 프리즈'}</button>
           {(['up', 'down'] as const).map((dir) => {
             const index = track ? project.tracks.indexOf(track) : -1;
             const to = dir === 'up' ? index - 1 : index + 1;

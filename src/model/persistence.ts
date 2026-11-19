@@ -256,6 +256,14 @@ function parseTrack(value: unknown, seen: Set<string>): Track {
     ...(raw.hidden == null ? {} : { hidden: bool(raw.hidden, false) }),
     ...(raw.locked == null ? {} : { locked: bool(raw.locked, false) }),
     ...(typeof raw.stackId === 'string' && raw.stackId.startsWith('stk_') ? { stackId: raw.stackId as StackId } : {}),
+    ...(typeof raw.freezeOf === 'string' && raw.freezeOf.startsWith('trk_') ? { freezeOf: raw.freezeOf as TrackId } : {}),
+    ...(raw.frozen && typeof raw.frozen === 'object' && typeof (raw.frozen as { audioTrackId?: unknown }).audioTrackId === 'string' ? {
+      frozen: {
+        audioTrackId: (raw.frozen as { audioTrackId: string }).audioTrackId as TrackId,
+        wasMuted: (raw.frozen as { wasMuted?: unknown }).wasMuted === true,
+        wasLocked: (raw.frozen as { wasLocked?: unknown }).wasLocked === true,
+      },
+    } : {}),
     ...(typeof raw.output === 'string' && raw.output.startsWith('bus_') ? { output: raw.output as BusId } : {}),
     ...(raw.sends == null ? {} : {
       sends: asArray(raw.sends, '센드').flatMap((entry) => {

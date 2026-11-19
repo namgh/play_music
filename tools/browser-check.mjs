@@ -543,6 +543,21 @@ try {
   const fb20 = await ev(`document.body.innerText.match(/방금 연주 \\d+음을 담았습니다|담을 [^\\n]*/)?.[0] ?? ''`);
   record('Flashback — 녹음 없이 친 연주를 담기', /방금 연주 [1-9]/.test(fb20), fb20);
 
+  // 20d. 바운스 인 플레이스 · 프리즈 — 트랙을 오디오로 렌더해 놓고, 얼렸다 녹인다
+  const tracksBefore20 = await ev(`(() => { const p = JSON.parse(localStorage.getItem('project-autosave-v1')); return (p.project ?? p).tracks.length; })()`);
+  await clickEl(byText('바운스'));
+  let bounced = '';
+  for (let i = 0; i < 60 && !bounced; i++) { await sleep(500); bounced = await ev(`(() => { const p = JSON.parse(localStorage.getItem('project-autosave-v1')); const d = p.project ?? p; const t = d.tracks.find((x) => x.name.endsWith('(바운스)')); return t ? t.name + ':' + (t.clips[0]?.audio?.assetSec ?? 0).toFixed(1) + '초' : ''; })()`); }
+  record('바운스 인 플레이스 — 오디오 트랙이 생김', bounced.length > 0, bounced || '안 생김');
+  await clickEl(`[...document.querySelectorAll('[data-track]')][0]?.querySelector('button, select') ?? null`);
+  await clickEl(byText('❄ 프리즈'));
+  let frozen20 = '';
+  for (let i = 0; i < 60 && !frozen20; i++) { await sleep(500); frozen20 = await ev(`(() => { const p = JSON.parse(localStorage.getItem('project-autosave-v1')); const d = p.project ?? p; const t = d.tracks.find((x) => x.frozen); return t ? t.name + ' → ' + d.tracks.find((x) => x.id === t.frozen.audioTrackId)?.name : ''; })()`); }
+  await clickEl(byText('❄ 녹이기'));
+  await sleep(500);
+  const thawed20 = await ev(`(() => { const p = JSON.parse(localStorage.getItem('project-autosave-v1')); const d = p.project ?? p; return d.tracks.some((x) => x.frozen || x.freezeOf) ? '남음' : '녹음'; })()`);
+  record('프리즈 · 녹이기', frozen20.length > 0 && thawed20 === '녹음', `${frozen20 || '안 얼림'} · ${thawed20} · 트랙 ${tracksBefore20}개 시작`);
+
   const totalNotes = () => ev(`(() => { const p = JSON.parse(localStorage.getItem('project-autosave-v1')); const d = p.project ?? p; return d.tracks.reduce((n, t) => n + t.clips.reduce((m, c) => m + c.notes.length, 0), 0); })()`);
   const before20 = await totalNotes();
   await clickEl(`document.querySelector('[data-play-surface] button[aria-pressed]')`);
