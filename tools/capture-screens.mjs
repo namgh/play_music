@@ -388,6 +388,25 @@ export const SCREENS = [
     },
   },
 
+  // --- 22 · 2차 채우기 (PARITY_ROUND2.md) ---
+  {
+    name: 'a22-play-chords', area: 22, title: '연주 — 코드 스트립 (조성의 1~7도, 윗칸 화음·아랫칸 베이스, 7th) · 누르는 동안 울림',
+    run: async (b) => {
+      await b.clickEl(byLabel('로즈 선택'));
+      await b.clickEl(byLabel('건반'));
+      await b.clickEl(`[...document.querySelectorAll('[role=tab]')].find((x) => x.textContent === '코드 스트립')`);
+      await sleep(300);
+    },
+  },
+  {
+    name: 'a22-play-pads', area: 22, title: '연주 — 드럼 패드 (곡의 드럼 트랙이 패드 하나씩)',
+    run: async (b) => {
+      await b.clickEl(byLabel('킥 선택'));
+      await b.clickEl(byLabel('건반'));
+      await b.clickEl(`[...document.querySelectorAll('[role=tab]')].find((x) => x.textContent === '드럼 패드')`);
+      await sleep(300);
+    },
+  },
 ];
 
 /** 데모 곡의 한 트랙에 이펙트를 넣고 다시 열어 믹서로 간다 (기본값은 앱의 선언에서 채워진다) */

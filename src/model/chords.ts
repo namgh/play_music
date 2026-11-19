@@ -142,3 +142,53 @@ export function analyzeChords(project: Project, options: AnalyzeOptions): Omit<C
   }
   return out;
 }
+
+// ---------------------------------------------------------------------------
+// 코드 스트립 (Logic Play Surface 의 Chord Strips) — 조성의 1~7도 화음을 누르기 좋게
+// ---------------------------------------------------------------------------
+
+const MAJOR_STEPS = [0, 2, 4, 5, 7, 9, 11];
+const MINOR_STEPS = [0, 2, 3, 5, 7, 8, 10];
+const MAJOR_TRIADS: ChordQuality[] = ['maj', 'min', 'min', 'maj', 'maj', 'min', 'dim'];
+const MINOR_TRIADS: ChordQuality[] = ['min', 'dim', 'maj', 'min', 'min', 'maj', 'maj'];
+const MAJOR_SEVENTHS: ChordQuality[] = ['maj7', 'min7', 'min7', 'maj7', '7', 'min7', 'm7b5'];
+const MINOR_SEVENTHS: ChordQuality[] = ['min7', 'm7b5', 'maj7', 'min7', 'min7', 'maj7', '7'];
+const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII'];
+
+export interface DiatonicChord {
+  degree: string;
+  root: number;
+  quality: ChordQuality;
+  label: string;
+}
+
+/** 조성(으뜸음·장단) → 1~7도 화음 (세븐스 선택) */
+export function diatonicChords(key: { tonic: string; mode: 'major' | 'minor' }, sevenths = false): DiatonicChord[] {
+  const tonic = tonicSemitone(key.tonic) ?? 0;
+  const steps = key.mode === 'minor' ? MINOR_STEPS : MAJOR_STEPS;
+  const qualities = key.mode === 'minor' ? (sevenths ? MINOR_SEVENTHS : MINOR_TRIADS) : (sevenths ? MAJOR_SEVENTHS : MAJOR_TRIADS);
+  return steps.map((s, i) => {
+    const root = (tonic + s) % 12;
+    const quality = qualities[i]!;
+    const minorish = quality === 'min' || quality === 'min7' || quality === 'dim' || quality === 'm7b5';
+    return { degree: minorish ? ROMAN[i]!.toLowerCase() : ROMAN[i]!, root, quality, label: chordLabel({ root: NOTE_NAMES[root]!, quality, bass: null }) };
+  });
+}
+
+/**
+ * 화음을 건반에 놓는다 — 구성음을 `center` 근처(기본 C4~B4)에 모아 손 모양이 크게 뛰지 않게.
+ * 반환은 오름차순 MIDI. 베이스는 따로 `root + 36`(C2 대) 근처
+ */
+export function voiceChord(root: number, quality: ChordQuality, center = 60): number[] {
+  return CHORD_INTERVALS[quality]
+    .map((iv) => {
+      let m = center - 6 + (((root + iv - (center - 6)) % 12) + 12) % 12;
+      if (m < center - 6) m += 12;
+      return m;
+    })
+    .sort((a, b) => a - b);
+}
+
+export function bassNote(root: number): number {
+  return 36 + root;
+}

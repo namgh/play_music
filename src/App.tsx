@@ -1509,6 +1509,15 @@ export function App() {
       )}
       {view === 'editor' && playOpen && (
         <PlaySurface
+          musicalKey={project.key}
+          pads={project.tracks.filter((t) => INSTRUMENT_CATALOG.find((e) => e.id === t.instrumentId)?.category === '드럼').map((t) => ({ trackId: t.id, name: t.name }))}
+          onPad={(trackId, down, velocity) => {
+            // 드럼 트랙이 실제로 쓰는 음 높이로 친다 (없으면 C4) — 한 악기 = 한 패드
+            const t = project.tracks.find((x) => x.id === trackId);
+            const midis = t?.clips.flatMap((c) => c.notes.map((n) => n.pitch.midi)) ?? [];
+            const midi = midis.length ? midis.sort((a, b) => midis.filter((m) => m === b).length - midis.filter((m) => m === a).length)[0]! : 60;
+            if (down) void engine.liveOn(trackId as TrackId, midi, velocity); else engine.liveOff(trackId as TrackId, midi);
+          }}
           onPlay={(midi, velocity) => midiNoteRef.current(midi, velocity)}
           onRelease={(midi) => midiOffRef.current(midi)}
           onStep={(midi, velocity, chord) => {

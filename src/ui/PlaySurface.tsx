@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 
 import { keyLabelFor, typingAction, VELOCITY_STEPS } from './musicalTyping.ts';
 import { pitchName } from '../model/pitch.ts';
+import type { MusicalKey } from '../model/pitch.ts';
+import { bassNote, diatonicChords, voiceChord } from '../model/chords.ts';
 
 /**
  * 연주 칸 — 화면 건반 + 컴퓨터 건반 연주 + 스텝 입력 (Logic Play Surface · Musical Typing ·
@@ -21,11 +23,21 @@ export interface PlaySurfaceProps {
   /** 스텝 입력에서 쉼표(빈 자리) — 커서만 음 길이만큼 */
   onRest: () => void;
   onClose: () => void;
+  /** 코드 스트립의 조성 (없으면 C 장조) */
+  musicalKey?: MusicalKey | null;
+  /** 드럼 패드 — 곡의 드럼 트랙 하나가 패드 하나 */
+  pads?: { trackId: string; name: string }[];
+  onPad?: (trackId: string, down: boolean, velocity: number) => void;
 }
+
+type Mode = 'keys' | 'chords' | 'pads';
 
 const WHITE = [0, 2, 4, 5, 7, 9, 11];
 
-export function PlaySurface({ onPlay, onRelease, onStep, onRest, onClose }: PlaySurfaceProps) {
+export function PlaySurface({ onPlay, onRelease, onStep, onRest, onClose, musicalKey, pads = [], onPad }: PlaySurfaceProps) {
+  const [mode, setMode] = useState<Mode>('keys');
+  const [sevenths, setSevenths] = useState(false);
+  const [held, setHeld] = useState<string | null>(null);
   const [octave, setOctave] = useState(4);
   const [velIndex, setVelIndex] = useState(4);
   const [step, setStep] = useState(false);
@@ -88,8 +100,15 @@ export function PlaySurface({ onPlay, onRelease, onStep, onRest, onClose }: Play
   return (
     <div className="relative z-20 shrink-0 border-t border-rule bg-panel px-5 py-3" data-play-surface>
       <div className="mb-2 flex items-center gap-2">
-        <span className="font-disp text-sm text-ink">건반</span>
-        <span className="text-[11px] text-ink-3">자판으로 연주 — A~' 흰 건반 · W E T Y U O P 검은 건반 · Z/X 옥타브 · C/V 세기</span>
+        <div className="flex rounded-md border border-rule bg-body p-0.5" role="tablist" aria-label="연주 방식">
+          {([['keys', '건반'], ['chords', '코드 스트립'], ['pads', '드럼 패드']] as const).map(([m, label]) => (
+            <button key={m} type="button" role="tab" aria-selected={mode === m} onClick={() => setMode(m)}
+              className={`h-6 rounded px-2.5 text-xs ${mode === m ? 'bg-ink text-body' : 'text-ink-2'}`}>{label}</button>
+          ))}
+        </div>
+        <span className="text-[11px] text-ink-3">{mode === 'keys'
+          ? "자판으로 연주 — A~' 흰 건반 · W E T Y U O P 검은 건반 · Z/X 옥타브 · C/V 세기"
+          : mode === 'chords' ? '윗칸 = 화음, 아랫칸 = 베이스 · 누르는 동안 울린다' : '곡의 드럼 트랙이 패드 하나씩'}</span>
         <span className="flex-1" />
         <button type="button" onClick={() => setOctave((o) => Math.max(0, o - 1))} className="h-7 rounded-md border border-rule bg-body px-2 text-xs" aria-label="옥타브 내리기">Z ◀</button>
         <span className="w-14 text-center font-num text-[15px] text-ink" aria-label="옥타브">C{octave}</span>
@@ -105,7 +124,53 @@ export function PlaySurface({ onPlay, onRelease, onStep, onRest, onClose }: Play
         >{step ? '스텝 입력 중' : '스텝 입력'}</button>
         <button type="button" onClick={onClose} className="h-7 rounded-md border border-rule bg-body px-2.5 text-xs text-ink-2">닫기</button>
       </div>
-      <div className="relative h-20 select-none" role="group" aria-label="화면 건반">
+      {mode === 'chords' && (() => {
+        const key = musicalKey ?? { tonic: 'C', mode: 'major' as const };
+        const chords = diatonicChords(key, sevenths);
+        const press = (id: string, notes: number[]) => {
+          setHeld(id);
+          notes.forEach((n, i) => strike(n, i < notes.length - 1));
+        };
+        const release = (id: string, notes: number[]) => {
+          if (held !== id) return;
+          setHeld(null);
+          for (const n of notes) onRelease?.(n);
+        };
+        return (
+          <div className="flex h-20 select-none gap-1.5" role="group" aria-label="코드 스트립" data-chord-strips>
+            {chords.map((c) => {
+              const upper = voiceChord(c.root, c.quality);
+              const bass = [bassNote(c.root)];
+              const zone = (id: string, notes: number[], cls: string, text: string) => (
+                <button type="button" aria-label={`${c.label} ${id.endsWith('b') ? '베이스' : '화음'}`}
+                  onPointerDown={() => press(id, notes)} onPointerUp={() => release(id, notes)} onPointerLeave={() => release(id, notes)}
+                  className={`${cls} ${held === id ? 'bg-acc text-acc-ink' : ''}`}>{text}</button>
+              );
+              return (
+                <div key={c.degree} className="flex flex-1 flex-col gap-1">
+                  {zone(`${c.degree}c`, upper, 'flex flex-[3] flex-col items-center justify-center rounded-md border border-rule bg-body text-ink', `${c.label}`)}
+                  {zone(`${c.degree}b`, bass, 'flex-1 rounded-md border border-rule bg-keyw text-[10px] text-ink-3', c.degree)}
+                </div>
+              );
+            })}
+            <button type="button" aria-pressed={sevenths} onClick={() => setSevenths((v) => !v)}
+              className={`w-14 rounded-md border text-xs ${sevenths ? 'border-ink bg-ink text-body' : 'border-rule bg-body text-ink-2'}`}>7th</button>
+          </div>
+        );
+      })()}
+      {mode === 'pads' && (
+        <div className="grid h-20 select-none grid-cols-8 gap-1.5" role="group" aria-label="드럼 패드" data-drum-pads>
+          {pads.length === 0 && <span className="col-span-8 self-center text-xs text-ink-3">곡에 드럼 트랙이 없습니다 — 트랙을 추가할 때 드럼 악기를 고르세요</span>}
+          {pads.slice(0, 16).map((p) => (
+            <button key={p.trackId} type="button" aria-label={`${p.name} 패드`}
+              onPointerDown={() => { setHeld(p.trackId); onPad?.(p.trackId, true, velocity); }}
+              onPointerUp={() => { setHeld(null); onPad?.(p.trackId, false, velocity); }}
+              onPointerLeave={() => { if (held === p.trackId) { setHeld(null); onPad?.(p.trackId, false, velocity); } }}
+              className={`rounded-lg border text-xs font-semibold ${held === p.trackId ? 'border-acc bg-acc text-acc-ink' : 'border-rule bg-body text-ink'}`}>{p.name}</button>
+          ))}
+        </div>
+      )}
+      {mode === 'keys' && <div className="relative h-20 select-none" role="group" aria-label="화면 건반">
         {whites.map((m, i) => (
           <button
             key={m}
@@ -139,7 +204,7 @@ export function PlaySurface({ onPlay, onRelease, onStep, onRest, onClose }: Play
             >{keyLabelFor(black, octave) ?? ''}</button>
           );
         })}
-      </div>
+      </div>}
     </div>
   );
 }

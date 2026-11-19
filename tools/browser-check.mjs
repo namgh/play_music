@@ -475,6 +475,24 @@ try {
   await press('KeyA');
   for (let i = 0; i < 8; i++) { await sleep(100); peak20 = Math.max(peak20, await ev('window.__peak()')); }
   record('자판으로 연주 (A = C4)', peak20 > 0.001, `피크 ${peak20.toFixed(4)}`);
+  // 20b. 코드 스트립 — 누르고 있는 동안 화음이 울린다, 드럼 패드 탭이 있다
+  await clickEl(`[...document.querySelectorAll('[role=tab]')].find((b) => b.textContent === '코드 스트립')`);
+  await sleep(200);
+  const strip = await centerOf(`document.querySelector('[data-chord-strips] button')`);
+  let peak20b = 0;
+  if (strip) {
+    await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: strip.x, y: strip.y, button: 'left', clickCount: 1 });
+    for (let i = 0; i < 10; i++) { await sleep(100); peak20b = Math.max(peak20b, await ev('window.__peak()')); }
+    await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: strip.x, y: strip.y, button: 'left', clickCount: 1 });
+  }
+  const label20b = await ev(`document.querySelector('[data-chord-strips] button')?.getAttribute('aria-label') ?? ''`);
+  record('코드 스트립 — 1도 화음 누르는 동안 소리', peak20b > 0.001 && label20b.length > 0, `${label20b} · 피크 ${peak20b.toFixed(4)}`);
+  await clickEl(`[...document.querySelectorAll('[role=tab]')].find((b) => b.textContent === '드럼 패드')`);
+  await sleep(200);
+  const pads20 = await ev(`document.querySelector('[data-drum-pads]')?.innerText.replace(/\\n/g, ' ') ?? ''`);
+  record('드럼 패드 화면', pads20.length > 0, pads20.slice(0, 80));
+  await clickEl(`[...document.querySelectorAll('[role=tab]')].find((b) => b.textContent === '건반')`);
+
   const totalNotes = () => ev(`(() => { const p = JSON.parse(localStorage.getItem('project-autosave-v1')); const d = p.project ?? p; return d.tracks.reduce((n, t) => n + t.clips.reduce((m, c) => m + c.notes.length, 0), 0); })()`);
   const before20 = await totalNotes();
   await clickEl(`document.querySelector('[data-play-surface] button[aria-pressed]')`);
