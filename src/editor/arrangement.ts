@@ -479,3 +479,24 @@ export function pasteRange(
   };
   return { ...next, lengthBars: growToFit(next, at + content.length) };
 }
+
+/**
+ * 템포 트랙 (Logic Tempo Track, `PARITY_ROUND2.md` 12) — 화면이 그릴 계단 곡선의 범위.
+ * 곡의 템포보다 위아래로 여유를 두되 너무 납작하지 않게 최소 폭 40 BPM.
+ */
+export function tempoRange(project: Project): { min: number; max: number } {
+  const all = [project.tempo.bpm, ...(project.tempo.changes ?? []).map((c) => c.bpm)];
+  let min = Math.min(...all) - 10;
+  let max = Math.max(...all) + 10;
+  if (max - min < 40) { const mid = (max + min) / 2; min = mid - 20; max = mid + 20; }
+  return { min: Math.max(20, Math.floor(min)), max: Math.min(300, Math.ceil(max)) };
+}
+
+/** 템포 변화 지점 하나를 다른 자리·값으로 (끌기). 틱 0 은 시작 템포 — 값만 바뀐다 */
+export function moveTempoChange(project: Project, fromTick: Ticks, toTick: Ticks, bpm: number): Project {
+  const value = Math.round(Math.min(300, Math.max(20, bpm)) * 10) / 10;
+  if (fromTick === 0) return { ...project, tempo: { ...project.tempo, bpm: value } };
+  const at = Math.max(1, Math.round(toTick));
+  const rest = (project.tempo.changes ?? []).filter((c) => c.tick !== fromTick && c.tick !== at);
+  return { ...project, tempo: { ...project.tempo, changes: [...rest, { tick: at, bpm: value }].sort((a, b) => a.tick - b.tick) } };
+}

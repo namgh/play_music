@@ -341,3 +341,13 @@ test('카운트인 동안 음은 곡 시작 뒤로 밀리고 박은 메트로놈
   s.pump();
   assert.equal(notes[0], 12, '첫 음은 카운트인이 끝나는 순간');
 });
+
+test('템포 트랙 — 범위와 지점 옮기기', async () => {
+  const { tempoRange, moveTempoChange } = await import('./arrangement.ts');
+  const p = createEmptyProject('t');
+  p.tempo = { bpm: 100, changes: [{ tick: 1920, bpm: 140 }] };
+  assert.deepEqual(tempoRange(p), { min: 90, max: 150 });
+  const moved = moveTempoChange(p, 1920, 3840, 132.34);
+  assert.deepEqual(moved.tempo.changes, [{ tick: 3840, bpm: 132.3 }]);
+  assert.equal(moveTempoChange(p, 0, 999, 96).tempo.bpm, 96);
+});

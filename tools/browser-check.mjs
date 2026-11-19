@@ -325,7 +325,8 @@ try {
   // 15. 오토메이션 — 레인 열기, 점 찍기, 팬 대상, 재생 중 쓰기 기록
   const trackName15 = await ev(`document.querySelector('[data-track]').dataset.track`);
   await clickEl(`document.querySelector('[aria-label="${trackName15} 오토메이션"]')`);
-  const lane15 = await ev(`(() => { const e = document.querySelector('[data-automation] > div:last-child'); const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; })()`);
+  // 레인이 화면 밖일 수 있다(글로벌 트랙 줄이 늘었다) — 먼저 보이게
+  const lane15 = await ev(`(() => { const e = document.querySelector('[data-automation] > div:last-child'); e.scrollIntoView({ block: 'center' }); const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; })()`);
   await click(lane15.x + lane15.w * 0.1, lane15.y + lane15.h * 0.2);
   await click(lane15.x + lane15.w * 0.5, lane15.y + lane15.h * 0.8);
   await sleep(300);
@@ -334,7 +335,7 @@ try {
   const target15 = `document.querySelector('[aria-label="${trackName15} 오토메이션 대상"]')`;
   await ev(`(() => { const e = ${target15}; Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(e, 'pan'); e.dispatchEvent(new Event('change', { bubbles: true })); })()`);
   await sleep(200);
-  const lanePan = await ev(`(() => { const e = document.querySelector('[data-automation] > div:last-child'); const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; })()`);
+  const lanePan = await ev(`(() => { const e = document.querySelector('[data-automation] > div:last-child'); e.scrollIntoView({ block: 'center' }); const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; })()`);
   await click(lanePan.x + lanePan.w * 0.3, lanePan.y + lanePan.h * 0.1);
   await sleep(300);
   record('팬 오토메이션', (await auto15()).includes('pan:1'), await auto15());
@@ -543,6 +544,28 @@ try {
   const fb20 = await ev(`document.body.innerText.match(/방금 연주 \\d+음을 담았습니다|담을 [^\\n]*/)?.[0] ?? ''`);
   record('Flashback — 녹음 없이 친 연주를 담기', /방금 연주 [1-9]/.test(fb20), fb20);
 
+  // 20b2. 템포 트랙 — 빈 곳을 누르면 템포 변화, 그 점을 두 번 누르면 지운다
+  const tempoRow = await ev(`(() => { const e = document.querySelector('[data-global="tempo"] > div:last-child'); if (!e) return null; e.scrollIntoView({ block: 'nearest' }); const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; })()`);
+  const tempoCount = () => ev(`(() => { const p = JSON.parse(localStorage.getItem('project-autosave-v1')); return ((p.project ?? p).tempo.changes ?? []).length; })()`);
+  let tempoLog = 'row 없음';
+  if (tempoRow) {
+    const before = await tempoCount();
+    await click(tempoRow.x + tempoRow.w * 0.5, tempoRow.y + tempoRow.h * 0.3);
+    await sleep(400);
+    const added = await tempoCount();
+    const pt = await centerOf(`[...document.querySelectorAll('[data-tempo-point]')].at(-1)`);
+    if (pt) {
+      // 두 번 누르기 = 누르고 떼기 두 번 (둘째는 clickCount 2)
+      for (const n of [1, 2]) {
+        await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: pt.x, y: pt.y, button: 'left', clickCount: n });
+        await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: pt.x, y: pt.y, button: 'left', clickCount: n });
+      }
+    }
+    await sleep(400);
+    tempoLog = `${before} → ${added} → ${await tempoCount()}`;
+  }
+  const [tc0, tc1, tc2] = tempoLog.split(' → ').map(Number);
+  record('템포 트랙 — 누르면 변화, 두 번 누르면 지움', tc1 === tc0 + 1 && tc2 === tc0, tempoLog);
   // 20c1. 스크럽 — 눈금자를 누른 채 끌면 지나가는 음이 들린다
   const rulerS = await ev(`(() => { const e = document.querySelector('[data-ruler]'); e.scrollIntoView({ block: 'nearest' }); const r = e.getBoundingClientRect(); return { x: r.x, y: r.y + r.height / 2, w: r.width }; })()`);
   let peakScrub = 0;

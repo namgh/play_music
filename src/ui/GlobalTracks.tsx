@@ -1,4 +1,6 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
+import { PPQ } from '../model/time.ts';
+import { setTempoChange } from '../editor/edits.ts';
 
 import type { ChordId, ChordQuality, MarkerId, MusicalKey, Project, SectionId } from '../model/project.ts';
 import { CHORD_QUALITIES } from '../model/project.ts';
@@ -8,6 +10,7 @@ import { NOTE_NAMES } from '../model/pitch.ts';
 import { INSTRUMENT_CATALOG } from '../instruments/definitions.ts';
 import type { ProjectEditor } from '../editor/useProjectEditor.ts';
 import { EditError } from '../editor/edits.ts';
+import { moveTempoChange, tempoRange } from '../editor/arrangement.ts';
 import {
   addChord, addMarker, addSection, deleteChord, deleteMarker, deleteSection, duplicateSection, keyAt,
   removeSectionMarker, replaceChords, setKeyChange, setSignatureChange, swapSectionWithNeighbor, transposeChords,
@@ -325,6 +328,90 @@ export function GlobalTracks({
           ))}
         </div>
       </div>
+
+      {/* 템포 — 계단 곡선. 빈 곳을 누르면 그 박에 템포 변화, 점을 위아래로 끌면 BPM, 두 번 누르면 지운다 */}
+      <TempoRow editor={editor} totalTicks={totalTicks} nameCol={nameCol} onNotice={onNotice} />
     </>
+  );
+}
+
+function TempoRow({ editor, totalTicks, nameCol, onNotice }: { editor: ProjectEditor; totalTicks: number; nameCol: string; onNotice: (m: string) => void }) {
+  const { project } = editor;
+  const H = 52;
+  const { min, max } = tempoRange(project);
+  const points = [{ tick: 0, bpm: project.tempo.bpm }, ...(project.tempo.changes ?? [])].sort((a, b) => a.tick - b.tick);
+  const y = (bpm: number) => 4 + (1 - (bpm - min) / (max - min)) * (H - 8);
+  const W = 1000;
+  const x = (tick: number) => (tick / totalTicks) * W;
+  let d = '';
+  points.forEach((p, i) => {
+    const next = points[i + 1]?.tick ?? totalTicks;
+    d += `${i === 0 ? 'M' : 'L'}${x(p.tick)},${y(p.bpm)} L${x(next)},${y(p.bpm)} `;
+  });
+  // 끌기는 실제로 움직였을 때만 포인터를 잡는다 — 누르자마자 잡으면 두 번 누르기(지우기)가 점에 안 간다
+  const drag = useRef<{ from: number; box: DOMRect; x: number; y: number; captured: boolean } | null>(null);
+  const toTickBpm = (clientX: number, clientY: number, box: DOMRect) => {
+    const raw = ((clientX - box.left) / box.width) * totalTicks;
+    const tick = Math.max(0, Math.round(raw / PPQ) * PPQ);
+    const bpm = min + (1 - (clientY - box.top - 4) / (box.height - 8)) * (max - min);
+    return { tick, bpm };
+  };
+  return (
+    <div className="flex border-b border-grid" style={{ height: H }} data-global="tempo">
+      <div className={`flex ${nameCol} shrink-0 items-center gap-1.5 border-r border-rule bg-body px-2`}>
+        <span className="shrink-0 text-[11px] font-semibold text-ink-2">템포</span>
+        <span className="font-num text-[12px] text-ink-3">{min}–{max}</span>
+        <span className="text-[10px] text-ink-3">빈 곳 = 추가 · 두 번 = 지움</span>
+      </div>
+      <div
+        className="relative flex-1 cursor-copy bg-screen"
+        onPointerDown={(e) => {
+          if ((e.target as HTMLElement).closest('[data-tempo-point]')) return;
+          const box = e.currentTarget.getBoundingClientRect();
+          const { tick, bpm } = toTickBpm(e.clientX, e.clientY, box);
+          if (tick === 0) return;
+          editor.commit(setTempoChange(project, tick, Math.round(bpm)));
+          onNotice(`${Math.round(bpm)} BPM 템포 변화를 놓았습니다 — 점을 끌어 바꾸고, 두 번 누르면 지웁니다`);
+        }}
+        onPointerMove={(e) => {
+          const g = drag.current;
+          if (!g || e.buttons === 0) return;
+          if (!g.captured) {
+            if (Math.abs(e.clientX - g.x) + Math.abs(e.clientY - g.y) < 3) return;
+            g.captured = true;
+            e.currentTarget.setPointerCapture(e.pointerId);
+          }
+          const { tick, bpm } = toTickBpm(e.clientX, e.clientY, g.box);
+          const to = g.from === 0 ? 0 : Math.max(PPQ, tick);
+          editor.preview(moveTempoChange(project, g.from, to, bpm));
+          g.from = to;
+        }}
+        onPointerUp={() => { const g = drag.current; drag.current = null; if (g?.captured) editor.commitCurrent(); }}
+      >
+        <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="absolute inset-0 h-full w-full" aria-label="템포 곡선">
+          <path d={d} fill="none" stroke="var(--color-acc)" strokeWidth={2} vectorEffect="non-scaling-stroke" />
+        </svg>
+        {points.map((p) => (
+          <button
+            key={p.tick}
+            type="button"
+            data-tempo-point
+            aria-label={`템포 ${p.bpm} BPM (${p.tick === 0 ? '시작' : `${p.tick}틱`})`}
+            title={`${p.bpm} BPM — 위아래로 끌어 바꾸기${p.tick === 0 ? '' : ' · 옆으로 끌어 옮기기 · 두 번 눌러 지우기'}`}
+            onPointerDown={(e) => {
+              e.stopPropagation();
+              const box = (e.currentTarget.parentElement as HTMLElement).getBoundingClientRect();
+              drag.current = { from: p.tick, box, x: e.clientX, y: e.clientY, captured: false };
+            }}
+            onDoubleClick={() => { if (p.tick > 0) editor.commit(setTempoChange(project, p.tick, null)); }}
+            style={{ left: `${(p.tick / totalTicks) * 100}%`, top: y(p.bpm) - 5 }}
+            className="absolute z-10 flex h-[10px] -translate-x-1/2 items-center"
+          >
+            <span className="h-2.5 w-2.5 rounded-full border-2 border-acc bg-screen" />
+            <span className="ml-1 font-num text-[11px] text-sink-2">{Math.round(p.bpm)}</span>
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
