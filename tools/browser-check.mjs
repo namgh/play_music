@@ -493,6 +493,20 @@ try {
   record('드럼 패드 화면', pads20.length > 0, pads20.slice(0, 80));
   await clickEl(`[...document.querySelectorAll('[role=tab]')].find((b) => b.textContent === '건반')`);
 
+  // 20c. Flashback — 녹음을 안 누르고 재생하며 친 것을 "담기" 로 클립에
+  await clickEl(byTitle('맨 앞으로'));
+  await clickEl(byTitle('커서부터 재생'));
+  await sleep(500);
+  await ev(`document.activeElement?.blur(); 'ok'`);
+  for (const code of ['KeyA', 'KeyD', 'KeyG']) await press(code);
+  await sleep(300);
+  const stop20c = await centerOf(byTitle('정지')); if (stop20c) await click(stop20c.x, stop20c.y);
+  await sleep(300);
+  await clickEl(`document.querySelector('[aria-label="방금 연주 담기"]')`);
+  await sleep(400);
+  const fb20 = await ev(`document.body.innerText.match(/방금 연주 \\d+음을 담았습니다|담을 [^\\n]*/)?.[0] ?? ''`);
+  record('Flashback — 녹음 없이 친 연주를 담기', /방금 연주 [1-9]/.test(fb20), fb20);
+
   const totalNotes = () => ev(`(() => { const p = JSON.parse(localStorage.getItem('project-autosave-v1')); const d = p.project ?? p; return d.tracks.reduce((n, t) => n + t.clips.reduce((m, c) => m + c.notes.length, 0), 0); })()`);
   const before20 = await totalNotes();
   await clickEl(`document.querySelector('[data-play-surface] button[aria-pressed]')`);

@@ -14,7 +14,7 @@ import { decodeMidi, encodeMidi } from './model/midi.ts';
 import { createEmptyProject, projectLengthTicks } from './model/factory.ts';
 import type { ClipId, MusicalKey, Note, Project, StackId, TrackId } from './model/project.ts';
 import { NOTE_NAMES, pitchName } from './model/pitch.ts';
-import { PPQ, ticksPerBar, ticksPerBeat, ticksToSeconds } from './model/time.ts';
+import { PPQ, secondsToTicks, ticksPerBar, ticksPerBeat, ticksToSeconds } from './model/time.ts';
 import { positionAt } from './model/meter.ts';
 import { adjacentMarkerTick, keyAt, tapTempo } from './editor/arrangement.ts';
 import { ExportPanel } from './ui/ExportPanel.tsx';
@@ -31,7 +31,7 @@ import { AudioEditor } from './ui/AudioEditor.tsx';
 import { VideoPanel } from './ui/VideoPanel.tsx';
 import { putAsset } from './audio/assets.ts';
 import { importAudioBytes, MicRecorder, placeAudio } from './ui/audioUi.ts';
-import { commitRecording, compFromTake, NoteRecorder, playedToNotes, switchTake } from './editor/recording.ts';
+import { applyPunch, commitRecording, compFromTake, NoteRecorder, playedToNotes, punchAudioWindow, switchTake } from './editor/recording.ts';
 import { SettingsPanel } from './ui/SettingsPanel.tsx';
 import { useMidiInput } from './audio/midiInput.ts';
 import { resolveCommand } from './ui/shortcuts.ts';
@@ -158,7 +158,10 @@ export function App() {
    * 받는 틱은 재생 헤드를 ref 로 읽는다 — 키 처리기가 매 프레임 다시 만들어지지 않게
    */
   const [recordMode, setRecordMode] = useState<'replace' | 'overdub'>('replace');
-  const recording = useRef<{ recorder: NoteRecorder; clipId: ClipId; fromTick: number; started: boolean } | null>(null);
+  /** 펀치 인/아웃 — 켜면 반복 구간 안에서 친 것만 녹음 (`PARITY_ROUND2.md` 4) */
+  const [punch, setPunch] = useState(false);
+  type PunchRange = { from: number; to: number } | null;
+  const recording = useRef<{ recorder: NoteRecorder; clipId: ClipId; fromTick: number; started: boolean; punch: PunchRange } | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const playheadRef = useRef<number | null>(null);
   /** 상단 바에서 열린 띄움 창. 한 번에 하나만 */
@@ -169,7 +172,12 @@ export function App() {
   const audioInput = useRef<HTMLInputElement | null>(null);
   const videoInput = useRef<HTMLInputElement | null>(null);
   /** 마이크 녹음 (오디오 트랙) */
-  const mic = useRef<{ recorder: MicRecorder; fromTick: number; trackId: TrackId } | null>(null);
+  /**
+   * Flashback (Logic Capture as Recording, `PARITY_ROUND2.md` 5) — 녹음을 안 눌렀어도 **재생하며 친 것**을
+   * 계속 받아 둔다. 재생을 새로 시작할 때마다 비운다. "담기" 를 누르면 고른 클립에 녹음처럼 들어간다
+   */
+  const flashback = useRef<{ recorder: NoteRecorder; fromTick: number } | null>(null);
+  const mic = useRef<{ recorder: MicRecorder; fromTick: number; trackId: TrackId; punch: PunchRange } | null>(null);
 
   /**
    * 편집 커서 (클립 기준 틱). **두 기능이 이걸 공유한다** —
@@ -299,12 +307,38 @@ export function App() {
     // 누르는 동안 울리고 떼면 멈춘다 (화면 건반·자판·MIDI 건반이 모두 여기로)
     if (track) void engine.liveOn(track.id, midi, velocity);
     if (recording.current && playheadRef.current !== null) recording.current.recorder.noteOn(midi, velocity, playheadRef.current);
+    else if (flashback.current && playheadRef.current !== null) flashback.current.recorder.noteOn(midi, velocity, playheadRef.current);
   };
   midiOffRef.current = (midi) => {
     if (track) engine.liveOff(track.id, midi);
     if (recording.current && playheadRef.current !== null) recording.current.recorder.noteOff(midi, playheadRef.current);
+    else if (flashback.current && playheadRef.current !== null) flashback.current.recorder.noteOff(midi, playheadRef.current);
   };
   playheadRef.current = engine.playheadTick;
+
+  // 재생을 시작할 때마다 Flashback 을 새로 받는다 (녹음 중이면 녹음이 받는다)
+  useEffect(() => {
+    if (engine.state === 'playing' && !recording.current) {
+      flashback.current = { recorder: new NoteRecorder(), fromTick: engine.playheadTick ?? 0 };
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [engine.state]);
+  const captureFlashback = () => {
+    const fb = flashback.current;
+    if (!fb || fb.recorder.played.length === 0) { setNotice('담을 연주가 없습니다 — 재생하면서 건반을 치면 녹음을 안 눌렀어도 받아 둡니다'); return; }
+    if (!clip || !track) { setNotice('담을 클립을 고르세요'); return; }
+    if (track.locked) { setNotice(`"${track.name}" 트랙은 보호돼 있습니다`); return; }
+    const stopTick = lastPlayhead.current ?? fb.fromTick;
+    const played = fb.recorder.finish(stopTick);
+    const notes = playedToNotes(played, clip.startTick);
+    if (notes.length === 0) { setNotice('고른 클립 자리에서 친 음이 없습니다'); return; }
+    const first = Math.min(...played.map((p) => p.onTick));
+    runEdit(() => {
+      editor.commit(commitRecording(project, clip.id, notes, recordMode, { from: first - clip.startTick, to: stopTick - clip.startTick }));
+      setNotice(`방금 연주 ${notes.length}음을 담았습니다 (Flashback)`);
+    });
+    flashback.current = null;
+  };
 
   // 재생이 멈추면 녹음을 클립에 넣는다 (정지 버튼·Space·곡 끝 어느 쪽이든)
   useEffect(() => {
@@ -317,13 +351,16 @@ export function App() {
     const found = project.tracks.flatMap((t) => t.clips).find((c) => c.id === rec.clipId);
     if (!found) return;
     const stopTick = lastPlayhead.current ?? rec.fromTick;
-    const played = rec.recorder.finish(stopTick);
+    const raw = rec.recorder.finish(stopTick);
+    const played = rec.punch ? applyPunch(raw, rec.punch.from, rec.punch.to) : raw;
     const notes = playedToNotes(played, found.startTick);
     if (notes.length === 0) { setNotice('녹음된 음이 없습니다'); return; }
     runEdit(() => {
-      editor.commit(commitRecording(project, rec.clipId, notes, recordMode, {
-        from: rec.fromTick - found.startTick, to: stopTick - found.startTick,
-      }));
+      // 펀치면 바꾸는 범위도 구간만 — 구간 밖의 옛 음은 그대로 둔다
+      const range = rec.punch
+        ? { from: rec.punch.from - found.startTick, to: rec.punch.to - found.startTick }
+        : { from: rec.fromTick - found.startTick, to: stopTick - found.startTick };
+      editor.commit(commitRecording(project, rec.clipId, notes, recordMode, range));
       setNotice(`${notes.length}음을 녹음했습니다${recordMode === 'replace' ? ' — 바뀐 음은 테이크로 남겼습니다' : ''}`);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -335,7 +372,7 @@ export function App() {
       const recorder = new MicRecorder();
       await recorder.start();
       const from = cursorTick + (clip?.startTick ?? 0);
-      mic.current = { recorder, fromTick: from, trackId: track.id };
+      mic.current = { recorder, fromTick: from, trackId: track.id, punch: punchRange() };
       setIsRecording(true);
       void engine.play(from, { countInBars: 0 });
     } catch (err) {
@@ -352,7 +389,26 @@ export function App() {
         const bytes = await m.recorder.stop();
         const { assetId, seconds } = await importAudioBytes(bytes);
         const name = `녹음 ${new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
-        const placed = placeAudio(projectRef.current, { assetId, seconds, name, atTick: m.fromTick, trackId: m.trackId });
+        const p0 = projectRef.current;
+        if (m.punch) {
+          // 펀치: 녹음한 소리에서 구간 부분만 클립으로 (앞뒤는 잘라 둔다 — 지우지 않으니 다듬기로 되살릴 수 있다)
+          const fromSec = ticksToSeconds(m.fromTick, p0.tempo);
+          const win = punchAudioWindow(fromSec, seconds, ticksToSeconds(m.punch.from, p0.tempo), ticksToSeconds(m.punch.to, p0.tempo));
+          if (!win) { setNotice('펀치 구간 안에서 녹음된 소리가 없습니다'); return; }
+          const at = Math.max(m.fromTick, m.punch.from);
+          const placed = placeAudio(p0, { assetId, seconds, name, atTick: at, trackId: m.trackId });
+          const lengthTick = Math.max(1, secondsToTicks(ticksToSeconds(at, p0.tempo) + win.lengthSec, p0.tempo) - at);
+          editor.commit({
+            ...placed.project,
+            tracks: placed.project.tracks.map((t) => (t.id !== placed.trackId ? t : {
+              ...t,
+              clips: t.clips.map((c) => (c.audio?.assetId === assetId && c.startTick === at ? { ...c, lengthTick, audio: { ...c.audio, offsetSec: win.offsetSec } } : c)),
+            })),
+          });
+          setNotice(`펀치 구간 ${win.lengthSec.toFixed(1)}초를 녹음했습니다`);
+          return;
+        }
+        const placed = placeAudio(p0, { assetId, seconds, name, atTick: m.fromTick, trackId: m.trackId });
         editor.commit(placed.project);
         setNotice(`오디오 ${seconds.toFixed(1)}초를 녹음했습니다`);
       } catch (err) {
@@ -366,12 +422,19 @@ export function App() {
   const lastPlayhead = useRef<number | null>(null);
   if (engine.playheadTick !== null) lastPlayhead.current = engine.playheadTick;
 
+  /** 펀치가 켜져 있으면 반복 구간 (없으면 알리고 펀치 없이) */
+  const punchRange = (): PunchRange => {
+    if (!punch) return null;
+    if (!project.loop) { setNotice('펀치 구간이 없습니다 — 눈금자에서 반복 구간을 먼저 정하세요. 이번엔 전부 녹음합니다'); return null; }
+    return { from: project.loop.startTick, to: project.loop.endTick };
+  };
+
   const startRecording = () => {
     if (track?.kind === 'audio') { void startMic(); return; }
     if (!clip || !track) { setNotice('녹음할 클립을 고르세요'); return; }
     if (track.locked) { setNotice(`"${track.name}" 트랙은 보호돼 있습니다`); return; }
     const from = cursorTick + clip.startTick;
-    recording.current = { recorder: new NoteRecorder(), clipId: clip.id, fromTick: from, started: false };
+    recording.current = { recorder: new NoteRecorder(), clipId: clip.id, fromTick: from, started: false, punch: punchRange() };
     setIsRecording(true);
     setPlayOpen(true);
     void engine.play(from, { countInBars: settings.countInBars });
@@ -724,6 +787,21 @@ export function App() {
               title="바꿔 녹음(옛 음은 테이크로 남김) / 겹쳐 녹음(더하기)"
               className="h-7 rounded-md border border-rule bg-panel px-1.5 text-[10px] text-ink-2"
             >{recordMode === 'replace' ? '바꿔' : '겹쳐'}</button>
+            <button
+              type="button"
+              onClick={() => setPunch((v) => !v)}
+              aria-pressed={punch}
+              aria-label="펀치 인/아웃"
+              title="펀치 인/아웃 — 반복 구간 안에서 친 것만 녹음합니다 (앞뒤는 준비 연주)"
+              className={`h-7 rounded-md border px-1.5 text-[10px] ${punch ? 'border-rec bg-rec text-body' : 'border-rule bg-panel text-ink-2'}`}
+            >펀치</button>
+            <button
+              type="button"
+              onClick={captureFlashback}
+              aria-label="방금 연주 담기"
+              title="Flashback — 녹음을 안 눌렀어도 재생하며 친 것을 고른 클립에 담습니다"
+              className="h-7 rounded-md border border-rule bg-panel px-1.5 text-[10px] text-ink-2"
+            >담기</button>
             <button
               type="button"
               onClick={() => setMetronome((on) => !on)}

@@ -166,3 +166,22 @@ function mapClip(project: Project, clipId: ClipId, fn: (c: Clip) => Clip): Proje
       : t)),
   };
 }
+
+/**
+ * 펀치 인/아웃 (Logic Autopunch, `PARITY_ROUND2.md` 4) — 구간 안에서 친 것만 남긴다.
+ * 구간 앞에서 누른 음은 버리고(준비 연주), 구간 끝을 넘는 음은 끝에서 자른다.
+ * 곡 기준 틱.
+ */
+export function applyPunch(played: readonly PlayedNote[], punchIn: Ticks, punchOut: Ticks): PlayedNote[] {
+  return played
+    .filter((p) => p.onTick >= punchIn && p.onTick < punchOut)
+    .map((p) => ({ ...p, offTick: p.offTick === null ? punchOut : Math.min(p.offTick, punchOut) }));
+}
+
+/** 펀치 오디오 — 녹음 시작 자리에서 구간까지 몇 초를 잘라내고 몇 초를 쓰나 */
+export function punchAudioWindow(recordFromSec: number, recordedSec: number, punchInSec: number, punchOutSec: number): { offsetSec: number; lengthSec: number } | null {
+  const start = Math.max(punchInSec, recordFromSec);
+  const end = Math.min(punchOutSec, recordFromSec + recordedSec);
+  if (end <= start) return null;
+  return { offsetSec: start - recordFromSec, lengthSec: end - start };
+}
