@@ -40,6 +40,7 @@ import { buildEffectChain, updateEffectChain } from './effectGraph.ts';
 import type { EffectChain } from './effectGraph.ts';
 import { scheduleClick } from './metronome.ts';
 import { BusGraph } from './busGraph.ts';
+import { createNote } from '../model/factory.ts';
 import { markWorkletContext, setTransport } from './fxRuntime.ts';
 import { planAudio, scheduleAudioRegions } from './audioRegions.ts';
 import { decodeAsset } from './assets.ts';
@@ -53,6 +54,8 @@ const WORKLET_URL = '/ks-worklet.js';
 const EXPORT_TAIL_SEC = 4;
 /** 미리듣기(건반 클릭·인스펙터) 한 음의 길이 */
 const AUDITION_SEC = 0.6;
+/** 실시간 연주 음의 안전 상한 — 떼는 신호를 잃어도 이보다 길게 울리지 않는다 */
+const LIVE_MAX_SEC = 30;
 
 interface TrackRuntime {
   node: AudioWorkletNode;
@@ -384,6 +387,33 @@ export class WorkletRenderer implements AudioRenderer {
       // ADSR 이 Sustain 단계에서 멈춰 있고 거기서 나올 길이 노트오프뿐이다
       ...noteOffFields(runtime.params, AUDITION_SEC, this.ctx.sampleRate),
     });
+  }
+
+  liveNoteOn(trackId: TrackId, midi: number, velocity: number): void {
+    const runtime = this.tracks.get(trackId);
+    if (!runtime || !this.project) return;
+    const note = createNote({ startTick: 0, midi, velocity });
+    const { releaseMs } = noteOffFields(runtime.params, LIVE_MAX_SEC, this.ctx.sampleRate);
+    runtime.node.port.postMessage({
+      type: 'noteOn',
+      frame: Math.round(this.ctx.currentTime * this.ctx.sampleRate),
+      freq: pitchToHz(note.pitch, this.project.tuning),
+      velocity,
+      params: this.encodeParams(runtime.params, note.pitchCurve, runtime.voiceKind, note.expression, runtime.instrument.voice),
+      gain: 1,
+      seed: variationSeed(note.id),
+      // 떼는 신호를 잃어도(창 전환 등) 영원히 울리지 않게 안전 상한을 둔다
+      durationFrames: Math.round(LIVE_MAX_SEC * this.ctx.sampleRate),
+      releaseMs,
+      liveKey: midi,
+    });
+  }
+
+  liveNoteOff(trackId: TrackId, midi: number): void {
+    const runtime = this.tracks.get(trackId);
+    if (!runtime) return;
+    const { releaseMs } = noteOffFields(runtime.params, 1, this.ctx.sampleRate);
+    runtime.node.port.postMessage({ type: 'liveOff', liveKey: midi, releaseMs });
   }
 
   capabilitiesOf(instrumentId: string): InstrumentCapabilities {

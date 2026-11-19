@@ -73,6 +73,13 @@ export interface AudioRenderer {
   auditionNote(trackId: TrackId, note: Note): void;
 
   /**
+   * 실시간 연주 — 누르는 동안 울리고 `liveNoteOff` 에 멈춘다 (화면 건반·자판·MIDI).
+   * 선택 사항: 없으면 호출자가 `auditionNote`(정해진 길이)로 떨어진다
+   */
+  liveNoteOn?(trackId: TrackId, midi: number, velocity: number): void;
+  liveNoteOff?(trackId: TrackId, midi: number): void;
+
+  /**
    * 메트로놈. **프로젝트에 저장하지 않는다** — 곡의 일부가 아니라 듣는 사람의
    * 취향이고, 내보내기에는 절대 섞이면 안 된다 (`exportAudio` 는 이걸 보지 않는다).
    */

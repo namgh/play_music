@@ -139,3 +139,48 @@ test('예약한 음이 실제로 소리가 된다 — 무음 파일이 나가지
   assert.ok(peak > 0.001, `1초를 렌더했는데 최대 진폭이 ${peak} 다 — 무음이다`);
   assert.ok(peak <= 1.5, `진폭이 ${peak} 로 비정상이다`);
 });
+
+test('실시간 연주 — 누른 음은 떼는 신호에 멈추고, 누르자마자 떼도 짧게라도 울린다', async () => {
+  type Live = Processor & { live: Map<number, { voice: number; serial: number }>; pendingOff: { frame: number; voice: number }[] };
+  const press = (p: Processor) => p.handle({
+    type: 'noteOn', frame: 0, freq: 220, velocity: 0.9, params: new Array(72).fill(0), gain: 1,
+    durationFrames: 30 * SAMPLE_RATE, releaseMs: 30, seed: 7, liveKey: 57,
+  });
+  const render = (p: Processor, advance: (n: number) => void, blocks: number) => {
+    let e = 0;
+    for (let b = 0; b < blocks; b++) {
+      const outputs = [[new Float32Array(BLOCK), new Float32Array(BLOCK)]];
+      p.process([], outputs);
+      for (const v of outputs[0]![0]!) e += v * v;
+      advance(BLOCK);
+    }
+    return e;
+  };
+
+  // 누르고 있으면 건반이 "울리는 중" 표에 있고, 30초 안전 상한 말고는 끄는 예약이 없다
+  const a = await loadWorklet();
+  await loadThenSchedule(a.processor, []);
+  press(a.processor);
+  render(a.processor, a.advance, 4);
+  const pa = a.processor as Live;
+  assert.equal(pa.live.size, 1);
+  assert.ok(pa.pendingOff.every((o) => o.frame > 20 * SAMPLE_RATE), '누르는 동안은 곧 꺼지는 예약이 없다');
+  // 떼면 지금 끄는 예약이 생기고 표에서 빠진다
+  a.processor.handle({ type: 'liveOff', liveKey: 57, releaseMs: 30 });
+  assert.equal(pa.live.size, 0);
+  assert.ok(pa.pendingOff.some((o) => o.frame <= 5 * BLOCK), '뗀 순간 끄는 예약');
+
+  // 누르자마자(아직 대기 중) 떼면 — 10ms 뒤에 끄도록 예약된 채로 시작한다, 소리는 난다
+  const b = await loadWorklet();
+  await loadThenSchedule(b.processor, []);
+  press(b.processor);
+  b.processor.handle({ type: 'liveOff', liveKey: 57, releaseMs: 30 });
+  const pb = b.processor as Live;
+  let energy = render(b.processor, b.advance, 1);
+  assert.ok(pb.pendingOff.some((o) => o.frame <= 0.02 * SAMPLE_RATE), '시작하면서 10ms 뒤 끄기를 예약했다');
+  energy += render(b.processor, b.advance, 4);
+  assert.equal(pb.live.size, 0);
+  // 10ms 끄기는 이미 처리됐다 — 남은 건 30초 안전 상한뿐
+  assert.ok(pb.pendingOff.every((o) => o.frame > 20 * SAMPLE_RATE), '10ms 끄기가 처리됐다');
+  assert.ok(energy > 0, '그래도 소리는 난다');
+});

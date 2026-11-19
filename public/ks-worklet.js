@@ -56,6 +56,11 @@ class KsProcessor extends AudioWorkletProcessor {
      */
     this.voiceOwner = null;
     this.serial = 0;
+    /**
+     * 실시간 연주(누르는 동안 울리기) — 건반 번호 → { voice, serial }. 떼면 `liveOff` 가 이 음만 끈다.
+     * 예약 음과 달리 길이를 모른다 (`PARITY_ROUND2.md` 2)
+     */
+    this.live = new Map();
 
     this.port.onmessage = (event) => this.handle(event.data);
   }
@@ -85,6 +90,8 @@ class KsProcessor extends AudioWorkletProcessor {
           curve: message.curve,
           // 타건 변주 씨앗. **음마다 결정론적**이라 재생과 내보내기가 같다
           seed: message.seed ?? 0,
+          // 실시간 연주 음이면 건반 번호 — 떼는 신호가 따로 온다
+          liveKey: message.liveKey,
         });
         this.pending.sort((a, b) => a.frame - b.frame);
         break;
@@ -98,6 +105,18 @@ class KsProcessor extends AudioWorkletProcessor {
           this.wasm.set_params_live(0xffffffff);
         }
         break;
+      case 'liveOff': {
+        // 아직 시작 전(대기 중)이면 시작하자마자 끈다, 울리는 중이면 지금 끈다
+        const waiting = this.pending.find((p) => p.liveKey === message.liveKey && !p.offRequested);
+        if (waiting) { waiting.offRequested = true; waiting.releaseMs = message.releaseMs ?? waiting.releaseMs; break; }
+        const held = this.live.get(message.liveKey);
+        if (held) {
+          this.live.delete(message.liveKey);
+          this.pendingOff.push({ frame: currentFrame, voice: held.voice, serial: held.serial, releaseMs: message.releaseMs ?? 120 });
+          this.pendingOff.sort((a, b) => a.frame - b.frame);
+        }
+        break;
+      }
       case 'allOff':
         this.pending.length = 0;
         this.pendingOff.length = 0;
@@ -271,6 +290,18 @@ class KsProcessor extends AudioWorkletProcessor {
 
         const serial = ++this.serial;
         if (voice < this.voiceOwner.length) this.voiceOwner[voice] = serial;
+        if (nextOn.liveKey !== undefined) {
+          // 같은 건반을 다시 눌렀으면 앞 음은 끈다 (누른 채 남는 음이 없게)
+          const prev = this.live.get(nextOn.liveKey);
+          if (prev && this.voiceOwner[prev.voice] === prev.serial) this.wasm.note_off(prev.voice, nextOn.releaseMs);
+          this.live.set(nextOn.liveKey, { voice, serial });
+          if (nextOn.offRequested) {
+            // 누르자마자 뗐다 — 아주 짧게(10ms) 울리고 끈다. 0 이면 클릭만 난다
+            this.live.delete(nextOn.liveKey);
+            this.pendingOff.push({ frame: now + Math.round(sampleRate * 0.01), voice, serial, releaseMs: nextOn.releaseMs });
+            this.pendingOff.sort((a, b) => a.frame - b.frame);
+          }
+        }
 
         if (nextOn.durationFrames > 0) {
           // **실제 발음 프레임** 기준으로 잡는다. 예약이 조금 늦었을 때 의도한

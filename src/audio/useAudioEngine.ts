@@ -217,6 +217,32 @@ export function useAudioEngine(
   }, [ensure]);
 
   /**
+   * 실시간 연주 — 누르는 동안 울린다 (`PARITY_ROUND2.md` 2). 엔진 준비(비동기) 전에 떼면
+   * 켜는 신호가 늦게 가서 30초 동안 울리게 된다 — 그래서 누른 건반을 기억하고, 준비가 끝났을 때
+   * 이미 뗐으면 짧은 미리 듣기로 대신한다.
+   */
+  const heldRef = useRef(new Set<string>());
+  const liveOn = useCallback(async (trackId: TrackId, midi: number, velocity: number) => {
+    const key = `${trackId}:${midi}`;
+    heldRef.current.add(key);
+    try {
+      const renderer = await ensure();
+      renderer.setProject(projectRef.current);
+      if (!renderer.liveNoteOn || !heldRef.current.has(key)) {
+        renderer.auditionNote(trackId, createNote({ startTick: 0, midi, velocity }));
+        return;
+      }
+      renderer.liveNoteOn(trackId, midi, velocity);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }, [ensure]);
+  const liveOff = useCallback((trackId: TrackId, midi: number) => {
+    heldRef.current.delete(`${trackId}:${midi}`);
+    rendererRef.current?.liveNoteOff?.(trackId, midi);
+  }, []);
+
+  /**
    * 곡에 없는 악기를 한 음 들려준다 (브라우저 미리 듣기). 렌더러에 **보이지 않는 트랙**
    * 하나를 잠깐 얹는다 — 다음 편집의 `setProject` 가 그 트랙을 치운다.
    */
@@ -359,6 +385,6 @@ export function useAudioEngine(
 
   return {
     state, playheadTick, error, exporting, engineKind, clip, readLevel, readEffectMeters, compensationSamples,
-    play, stop, audition, previewInstrument, perform, exportWav, bounce, renderMix, setMetronome,
+    play, stop, audition, liveOn, liveOff, previewInstrument, perform, exportWav, bounce, renderMix, setMetronome,
   };
 }

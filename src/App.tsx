@@ -296,10 +296,12 @@ export function App() {
 
   // MIDI 건반 → 고른 트랙으로 연주, 녹음 중이면 받는다
   midiNoteRef.current = (midi, velocity) => {
-    if (track) void engine.audition(track.id, midi, 0, velocity);
+    // 누르는 동안 울리고 떼면 멈춘다 (화면 건반·자판·MIDI 건반이 모두 여기로)
+    if (track) void engine.liveOn(track.id, midi, velocity);
     if (recording.current && playheadRef.current !== null) recording.current.recorder.noteOn(midi, velocity, playheadRef.current);
   };
   midiOffRef.current = (midi) => {
+    if (track) engine.liveOff(track.id, midi);
     if (recording.current && playheadRef.current !== null) recording.current.recorder.noteOff(midi, playheadRef.current);
   };
   playheadRef.current = engine.playheadTick;
