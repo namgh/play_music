@@ -420,6 +420,39 @@ export const SCREENS = [
       await sleep(400);
     },
   },
+  {
+    name: 'a22-tempo-track', area: 22, title: '템포 트랙 — 글로벌 트랙의 계단 곡선 (누르면 추가 · 끌면 BPM · 두 번 지움) · 트랙 도구의 바운스·❄ 프리즈·에일리어스',
+    run: async (b) => {
+      // 3마디·9마디에 템포 변화를 넣어 둔다
+      await b.ev(`(() => { const raw = JSON.parse(localStorage.getItem('project-autosave-v1')); const p = raw.project ?? raw; p.tempo.changes = [{ tick: 7680, bpm: 104 }, { tick: 30720, bpm: 84 }]; localStorage.setItem('project-autosave-v1', JSON.stringify(raw)); return 'ok'; })()`);
+      await b.goto(URL_APP, 2500);
+      await b.clickEl(byLabel('패드 선택'));
+      await sleep(300);
+    },
+  },
+  {
+    name: 'a22-sidechain-pre', area: 22, title: '믹서 — 사이드체인(컴프 감지 = 킥) · 프리 페이더 센드',
+    run: async (b) => {
+      await b.ev(`(() => { const raw = JSON.parse(localStorage.getItem('project-autosave-v1')); const p = raw.project ?? raw; const kick = p.tracks.find((t) => t.name === '킥'); const bass = p.tracks.find((t) => t.name === '베이스'); p.buses = [{ id: 'bus_rev', name: '리버브', gain: 0.8, pan: 0, mute: false, effects: [{ type: 'chromaverb', bypass: false, params: {} }] }]; bass.effects = [{ type: 'compmodel', bypass: false, params: { thresholdDb: -32, ratio: 6 }, sidechain: kick.id }]; const pad = p.tracks.find((t) => t.name === '패드'); pad.sends = [{ busId: 'bus_rev', level: 0.5, pre: true }]; localStorage.setItem('project-autosave-v1', JSON.stringify(raw)); return 'ok'; })()`);
+      await b.goto(URL_APP, 2500);
+      await b.clickEl(`[...document.querySelectorAll('nav[aria-label="화면"] button')][1]`);
+      await sleep(400);
+      await b.clickEl(`[...document.querySelectorAll('[data-strip="베이스"] button')].find((x) => x.textContent.includes('컴프레서'))`);
+      await sleep(400);
+    },
+  },
+  {
+    name: 'a22-smart-map', area: 22, title: '스마트 컨트롤 — 손잡이 매핑(곡선·범위·거꾸로·함께 움직일 대상) · 스텝 확률',
+    run: async (b) => {
+      await b.ev(`(() => { const raw = JSON.parse(localStorage.getItem('project-autosave-v1')); const p = raw.project ?? raw; const pad = p.tracks.find((t) => t.name === '패드'); pad.smartControls = ['volume', 'pan']; pad.smartMaps = [{ curve: 0.6, min: 0.1, max: 0.9, extra: ['pan'] }]; localStorage.setItem('project-autosave-v1', JSON.stringify(raw)); return 'ok'; })()`);
+      await b.goto(URL_APP, 2500);
+      await b.clickEl(byLabel('패드 선택'));
+      await b.clickEl(`[...document.querySelectorAll('[role=tab]')].find((x) => x.textContent.includes('컨트롤'))`);
+      await sleep(200);
+      await b.clickEl(`document.querySelector('[aria-label="손잡이 1 매핑"]')`);
+      await sleep(300);
+    },
+  },
 ];
 
 /** 데모 곡의 한 트랙에 이펙트를 넣고 다시 열어 믹서로 간다 (기본값은 앱의 선언에서 채워진다) */
