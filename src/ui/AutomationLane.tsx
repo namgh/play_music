@@ -3,6 +3,7 @@ import { useRef, useState } from 'react';
 import type { AutomationMode, AutomationTarget, Project, Track } from '../model/project.ts';
 import type { ProjectEditor } from '../editor/useProjectEditor.ts';
 import { automationTargets } from '../audio/automation.ts';
+import type { InstrumentParamSpec } from '../audio/automation.ts';
 import {
   addAutomationPoint, clearAutomationLane, deleteAutomationPoint, lanePoints, moveAutomationPoint, setAutomationMode,
 } from '../editor/automationEdits.ts';
@@ -21,6 +22,7 @@ const MODES: { mode: AutomationMode; label: string }[] = [
   { mode: 'touch', label: '터치' },
   { mode: 'latch', label: '래치' },
   { mode: 'write', label: '쓰기' },
+  { mode: 'trim', label: '트림' },
 ];
 const MINI = 'h-6 shrink-0 rounded border border-rule bg-body px-1.5 text-[11px] text-ink hover:border-ink-3';
 
@@ -33,11 +35,13 @@ export interface AutomationLaneProps {
   totalTicks: number;
   /** 가장 가까운 격자(1/16)로 — 끄려면 Alt */
   snap: (tick: number) => number;
+  /** 악기 파라미터 선언·지금 값 (있으면 대상 목록에 악기 파라미터가 나온다) */
+  instrument?: { specs: Record<string, InstrumentParamSpec>; params: Record<string, number | string> } | null;
 }
 
-export function AutomationLane({ editor, track, target, onTarget, nameCol, totalTicks, snap }: AutomationLaneProps) {
+export function AutomationLane({ editor, track, target, onTarget, nameCol, totalTicks, snap, instrument }: AutomationLaneProps) {
   const { project } = editor;
-  const targets = automationTargets(track);
+  const targets = automationTargets(track, instrument?.specs, instrument?.params);
   const info = targets.find((t) => t.target === target)?.info ?? targets[0]!.info;
   const points = lanePoints(project, track.id, target);
   const box = useRef<HTMLDivElement | null>(null);
@@ -92,7 +96,7 @@ export function AutomationLane({ editor, track, target, onTarget, nameCol, total
                 role="radio"
                 aria-checked={on}
                 onClick={() => editor.commit(setAutomationMode(project, track.id, mode))}
-                title={mode === 'read' ? '곡선대로 재생' : mode === 'touch' ? '재생 중 페이더를 잡는 동안 기록' : mode === 'latch' ? '한 번 잡으면 멈출 때까지 기록' : '재생 내내 지금 값으로 덮어씀'}
+                title={mode === 'read' ? '곡선대로 재생' : mode === 'touch' ? '재생 중 페이더를 잡는 동안 기록' : mode === 'latch' ? '한 번 잡으면 멈출 때까지 기록' : mode === 'write' ? '재생 내내 지금 값으로 덮어씀' : '잡는 동안 있는 곡선을 모양 그대로 올리거나 내림'}
                 className={`h-5 rounded px-1.5 text-[10px] ${on ? (mode === 'read' ? 'bg-ink text-body' : 'bg-rec text-body') : 'text-ink-3 hover:text-ink'}`}
               >{label}</button>
             );

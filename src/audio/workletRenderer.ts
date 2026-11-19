@@ -30,7 +30,7 @@ import type { ScheduledClick, ScheduledNote } from './scheduler.ts';
 import type { InstrumentDefinition, ParamValue } from '../instruments/types.ts';
 import { instrumentParams, resolveInstrument } from '../instruments/resolve.ts';
 import type { ResolvedInstrument } from '../instruments/types.ts';
-import { scheduleTrackLanes } from './automation.ts';
+import { paramsWithAutomation, scheduleTrackLanes } from './automation.ts';
 import { expressionParams } from './articulation.ts';
 import {
   curveToParams, noteOffFields, toFreeCurve, variationSeed, WASM_PARAM_ORDER,
@@ -491,6 +491,9 @@ export class WorkletRenderer implements AudioRenderer {
   private emit(event: ScheduledNote, atTime: number, durationSec: number): void {
     const runtime = this.tracks.get(event.trackId);
     if (!runtime || !this.project) return;
+    // 악기 파라미터 오토메이션 — 이 음이 시작하는 자리의 값 (내보내기와 같은 함수)
+    const track = this.project.tracks.find((t) => t.id === event.trackId);
+    const params = track ? paramsWithAutomation(track, runtime.params, runtime.instrument.paramSpecs, event.startTick) : runtime.params;
     runtime.node.port.postMessage({
       type: 'noteOn',
       // 프레임 기준으로 넘긴다 — 워크렛이 블록을 쪼개 샘플 단위로 발음한다
@@ -498,14 +501,14 @@ export class WorkletRenderer implements AudioRenderer {
       freq: pitchToHz(event.note.pitch, this.project.tuning),
       velocity: event.note.velocity,
       params: this.encodeParams(
-        runtime.params, event.pitchCurve, runtime.voiceKind, event.note.expression, runtime.instrument.voice,
+        params, event.pitchCurve, runtime.voiceKind, event.note.expression, runtime.instrument.voice,
       ),
       gain: 1,
       // 사용자가 그린 자유곡선. 있으면 글라이드·비브라토를 **대신한다**
       curve: toFreeCurve(event.pitchCurve, durationSec),
       // 노트 id 에서 유도한다 — 재생과 내보내기가 같은 변주를 써야 한다
       seed: variationSeed(event.noteId),
-      ...noteOffFields(runtime.params, durationSec, this.ctx.sampleRate),
+      ...noteOffFields(params, durationSec, this.ctx.sampleRate),
     });
   }
 

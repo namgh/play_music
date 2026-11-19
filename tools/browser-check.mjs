@@ -338,6 +338,17 @@ try {
   await click(lanePan.x + lanePan.w * 0.3, lanePan.y + lanePan.h * 0.1);
   await sleep(300);
   record('팬 오토메이션', (await auto15()).includes('pan:1'), await auto15());
+  // 악기 파라미터도 대상 — 고르고 점을 찍으면 inst: 레인이 생기고, 재생이 그 값으로 (오류 없이) 난다
+  const inst15 = await ev(`[...${target15}.options].map((o) => o.value).filter((v) => v.startsWith('inst:'))`);
+  if (inst15.length) {
+    await ev(`(() => { const e = ${target15}; Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(e, ${JSON.stringify('X')}.replace('X', ${JSON.stringify(inst15[0] ?? '')})); e.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+    await sleep(200);
+    await click(lanePan.x + lanePan.w * 0.2, lanePan.y + lanePan.h * 0.8);
+    await sleep(300);
+  }
+  const instLane = await ev(`(() => { const p = JSON.parse(localStorage.getItem('project-autosave-v1')); const d = p.project ?? p; return d.tracks.flatMap((t) => t.automation.filter((a) => a.target.startsWith('inst:')).map((a) => a.target + ':' + a.points.length)).join(' '); })()`);
+  record('악기 파라미터 오토메이션 대상', inst15.length > 0 && /inst:\w+:1/.test(instLane), `대상 ${inst15.length}개 · ${instLane}`);
+  await ev(`(() => { const e = ${target15}; Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(e, 'pan'); e.dispatchEvent(new Event('change', { bubbles: true })); })()`);
   await clickEl(`document.querySelector('[aria-label="${trackName15} 오토메이션 모드"] [role=radio]:nth-child(4)')`);
   await clickEl(byTitle('맨 앞으로'));
   await clickEl(byTitle('커서부터 재생'));

@@ -98,3 +98,38 @@ test('기록한 곡선 다듬기 — 직선 위의 점은 지우고 꺾이는 �
   p = simplifyLane(p, id(p), 'volume');
   assert.deepEqual(lanePoints(p, id(p), 'volume').map((x) => [x.tick, x.value]), [[0, 1], [50, 1], [60, 0.5], [100, 0.5]]);
 });
+
+test('트림 — 구간만 배율, 모양 유지, 밖은 그대로', async () => {
+  const { trimAutomation, lanePoints } = await import('./automationEdits.ts');
+  const { automationValueAtTick } = await import('../audio/automation.ts');
+  const { createEmptyProject, createTrack } = await import('../model/factory.ts');
+  const p = createEmptyProject('t');
+  const tr = createTrack({ name: 'a', instrumentId: 'kick' });
+  tr.automation = [{ target: 'volume', points: [{ tick: 0, value: 0.8 }, { tick: 1000, value: 0.4 }, { tick: 2000, value: 0.8 }] }];
+  p.tracks.push(tr);
+  const out = trimAutomation(p, tr.id, 'volume', { fromTick: 500, toTick: 1500 }, 0.5);
+  const pts = lanePoints(out, tr.id, 'volume');
+  const v = (t: number) => automationValueAtTick(pts, t);
+  assert.ok(Math.abs(v(250) - 0.7) < 0.01, `구간 앞 ${v(250)}`);
+  assert.ok(Math.abs(v(1000) - 0.2) < 0.01, `안쪽 점은 반 ${v(1000)}`);
+  assert.ok(Math.abs(v(750) - 0.25) < 0.01, `안쪽 모양 유지 — 원래 0.5 의 반 ${v(750)}`);
+  assert.ok(Math.abs(v(1750) - 0.7) < 0.01, `구간 뒤 ${v(1750)}`);
+});
+
+test('악기 파라미터 오토메이션 — 음 시작 자리의 곡선 값, 대상 목록·저장', async () => {
+  const { paramsWithAutomation, automationTargets } = await import('../audio/automation.ts');
+  const { roundTrip } = await import('../model/persistence.ts');
+  const { createEmptyProject, createTrack } = await import('../model/factory.ts');
+  const specs = { cutoff: { type: 'float' as const, min: 100, max: 10000, default: 1000, label: '차단', curve: 'log' as const }, wave: { type: 'enum' as const, default: 0, label: '파형', options: ['a', 'b'] } };
+  const tr = createTrack({ name: 's', instrumentId: 'kick' });
+  tr.automation = [{ target: 'inst:cutoff', points: [{ tick: 0, value: 0 }, { tick: 1000, value: 1 }] }];
+  assert.equal(paramsWithAutomation(tr, { cutoff: 1000 }, specs, 0).cutoff, 100);
+  assert.ok(Math.abs(Number(paramsWithAutomation(tr, { cutoff: 1000 }, specs, 500).cutoff) - 1000) < 1, '로그 가운데 = 1000');
+  const targets = automationTargets(tr, specs, { cutoff: 1000 }).map((t) => t.target);
+  assert.ok(targets.includes('inst:cutoff') && !targets.includes('inst:wave'), '고르기 파라미터는 빼고');
+  const p = createEmptyProject('x');
+  p.tracks.push({ ...tr, automationMode: 'trim' });
+  const back = roundTrip(p);
+  assert.equal(back.tracks[0]!.automation[0]!.target, 'inst:cutoff');
+  assert.equal(back.tracks[0]!.automationMode, 'trim');
+});

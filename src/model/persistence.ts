@@ -221,7 +221,7 @@ function parseAutomation(value: unknown): AutomationLane[] {
 }
 
 export function isAutomationTarget(value: string): value is AutomationTarget {
-  return value === 'volume' || value === 'pan' || /^fx:\d+:[A-Za-z]+$/.test(value);
+  return value === 'volume' || value === 'pan' || /^fx:\d+:[A-Za-z0-9]+$/.test(value) || /^inst:[A-Za-z0-9]+$/.test(value);
 }
 
 function parseTrack(value: unknown, seen: Set<string>): Track {
@@ -249,7 +249,7 @@ function parseTrack(value: unknown, seen: Set<string>): Track {
     effects: parseEffects(raw.effects),
     automation: parseAutomation(raw.automation),
     clips: asArray(raw.clips ?? [], '클립 목록').map((clip) => parseClip(clip, seen)),
-    ...(['read', 'touch', 'latch', 'write'].includes(String(raw.automationMode))
+    ...(['read', 'touch', 'latch', 'write', 'trim'].includes(String(raw.automationMode))
       ? { automationMode: raw.automationMode as AutomationMode } : {}),
     ...(raw.kind === 'audio' ? { kind: 'audio' as const } : {}),
     ...(raw.hidden == null ? {} : { hidden: bool(raw.hidden, false) }),

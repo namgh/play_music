@@ -95,8 +95,51 @@ export interface TargetInfo {
   current: number;
 }
 
-/** 이 트랙에서 고를 수 있는 오토메이션 대상 전부 */
-export function automationTargets(track: Track): { target: AutomationTarget; info: TargetInfo }[] {
+/** 악기 파라미터 선언 (악기 쪽 `ParamSpec` 과 같은 모양 — 오디오 층이 악기 층을 import 하지 않게 여기서 최소로) */
+export interface InstrumentParamSpec {
+  type: 'float' | 'int' | 'enum';
+  min?: number;
+  max?: number;
+  default: number | string;
+  label: string;
+  unit?: string;
+  curve?: 'linear' | 'log';
+}
+
+/** 0~1 → 악기 파라미터 값 (정수면 반올림). 선언에 범위가 없으면 null */
+export function instrumentParamValue(spec: InstrumentParamSpec, value01: number): number | null {
+  if (spec.type === 'enum' || spec.min === undefined || spec.max === undefined) return null;
+  const v = Math.max(0, Math.min(1, value01));
+  const real = spec.curve === 'log' && spec.min > 0 ? spec.min * Math.pow(spec.max / spec.min, v) : spec.min + (spec.max - spec.min) * v;
+  return spec.type === 'int' ? Math.round(real) : real;
+}
+
+/**
+ * 악기 파라미터 오토메이션을 반영한 파라미터 — 음 하나가 시작하는 자리(`tick`)의 곡선 값.
+ * 음 안에서 계속 움직이지는 않는다(보이스 파라미터는 발음할 때 정해진다) — 재생·내보내기가 같은 함수를 쓴다
+ */
+export function paramsWithAutomation<T extends Record<string, number | string>>(
+  track: Pick<Track, 'automation'>,
+  params: T,
+  specs: Record<string, InstrumentParamSpec> | undefined,
+  tick: Ticks,
+): T {
+  let out: T | null = null;
+  for (const lane of track.automation) {
+    if (!lane.target.startsWith('inst:') || lane.points.length === 0) continue;
+    const name = lane.target.slice(5);
+    const spec = specs?.[name];
+    if (!spec) continue;
+    const v = instrumentParamValue(spec, automationValueAtTick(lane.points, tick));
+    if (v === null) continue;
+    out ??= { ...params };
+    (out as Record<string, number | string>)[name] = v;
+  }
+  return out ?? params;
+}
+
+/** 이 트랙에서 고를 수 있는 오토메이션 대상 전부 (악기 선언을 주면 악기 파라미터도) */
+export function automationTargets(track: Track, instrumentSpecs?: Record<string, InstrumentParamSpec> | null, currentParams?: Record<string, number | string>): { target: AutomationTarget; info: TargetInfo }[] {
   const out: { target: AutomationTarget; info: TargetInfo }[] = [
     { target: 'volume', info: { label: '볼륨', format: (v) => `${Math.round(v * 100)}%`, current: 1 } },
     {
@@ -108,6 +151,19 @@ export function automationTargets(track: Track): { target: AutomationTarget; inf
       },
     },
   ];
+  for (const [name, spec] of Object.entries(instrumentSpecs ?? {})) {
+    if (spec.type === 'enum' || spec.min === undefined || spec.max === undefined || spec.max <= spec.min) continue;
+    const cur = Number(currentParams?.[name] ?? spec.default);
+    const cur01 = spec.curve === 'log' && spec.min > 0 ? Math.log(cur / spec.min) / Math.log(spec.max / spec.min) : (cur - spec.min) / (spec.max - spec.min);
+    out.push({
+      target: `inst:${name}`,
+      info: {
+        label: `악기 ${spec.label}`,
+        format: (v) => { const r = instrumentParamValue(spec, v) ?? 0; return `${Math.abs(r) >= 100 ? Math.round(r) : Math.round(r * 100) / 100}${spec.unit ?? ''}`; },
+        current: Number.isFinite(cur01) ? Math.max(0, Math.min(1, cur01)) : 0.5,
+      },
+    });
+  }
   track.effects.forEach((effect, index) => {
     if (!isEffectType(effect.type)) return;
     const specs = EFFECT_SPECS[effect.type];

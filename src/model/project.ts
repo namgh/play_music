@@ -216,10 +216,11 @@ export interface AutomationPoint {
  * 파라미터다. **값은 전부 0~1 로 저장한다** — 대상마다 실제 범위로 바꾸는 것은 렌더러
  * 쪽(`src/audio/automation.ts`)이다. 그래야 곡선 편집기가 대상을 몰라도 된다.
  */
-export type AutomationTarget = 'volume' | 'pan' | `fx:${number}:${string}`;
+/** `inst:<파라미터>` — 악기(보이스) 파라미터. 음마다 시작 자리의 값으로 반영된다 (`PARITY_ROUND2.md` 6) */
+export type AutomationTarget = 'volume' | 'pan' | `fx:${number}:${string}` | `inst:${string}`;
 
 /** Logic 오토메이션 모드. 읽기만 / 만지는 동안 쓰기 / 만진 뒤 계속 쓰기 / 재생 내내 덮어쓰기 */
-export type AutomationMode = 'read' | 'touch' | 'latch' | 'write';
+export type AutomationMode = 'read' | 'touch' | 'latch' | 'write' | 'trim';
 
 export interface AutomationLane {
   target: AutomationTarget;

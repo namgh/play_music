@@ -1319,6 +1319,11 @@ export function App() {
             <div className="shrink-0 overflow-y-auto pr-1 lg:max-h-[42vh]">
               <Timeline
                 editor={editor}
+                instrumentFor={(t) => {
+                  if (!instrumentsReady) return null;
+                  const inst = resolveInstrument(t.instrumentId, registry);
+                  return { specs: inst.paramSpecs, params: instrumentParams(inst, t.toneId, t.toneParams) };
+                }}
                 selectedTrackId={track?.id ?? null}
                 selectedClipId={clip?.id ?? null}
                 playheadTick={engine.playheadTick}

@@ -20,7 +20,7 @@ import { pitchToHz } from '../model/pitch.ts';
 import { applyLegato, applySwing, collectNoteEvents, legatoLookup } from './scheduler.ts';
 import type { InstrumentDefinition } from '../instruments/types.ts';
 import { instrumentParams, resolveInstrument } from '../instruments/resolve.ts';
-import { scheduleTrackLanes } from './automation.ts';
+import { paramsWithAutomation, scheduleTrackLanes } from './automation.ts';
 import { BusGraph } from './busGraph.ts';
 import { markWorkletContext, setTransport } from './fxRuntime.ts';
 import { planAudio, scheduleAudioRegions } from './audioRegions.ts';
@@ -121,10 +121,12 @@ export async function renderOfflineWithWorklet(
     // 이 트랙의 음을 프레임 시각으로 예약한다
     for (const event of events) {
       if (event.trackId !== track.id) continue;
+      // 재생과 같은 함수 — 이 음 시작 자리의 악기 파라미터 오토메이션
+      const noteParams = paramsWithAutomation(track, params, instrument.paramSpecs, event.startTick);
       const merged: Record<string, number | string> = {
-        ...params,
+        ...noteParams,
         ...curveToParams(event.pitchCurve),
-        ...expressionParams(instrument.voice, event.note.expression, params),
+        ...expressionParams(instrument.voice, event.note.expression, noteParams),
         voiceKind: voiceKindIndex(instrument.voice),
       };
       node.port.postMessage({
@@ -146,7 +148,7 @@ export async function renderOfflineWithWorklet(
         seed: variationSeed(event.noteId),
         // 재생과 **같은 함수**로 계산한다. 갈라지면 "들은 것과 파일이 다르다"가 된다
         ...noteOffFields(
-          params,
+          noteParams,
           ticksToSeconds(event.lengthTick, project.tempo),
           sampleRate,
         ),

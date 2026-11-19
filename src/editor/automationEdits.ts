@@ -8,6 +8,7 @@
 import type { AutomationLane, AutomationMode, AutomationPoint, AutomationTarget, Project, TrackId } from '../model/project.ts';
 import type { Ticks } from '../model/time.ts';
 import { EditError } from './edits.ts';
+import { automationValueAtTick } from '../audio/automation.ts';
 
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
 const byTick = (a: AutomationPoint, b: AutomationPoint) => a.tick - b.tick;
@@ -99,6 +100,42 @@ export function writeAutomation(
   });
 }
 
+/** 레인 점을 통째로 바꾼다 (트림 기록이 잡기 시작한 순간의 곡선으로 되돌릴 때) */
+export function withLanePoints(project: Project, trackId: TrackId, target: AutomationTarget, points: readonly AutomationPoint[]): Project {
+  return mapLane(project, trackId, target, () => [...points]);
+}
+
+/**
+ * 트림 (Logic Trim) — 있는 곡선의 **모양을 지키며** 구간을 배율만큼 올리거나 내린다.
+ * 구간 양 끝에 원래 값의 점을 먼저 박아 구간 밖은 그대로 두고, 안쪽 점(과 끝점)만 곱한다.
+ */
+export function trimAutomation(
+  project: Project,
+  trackId: TrackId,
+  target: AutomationTarget,
+  range: { fromTick: Ticks; toTick: Ticks },
+  factor: number,
+): Project {
+  const from = Math.round(Math.min(range.fromTick, range.toTick));
+  const to = Math.round(Math.max(range.fromTick, range.toTick));
+  return mapLane(project, trackId, target, (points) => {
+    const base = (t: number) => (points.length ? automationValueAtTick(points, t) : 1);
+    const outside = points.filter((p) => p.tick < from || p.tick > to);
+    const inside = points.filter((p) => p.tick > from && p.tick < to);
+    // 구간 바로 밖에 원래 값의 점 — 없으면 구간 밖 점에서 구간 끝까지 비스듬히 미끄러진다
+    const before = from > 0 && outside.some((p) => p.tick < from) ? [{ tick: from - 1, value: base(from - 1) }] : [];
+    const after = outside.some((p) => p.tick > to) ? [{ tick: to + 1, value: base(to + 1) }] : [];
+    const edges = [
+      ...before,
+      { tick: from, value: clamp01(base(from) * factor) },
+      ...inside.map((p) => ({ ...p, value: clamp01(p.value * factor) })),
+      ...(to > from ? [{ tick: to, value: clamp01(base(to) * factor) }] : []),
+      ...after,
+    ];
+    return [...outside, ...edges].sort((a, b) => a.tick - b.tick);
+  });
+}
+
 /**
  * 기록 상태기계 — 화면이 재생 중 프레임마다 부른다. 상태를 값으로 주고받아 순수하게 둔다.
  *  - 터치: 손잡이를 잡고 있는 동안만 쓴다
@@ -112,7 +149,8 @@ export function recorderStep(
   frame: { tick: Ticks; touching: boolean },
 ): { next: { lastTick: Ticks | null; latched: boolean }; write: { fromTick: Ticks; toTick: Ticks } | null } {
   const latched = state.latched || (mode === 'latch' && frame.touching);
-  const active = mode === 'write' || (mode === 'touch' && frame.touching) || (mode === 'latch' && latched);
+  // 트림은 터치처럼 잡는 동안만 — 쓰는 방식(곱하기)이 다를 뿐
+  const active = mode === 'write' || ((mode === 'touch' || mode === 'trim') && frame.touching) || (mode === 'latch' && latched);
   if (!active) return { next: { lastTick: null, latched }, write: null };
   const fromTick = state.lastTick ?? frame.tick;
   return { next: { lastTick: frame.tick, latched }, write: { fromTick, toTick: frame.tick } };

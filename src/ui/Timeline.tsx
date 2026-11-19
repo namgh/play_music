@@ -4,7 +4,8 @@ import type { ReactNode } from 'react';
 import { GlobalTracks } from './GlobalTracks.tsx';
 import { usePeaks } from './audioUi.ts';
 import { AutomationLane } from './AutomationLane.tsx';
-import { lanePoints, recorderStep, simplifyLane, writeAutomation } from '../editor/automationEdits.ts';
+import type { InstrumentParamSpec } from '../audio/automation.ts';
+import { lanePoints, recorderStep, simplifyLane, trimAutomation, withLanePoints, writeAutomation } from '../editor/automationEdits.ts';
 import { automationValueAtTick } from '../audio/automation.ts';
 import { PPQ } from '../model/time.ts';
 import { toggleStackFlag, ungroupStack, updateStack } from '../editor/tracks.ts';
@@ -12,7 +13,7 @@ import type { GlobalSelection } from './GlobalTracks.tsx';
 import { barLines } from '../model/meter.ts';
 import { projectLengthTicks } from '../model/factory.ts';
 
-import type { AutomationTarget, ClipId, Project, Track, TrackId, TrackStack } from '../model/project.ts';
+import type { AutomationTarget, ClipId, Project, Track, TrackId, TrackStack, AutomationPoint } from '../model/project.ts';
 import { countEditedNotes } from '../model/project.ts';
 import { addClip, addTrack, deleteClip, deleteTrack, duplicateClip, moveClip, resizeClip, updateTrack }
   from '../editor/edits.ts';
@@ -71,6 +72,8 @@ const FALLBACK_COLOR = { strip: 'bg-ink-3', clip: 'bg-sink-3/30', head: 'bg-sink
 
 export interface TimelineProps {
   editor: ProjectEditor;
+  /** 트랙 악기의 파라미터 선언·지금 값 — 오토메이션 레인이 악기 파라미터를 고를 수 있게 */
+  instrumentFor?: ((track: Track) => { specs: Record<string, InstrumentParamSpec>; params: Record<string, number | string> } | null) | undefined;
   selectedTrackId: TrackId | null;
   selectedClipId: ClipId | null;
   playheadTick: number | null;
@@ -94,6 +97,7 @@ export interface TimelineProps {
 }
 
 export function Timeline({
+  instrumentFor,
   editor, selectedTrackId, selectedClipId, playheadTick, onSelect, onSelectTrack, readLevel, tools,
   globalSelection, onGlobalSelect, onSeek, onNotice,
 }: TimelineProps) {
@@ -127,7 +131,11 @@ export function Timeline({
    * 그리면 안 된다. 기록한 곡선은 미리보기로 쌓다가 재생이 멈출 때 한 번에 확정한다
    * (언두 한 단계).
    */
-  const recording = useRef(new Map<TrackId, { lastTick: number | null; latched: boolean; touching: boolean; value: number }>());
+  const recording = useRef(new Map<TrackId, {
+    lastTick: number | null; latched: boolean; touching: boolean; value: number;
+    /** 트림: 잡기 시작한 자리와 그때의 곡선 — 매 프레임 원래 곡선에서 다시 곱한다(겹쳐 곱해지지 않게) */
+    trimFrom?: number | undefined; trimOrig?: AutomationPoint[] | undefined;
+  }>());
   const recorded = useRef(false);
   useEffect(() => {
     if (playheadTick === null) {
@@ -150,6 +158,16 @@ export function Timeline({
         ?? { lastTick: null, latched: false, touching: false, value: automationValueAtTick(lanePoints(project, track.id, 'volume'), playheadTick) };
       const step = recorderStep(mode, st, { tick: playheadTick, touching: st.touching });
       recording.current.set(track.id, { ...st, ...step.next });
+      if (mode === 'trim') {
+        if (!st.touching) { recording.current.set(track.id, { ...st, ...step.next, trimFrom: undefined, trimOrig: undefined }); continue; }
+        const from = st.trimFrom ?? playheadTick;
+        const orig = st.trimOrig ?? lanePoints(project, track.id, 'volume');
+        recording.current.set(track.id, { ...st, ...step.next, trimFrom: from, trimOrig: orig });
+        if (playheadTick > from) {
+          next = trimAutomation(withLanePoints(next, track.id, 'volume', orig), track.id, 'volume', { fromTick: from, toTick: playheadTick }, st.value);
+        }
+        continue;
+      }
       if (step.write && step.write.toTick > step.write.fromTick) {
         next = writeAutomation(next, track.id, 'volume', step.write, st.value);
       }
@@ -605,6 +623,7 @@ export function Timeline({
             <AutomationLane
               editor={editor}
               track={track}
+              instrument={instrumentFor?.(track) ?? null}
               target={autoOpen[track.id]!}
               onTarget={(target) => setAutoOpen((m) => ({ ...m, [track.id]: target }))}
               nameCol={NAME_COL}
