@@ -136,7 +136,7 @@ Tier 0·1 편집 조작까지 커밋됨 (2026-08-09).
 오디오가 .json 저장에 안 따라감(묶음 파일·서버 필요). 각 행의 "빠진 핵심" 칸이 다음 작업 목록이다.
 
 - 화면 시안: `design/studio-app.figcraft` (영역마다 페이지) — `npm run design:capture` 로 앱에서 떠 온다 (`design/README.md`)
-- 점검: `npm run check:browser` 71항목 (개발 서버가 떠 있어야 한다). 사람이 귀로 듣는 판정은 여전히 남아 있다
+- 점검: `npm run check:browser` 74항목 (개발 서버가 떠 있어야 한다). 사람이 귀로 듣는 판정은 여전히 남아 있다
 - 새 파일 지도: 편집 `src/editor/{arrangement,tracks,noteTools,automationEdits,mixer,steps,recording,liveLoops,library,sessionPlayers}.ts`,
   소리 `src/audio/{busGraph,midiEffects,audioRegions,assets,bounce,zip,mastering,midiInput}.ts`, 모델 `src/model/{meter,chords,notation,templates}.ts`
 
