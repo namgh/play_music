@@ -44,6 +44,7 @@ export interface EffectDecl {
   /** Rust 코어 이펙트만 */
   latency?: number;
   meters?: RustEffectDecl['meters'];
+  sidechain?: true;
 }
 
 /** 이펙트별 파라미터 선언 — UI 가 이걸 보고 자동 생성한다 (`sound.md` 9-5 와 같은 원칙) */

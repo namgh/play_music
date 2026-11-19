@@ -399,6 +399,9 @@ class RustFxProcessor extends AudioWorkletProcessor {
     this.lView = new Float32Array(mem, at[1], MAX_BLOCK);
     this.rView = new Float32Array(mem, at[2], MAX_BLOCK);
     this.mView = new Float32Array(mem, at[3], FX_METERS);
+    const kat = [fx.fx_key_l(), fx.fx_key_r()];
+    this.klView = new Float32Array(fx.memory.buffer, kat[0], MAX_BLOCK);
+    this.krView = new Float32Array(fx.memory.buffer, kat[1], MAX_BLOCK);
   }
 
   process(inputs, outputs, parameters) {
@@ -417,6 +420,15 @@ class RustFxProcessor extends AudioWorkletProcessor {
     const inL = input[0];
     const inR = input[1] ?? input[0];
     if (inL) { this.lView.set(inL); this.rView.set(inR); } else { this.lView.fill(0, 0, frames); this.rView.fill(0, 0, frames); }
+    // 사이드체인: 둘째 입력이 이어져 있으면 감지를 그 소리로
+    const key = inputs[1];
+    if (key && key[0]) {
+      this.klView.set(key[0]);
+      this.krView.set(key[1] ?? key[0]);
+      this.fx.fx_key(1);
+    } else {
+      this.fx.fx_key(0);
+    }
     this.fx.fx_transport(currentFrame - this.anchor, this.bpm);
     this.fx.fx_process(frames);
     if (this.fx.memory.buffer !== this.mem) this.views();

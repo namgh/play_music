@@ -423,6 +423,18 @@ try {
   await sleep(800);
   const fx17b = await ev(`(() => { const p = JSON.parse(localStorage.getItem('project-autosave-v1')); const d = p.project ?? p; return d.tracks.map((t) => t.effects.map((e) => e.type).join('+')).filter(Boolean).join(' ; '); })()`);
   record('되돌린 뒤 Rust 이펙트 넷만 남김', /compmodel\+chromaverb\+stepfx\+adaptivelimiter/.test(String(fx17b)), String(fx17b));
+  // 사이드체인 — 컴프의 감지 입력을 다른 트랙으로, 재생해도 오류 없이 소리 (덕킹 연결)
+  await clickEl(`[...document.querySelectorAll('[data-strip] button')].find((b) => b.textContent.includes('컴프레서 (회로 모델)'))`);
+  await sleep(300);
+  const sc17 = await ev(`(() => { const e = document.querySelector('[aria-label="사이드체인"]'); if (!e || e.options.length < 2) return ''; Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(e, e.options[1].value); e.dispatchEvent(new Event('change', { bubbles: true })); return e.options[1].textContent; })()`);
+  await sleep(500);
+  const n17c = problems.length;
+  await clickEl(byTitle('맨 앞으로'));
+  await clickEl(byTitle('커서부터 재생'));
+  let peak17c = 0; for (let i = 0; i < 10; i++) { await sleep(150); peak17c = Math.max(peak17c, await ev('window.__peak()')); }
+  const stop17c = await centerOf(byTitle('정지')); if (stop17c) await click(stop17c.x, stop17c.y);
+  const saved17c = await ev(`(() => { const p = JSON.parse(localStorage.getItem('project-autosave-v1')); const d = p.project ?? p; return d.tracks.flatMap((t) => t.effects.filter((e) => e.sidechain).map((e) => e.type)).join(','); })()`);
+  record('사이드체인 — 컴프 감지를 다른 트랙으로, 재생', sc17.length > 0 && saved17c.includes('compmodel') && peak17c > 0.0005 && problems.length === n17c, `${sc17} · 저장 ${saved17c} · 피크 ${peak17c.toFixed(4)} · 새 오류 ${problems.length - n17c}`);
 
   // 18. 내보내기 창 — 16bit·44.1k·노멀라이즈, 측정값 표시, 스템 ZIP
   for (const f of readdirSync(DL)) rmSync(join(DL, f));

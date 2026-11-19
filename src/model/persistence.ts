@@ -138,6 +138,7 @@ function parseEffects(value: unknown): EffectSpec[] {
       type: str(raw.type, 'unknown'),
       bypass: bool(raw.bypass, false),
       params,
+      ...(typeof raw.sidechain === 'string' && raw.sidechain.startsWith('trk_') ? { sidechain: raw.sidechain as TrackId } : {}),
     };
   });
 }

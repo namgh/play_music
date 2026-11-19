@@ -193,6 +193,8 @@ export interface EffectSpec {
   type: string;
   bypass: boolean;
   params: Record<string, number | string | boolean>;
+  /** 사이드체인 — 감지를 이 트랙의 소리로 (컴프·게이트·익스팬더). 없으면 자기 소리 (`PARITY_ROUND2.md` 7) */
+  sidechain?: TrackId;
 }
 
 /**

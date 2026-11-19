@@ -30,6 +30,8 @@ export interface RustEffectDecl {
   /** 처리 지연(샘플, 48kHz 기준이 아니라 **샘플레이트와 무관한 고정 블록**) — Rust 가 보고하는 값과 같아야 한다 */
   latency?: number;
   /** 미터 칸 이름 (Rust `meters()` 순서) */
+  /** 사이드체인(다른 트랙 소리로 감지)을 받는가 */
+  sidechain?: true;
   /** `reduction` 이면 게인 감소 — 오른쪽에서 왼쪽으로 차는 붉은 막대 */
   meters?: { label: string; unit?: string; min: number; max: number; reduction?: true }[];
   params: Record<string, EffectParamSpec>;
@@ -79,7 +81,7 @@ function eqParams(): Record<string, EffectParamSpec> {
 
 export const RUST_EFFECT_SPECS = {
   gate: {
-    label: '노이즈 게이트', category: 'dynamics',
+    label: '노이즈 게이트', category: 'dynamics', sidechain: true,
     meters: [GR, { label: '감지', unit: 'dB', min: -80, max: 0 }, { label: '열림', min: 0, max: 1 }],
     params: {
       thresholdDb: db('스레숄드', -80, 0, -40),
@@ -131,7 +133,7 @@ export const RUST_EFFECT_SPECS = {
   },
   // --- 1단계: 다이내믹스·EQ·필터 ---
   expander: {
-    label: '익스팬더', category: 'dynamics', meters: [GR],
+    label: '익스팬더', category: 'dynamics', meters: [GR], sidechain: true,
     params: {
       thresholdDb: db('스레숄드', -80, 0, -40),
       ratio: { label: '레이시오', min: 1, max: 8, default: 2 },
@@ -164,7 +166,7 @@ export const RUST_EFFECT_SPECS = {
     },
   },
   compmodel: {
-    label: '컴프레서 (회로 모델)', category: 'dynamics', latency: 16,
+    label: '컴프레서 (회로 모델)', category: 'dynamics', latency: 16, sidechain: true,
     meters: [GR, { label: '입력', unit: 'dB', min: -60, max: 0 }, { label: '출력', unit: 'dB', min: -60, max: 0 }],
     params: {
       model: choice('모델', ['플래티넘 (디지털)', '스튜디오 VCA', '스튜디오 FET', '빈티지 옵토', '빈티지 VCA'], 1),

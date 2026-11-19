@@ -36,7 +36,8 @@ import {
   curveToParams, noteOffFields, toFreeCurve, variationSeed, WASM_PARAM_ORDER,
 } from './voice/wasmEngine.ts';
 import { voiceKindIndex } from '../instruments/types.ts';
-import { buildEffectChain, updateEffectChain } from './effectGraph.ts';
+import { buildEffectChain, updateEffectChain, wireSidechains } from './effectGraph.ts';
+import type { KeyConnection } from './effectGraph.ts';
 import type { EffectChain } from './effectGraph.ts';
 import { scheduleClick } from './metronome.ts';
 import { BusGraph } from './busGraph.ts';
@@ -102,6 +103,7 @@ export class WorkletRenderer implements AudioRenderer {
   /** 미터가 프레임마다 부르므로 버퍼를 재사용한다 — 매번 할당하면 GC 가 튄다 */
   private levelBuffer = new Float32Array(1024);
   private masterEffects: EffectChain;
+  private keyConnections: KeyConnection[] = [];
   private masterEffectsKey = '';
   /** Aux 버스·트랙 출력·센드 (`busGraph.ts`) */
   private busGraph: BusGraph;
@@ -183,6 +185,16 @@ export class WorkletRenderer implements AudioRenderer {
       }
     }
     for (const track of project.tracks) this.updateTrack(track);
+    // 사이드체인 — 트랙 체인·버스·마스터가 원하는 감지 소스를 잇는다 (트랙 끝 = 분석 노드)
+    this.keyConnections = wireSidechains(
+      [
+        ...[...this.tracks].map(([id, rt]) => ({ owner: id as string, chain: rt.effects })),
+        ...(project.buses ?? []).map((b) => ({ owner: b.id as string, chain: this.busGraph.busEffects(b.id) })).filter((x): x is { owner: string; chain: EffectChain } => x.chain !== null),
+        { owner: 'master', chain: this.masterEffects },
+      ],
+      (id) => this.tracks.get(id as TrackId)?.analyser,
+      this.keyConnections,
+    );
   }
 
   updateTrack(track: Track): void {

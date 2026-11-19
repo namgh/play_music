@@ -31,7 +31,8 @@ import {
   curveToParams, noteOffFields, toFreeCurve, variationSeed, WASM_PARAM_ORDER,
 } from './voice/wasmEngine.ts';
 import { voiceKindIndex } from '../instruments/types.ts';
-import { buildEffectChain } from './effectGraph.ts';
+import { buildEffectChain, wireSidechains } from './effectGraph.ts';
+import type { EffectChain } from './effectGraph.ts';
 
 const WORKLET_URL = '/ks-worklet.js';
 
@@ -80,6 +81,9 @@ export async function renderOfflineWithWorklet(
   const panOf = new Map<string, AudioNode>();
   const ready: Promise<void>[] = [];
 
+  // 사이드체인 — 트랙 끝 노드와 각 체인을 모아 두었다가 다 지은 뒤 잇는다 (재생과 같은 함수)
+  const trackEnds = new Map<string, AudioNode>();
+  const owners: { owner: string; chain: EffectChain }[] = [{ owner: 'master', chain: master }];
   for (const track of tracks) {
     const instrument = resolveInstrument(track.instrumentId, registry);
     const params = instrumentParams(instrument, track.toneId, track.toneParams);
@@ -100,6 +104,8 @@ export async function renderOfflineWithWorklet(
     node.connect(gain).connect(pan).connect(effects.input);
     effects.output.connect(automationGain);
     buses.routeTrack(track, automationGain, effects.latency ?? 0);
+    trackEnds.set(track.id, automationGain);
+    owners.push({ owner: track.id, chain: effects });
 
     // 워크렛이 wasm 을 준비했다고 알려 줄 때까지 기다린다. 준비 전에 예약하면
     // 그 메시지들이 무시돼 **음이 빠진 파일**이 나온다
@@ -158,6 +164,11 @@ export async function renderOfflineWithWorklet(
 
   await Promise.all(ready);
   scheduleAudioRegions(offline, planAudio(subset, 0), audioBuffers, 0, (id) => panOf.get(id) ?? null);
+  for (const bus of project.buses ?? []) {
+    const chain = buses.busEffects(bus.id);
+    if (chain) owners.push({ owner: bus.id, chain });
+  }
+  wireSidechains(owners, (id) => trackEnds.get(id), []);
   const rendered = await offline.startRendering();
   return Array.from({ length: rendered.numberOfChannels }, (_, ch) => rendered.getChannelData(ch));
 }

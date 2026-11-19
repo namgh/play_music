@@ -37,6 +37,10 @@ pub trait Effect {
     /// 곡 위치(이 블록 첫 샘플이 곡 시작에서 몇 샘플째인가)와 템포 — 박자에 맞추는 이펙트만 쓴다.
     /// 처리 전에 블록마다 불린다
     fn transport(&mut self, _position: f64, _bpm: f32) {}
+    /// 사이드체인 — 감지를 다른 소리(`kl`, `kr`)로. 지원하지 않는 이펙트는 무시하고 평소대로
+    fn process_keyed(&mut self, l: &mut [f32], r: &mut [f32], _kl: &[f32], _kr: &[f32]) {
+        self.process(l, r);
+    }
 }
 
 /// (이름, 만드는 함수). 만들 때 파라미터 첫 값을 받는다 — 구조가 파라미터에 달린 이펙트

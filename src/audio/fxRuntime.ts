@@ -72,7 +72,8 @@ export function createRustFxNode(ctx: BaseAudioContext, type: RustEffectType, pa
   values.forEach((v, i) => { parameterData[`p${i}`] = v; });
   const first = !bytesSent.has(ctx);
   const node = new AudioWorkletNode(ctx, 'rust-fx', {
-    numberOfInputs: 1,
+    // 둘째 입력 = 사이드체인 감지 (이어져 있지 않으면 Rust 가 자기 소리로 감지)
+    numberOfInputs: 2,
     numberOfOutputs: 1,
     outputChannelCount: [2],
     channelCount: 2,

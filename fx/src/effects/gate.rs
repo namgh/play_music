@@ -77,8 +77,23 @@ impl Effect for Gate {
     }
 
     fn process(&mut self, l: &mut [f32], r: &mut [f32]) {
+        self.run(l, r, None);
+    }
+
+    fn process_keyed(&mut self, l: &mut [f32], r: &mut [f32], kl: &[f32], kr: &[f32]) {
+        self.run(l, r, Some((kl, kr)));
+    }
+
+    fn meters(&self, out: &mut Meters) {
+        self.write_meters(out);
+    }
+}
+
+impl Gate {
+    fn run(&mut self, l: &mut [f32], r: &mut [f32], key: Option<(&[f32], &[f32])>) {
         for i in 0..l.len() {
-            let key = self.sc_lp.tick(self.sc_hp.tick(0.5 * (l[i] + r[i])));
+            let (a, b) = key.map_or((l[i], r[i]), |(kl, kr)| (kl[i], kr[i]));
+            let key = self.sc_lp.tick(self.sc_hp.tick(0.5 * (a + b)));
             // 피크 감지 — 빠른 어택, 2ms 릴리즈(판정용이라 짧게)
             let m = crate::blocks::gain_to_db(key.abs() * 2.0);
             self.level_db = if m > self.level_db {
@@ -105,7 +120,7 @@ impl Effect for Gate {
         }
     }
 
-    fn meters(&self, out: &mut Meters) {
+    fn write_meters(&self, out: &mut Meters) {
         out[0] = self.smoother.db();
         out[1] = self.level_db;
         out[2] = if self.open { 1.0 } else { 0.0 };

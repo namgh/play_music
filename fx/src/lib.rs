@@ -22,6 +22,10 @@ struct State {
     meters: Meters,
     position: f64,
     bpm: f32,
+    /// 사이드체인 감지 입력 (워크렛의 둘째 입력). `key_active` 가 아니면 쓰지 않는다
+    kl: Vec<f32>,
+    kr: Vec<f32>,
+    key_active: bool,
     l: Vec<f32>,
     r: Vec<f32>,
 }
@@ -38,6 +42,9 @@ fn state() -> &'static mut State {
             meters: [0.0; MAX_METERS],
             position: 0.0,
             bpm: 120.0,
+            kl: vec![0.0; MAX_BLOCK],
+            kr: vec![0.0; MAX_BLOCK],
+            key_active: false,
             l: vec![0.0; MAX_BLOCK],
             r: vec![0.0; MAX_BLOCK],
         })
@@ -87,10 +94,31 @@ pub extern "C" fn fx_process(frames: u32) {
     if let Some(fx) = s.fx.as_mut() {
         fx.transport(s.position, s.bpm);
         fx.set_params(&s.params);
-        fx.process(&mut s.l[..n], &mut s.r[..n]);
+        if s.key_active {
+            fx.process_keyed(&mut s.l[..n], &mut s.r[..n], &s.kl[..n], &s.kr[..n]);
+        } else {
+            fx.process(&mut s.l[..n], &mut s.r[..n]);
+        }
         fx.meters(&mut s.meters);
     }
     s.position += n as f64;
+}
+
+/// 사이드체인 입력 버퍼 (왼·오른) — 쓰고 `fx_key(1)` 로 켠다
+#[no_mangle]
+pub extern "C" fn fx_key_l() -> *mut f32 {
+    state().kl.as_mut_ptr()
+}
+
+#[no_mangle]
+pub extern "C" fn fx_key_r() -> *mut f32 {
+    state().kr.as_mut_ptr()
+}
+
+/// 이번 블록에 사이드체인을 쓸지 (0 끔 · 1 켬)
+#[no_mangle]
+pub extern "C" fn fx_key(active: u32) {
+    state().key_active = active != 0;
 }
 
 /// 다음 블록의 곡 위치(샘플)와 템포. 부르지 않으면 위치는 블록마다 저절로 늘어난다

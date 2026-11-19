@@ -38,6 +38,8 @@ export interface EffectChain {
   latency?: number;
   /** 이펙트 순번(바이패스 포함 원래 자리) → 최근 미터 값. Rust 이펙트 중 미터가 있는 것만 */
   meters?: Map<number, Float32Array>;
+  /** 사이드체인을 원하는 칸 — 렌더러가 `source` 트랙 출력을 `node` 의 둘째 입력에 잇는다 */
+  keyed?: { source: string; node: AudioNode }[];
 }
 
 const same = (v: number) => v;
@@ -518,6 +520,7 @@ export function updateEffectChain(ctx: BaseAudioContext, previous: EffectChain |
   let tail: AudioNode = passthrough;
   const bindings: Record<string, ParamBinding[]> = {};
   const meters = new Map<number, Float32Array>();
+  const keyed: { source: string; node: AudioNode }[] = [];
   let latency = 0;
   for (const [index, spec] of specs.entries()) {
     if (spec.bypass) continue;
@@ -549,6 +552,7 @@ export function updateEffectChain(ctx: BaseAudioContext, previous: EffectChain |
     parts.push(part);
     latency += part.chain.latency ?? 0;
     if (part.chain.meterValues) meters.set(index, part.chain.meterValues);
+    if (spec.sidechain && isRustEffect(spec.type) && typeof AudioWorkletNode !== 'undefined' && part.chain.input instanceof AudioWorkletNode) keyed.push({ source: spec.sidechain, node: part.chain.input });
     for (const [name, list] of Object.entries(part.chain.bindings ?? {})) bindings[`${index}:${name}`] = list;
   }
   for (const unused of pool) unused.chain.dispose();
@@ -559,6 +563,7 @@ export function updateEffectChain(ctx: BaseAudioContext, previous: EffectChain |
     bindings,
     latency,
     meters,
+    keyed,
     parts,
     dispose: () => {
       passthrough.disconnect();
@@ -566,4 +571,33 @@ export function updateEffectChain(ctx: BaseAudioContext, previous: EffectChain |
     },
   };
   return chain;
+}
+
+/** 사이드체인 연결 하나 — 끊을 때 쓴다 */
+export interface KeyConnection { from: AudioNode; to: AudioNode }
+
+/**
+ * 사이드체인을 다시 잇는다 (`PARITY_ROUND2.md` 7). 앞서 이은 것을 모두 끊고, 체인들이 원하는 감지 소스
+ * (트랙 끝 = 페이더·이펙트 뒤)를 각 Rust 노드의 **둘째 입력**에 잇는다. 자기 자신이 소스면 잇지 않는다.
+ * 두 트랙이 서로를 감지하면 지연 없는 고리가 되어 브라우저가 둘 다 무음으로 만든다 — 그런 짝은 건너뛴다.
+ */
+export function wireSidechains(
+  owners: { owner: string; chain: EffectChain }[],
+  sourceOf: (trackId: string) => AudioNode | undefined,
+  previous: readonly KeyConnection[],
+): KeyConnection[] {
+  for (const c of previous) {
+    try { c.from.disconnect(c.to, 0, 1); } catch { /* 이미 끊겼다 */ }
+  }
+  const wants = owners.flatMap(({ owner, chain }) => (chain.keyed ?? []).map((k) => ({ owner, ...k })));
+  const pairs = new Set(wants.map((w) => `${w.source}>${w.owner}`));
+  const out: KeyConnection[] = [];
+  for (const w of wants) {
+    if (w.source === w.owner || pairs.has(`${w.owner}>${w.source}`)) continue;
+    const from = sourceOf(w.source);
+    if (!from) continue;
+    from.connect(w.node, 0, 1);
+    out.push({ from, to: w.node });
+  }
+  return out;
 }

@@ -313,6 +313,7 @@ export function Mixer({ editor, readLevel, readEffectMeters, compensationSamples
         <EffectPanel
           owner={openedOwnerName}
           effect={openedEffect}
+          keySources={project.tracks.filter((t) => !(opened.owner === 'track' && t.id === opened.id)).map((t) => ({ id: t.id, name: t.name }))}
           readMeters={readEffectMeters ? () => readEffectMeters(opened.owner === 'master' ? null : opened.id, opened.index) : undefined}
           onChange={(next, commit) => {
             const effects = [...openedEffects];
@@ -480,9 +481,11 @@ function EffectMeters({ type, read }: { type: EffectType; read: () => Float32Arr
 
 /** 이펙트 하나. 파라미터 슬라이더는 선언에서 자동 생성된다 */
 function EffectPanel({
-  owner, effect, onChange, onRemove, onClose, readMeters,
+  owner, effect, onChange, onRemove, onClose, readMeters, keySources = [],
 }: {
   owner: string;
+  /** 사이드체인으로 고를 수 있는 트랙 (자기 트랙 빼고) */
+  keySources?: { id: string; name: string }[];
   effect: EffectSpec;
   readMeters?: (() => Float32Array | null) | undefined;
   onChange: (next: EffectSpec, commit: boolean) => void;
@@ -516,6 +519,22 @@ function EffectPanel({
         <button type="button" onClick={onClose} className="h-7 rounded-md border border-rule bg-body px-2.5 text-xs text-ink-2">닫기</button>
       </div>
 
+      {declared.sidechain && (
+        <label className="mt-3 flex items-center gap-2 text-[11px] text-ink-2">
+          사이드체인 (감지 입력)
+          <select aria-label="사이드체인" value={effect.sidechain ?? ''}
+            onChange={(e) => {
+              const next = { ...effect };
+              if (e.target.value) next.sidechain = e.target.value as TrackId; else delete next.sidechain;
+              onChange(next, true);
+            }}
+            className="h-7 rounded-md border border-rule bg-body px-1.5 text-xs text-ink">
+            <option value="">자기 소리</option>
+            {keySources.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </select>
+          <span className="text-ink-3">{effect.sidechain ? '그 트랙 소리가 커지면 이 소리를 누른다 (덕킹)' : ''}</span>
+        </label>
+      )}
       {hasEqCurve(effect.type) && <EqCurve type={effect.type} params={numericParams(effect, declared.params)} />}
       <StepGrids effect={effect} params={declared.params} onChange={onChange} />
 

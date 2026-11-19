@@ -55,17 +55,28 @@ impl Effect for Expander {
     }
 
     fn process(&mut self, l: &mut [f32], r: &mut [f32]) {
+        self.run(l, r, None);
+    }
+
+    fn process_keyed(&mut self, l: &mut [f32], r: &mut [f32], kl: &[f32], kr: &[f32]) {
+        self.run(l, r, Some((kl, kr)));
+    }
+
+    fn meters(&self, out: &mut Meters) {
+        out[0] = self.gs.db();
+    }
+}
+
+impl Expander {
+    fn run(&mut self, l: &mut [f32], r: &mut [f32], key: Option<(&[f32], &[f32])>) {
         for i in 0..l.len() {
-            let lvl = self.det.tick(l[i].abs().max(r[i].abs()));
+            let (a, b) = key.map_or((l[i], r[i]), |(kl, kr)| (kl[i], kr[i]));
+            let lvl = self.det.tick(a.abs().max(b.abs()));
             let target = expand_db(lvl, self.p[0], self.p[1], self.p[2], self.p[5]);
             let g = db_to_gain(self.gs.tick(target)) * self.makeup.tick();
             l[i] *= g;
             r[i] *= g;
         }
-    }
-
-    fn meters(&self, out: &mut Meters) {
-        out[0] = self.gs.db();
     }
 }
 
@@ -338,6 +349,26 @@ impl Effect for CompModel {
     }
 
     fn process(&mut self, l: &mut [f32], r: &mut [f32]) {
+        self.run(l, r, None);
+    }
+
+    fn process_keyed(&mut self, l: &mut [f32], r: &mut [f32], kl: &[f32], kr: &[f32]) {
+        self.run(l, r, Some((kl, kr)));
+    }
+
+    fn latency(&self) -> usize {
+        oversample::LATENCY
+    }
+
+    fn meters(&self, out: &mut Meters) {
+        out[0] = self.gs.db();
+        out[1] = self.meter_in;
+        out[2] = self.meter_out;
+    }
+}
+
+impl CompModel {
+    fn run(&mut self, l: &mut [f32], r: &mut [f32], keyed: Option<(&[f32], &[f32])>) {
         let drive = 1.0 + 4.0 * self.color;
         let norm = 1.0 / drive.tanh();
         let mut peak_in = 0f32;
@@ -345,10 +376,12 @@ impl Effect for CompModel {
         for i in 0..l.len() {
             let (xl, xr) = (l[i], r[i]);
             peak_in = peak_in.max(xl.abs().max(xr.abs()));
-            let key = if self.model == 4 {
+            // 사이드체인이 있으면 감지는 그 소리로 (피드백 모델도 — 남의 소리를 들을 때는 출력을 안 본다)
+            let (ka, kb) = keyed.map_or((xl, xr), |(kl, kr)| (kl[i], kr[i]));
+            let key = if self.model == 4 && keyed.is_none() {
                 self.last_out
             } else {
-                self.sc_l.tick(xl).abs().max(self.sc_r.tick(xr).abs())
+                self.sc_l.tick(ka).abs().max(self.sc_r.tick(kb).abs())
             };
             let lvl = self.det.tick(key);
             let red = compress_db(lvl, self.threshold, self.ratio, self.knee);
@@ -394,16 +427,6 @@ impl Effect for CompModel {
         }
         self.meter_in = gain_to_db(peak_in);
         self.meter_out = gain_to_db(peak_out);
-    }
-
-    fn latency(&self) -> usize {
-        oversample::LATENCY
-    }
-
-    fn meters(&self, out: &mut Meters) {
-        out[0] = self.gs.db();
-        out[1] = self.meter_in;
-        out[2] = self.meter_out;
     }
 }
 
@@ -642,6 +665,47 @@ mod tests {
             .unwrap()
             .0;
         assert_eq!(at, 20 + c.latency());
+    }
+
+    #[test]
+    fn sidechain_ducks_by_key_not_by_input() {
+        let sr = 48000.0;
+        let pp = p(&[0.0, -30.0, 10.0, 1.0, 60.0, 0.0, 0.0, 0.0, 1.0, 20.0, 0.0]);
+        // 작은 베이스(누르지 않을 크기) + 큰 킥 열쇠 → 열쇠가 있을 때만 눌린다
+        let bass = sine(80.0, sr, 24000, 0.02);
+        let kick = sine(60.0, sr, 24000, 0.9);
+        let silent = vec![0.0; 24000];
+        let mut c = CompModel::new(sr, &pp);
+        let mut l = bass.clone();
+        let mut r = bass.clone();
+        for ((cl, cr), (kl, kr)) in l
+            .chunks_mut(128)
+            .zip(r.chunks_mut(128))
+            .zip(kick.chunks(128).zip(kick.chunks(128)))
+        {
+            c.set_params(&pp);
+            c.process_keyed(cl, cr, kl, kr);
+        }
+        assert!(
+            peak(&l[12000..]) < 0.02 * 0.3,
+            "킥이 베이스를 누른다 {}",
+            peak(&l[12000..])
+        );
+        let mut c = CompModel::new(sr, &pp);
+        let mut l2 = bass.clone();
+        let mut r2 = bass.clone();
+        for ((cl, cr), (kl, kr)) in l2
+            .chunks_mut(128)
+            .zip(r2.chunks_mut(128))
+            .zip(silent.chunks(128).zip(silent.chunks(128)))
+        {
+            c.set_params(&pp);
+            c.process_keyed(cl, cr, kl, kr);
+        }
+        assert!(
+            (peak(&l2[12000..]) - 0.02).abs() < 0.002,
+            "열쇠가 조용하면 그대로"
+        );
     }
 
     #[test]
