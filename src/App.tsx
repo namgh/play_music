@@ -783,28 +783,33 @@ export function App() {
               title={isRecording ? '녹음 멈추기' : `커서부터 녹음 — 건반 칸·MIDI 건반으로 칩니다 (${recordMode === 'replace' ? '바꿔 녹음: 옛 음은 테이크로' : '겹쳐 녹음'})`}
               className={`${ROUND_BTN} ${isRecording ? 'border-rec bg-rec text-body' : ''}`}
             ><i className={`h-3 w-3 rounded-full ${isRecording ? 'bg-body' : 'bg-rec'}`} /></button>
-            <button
-              type="button"
-              onClick={() => setRecordMode((m) => (m === 'replace' ? 'overdub' : 'replace'))}
-              aria-label="녹음 방식"
-              title="바꿔 녹음(옛 음은 테이크로 남김) / 겹쳐 녹음(더하기)"
-              className="h-7 rounded-md border border-rule bg-panel px-1.5 text-[10px] text-ink-2"
-            >{recordMode === 'replace' ? '바꿔' : '겹쳐'}</button>
-            <button
-              type="button"
-              onClick={() => setPunch((v) => !v)}
-              aria-pressed={punch}
-              aria-label="펀치 인/아웃"
-              title="펀치 인/아웃 — 반복 구간 안에서 친 것만 녹음합니다 (앞뒤는 준비 연주)"
-              className={`h-7 rounded-md border px-1.5 text-[10px] ${punch ? 'border-rec bg-rec text-body' : 'border-rule bg-panel text-ink-2'}`}
-            >펀치</button>
-            <button
-              type="button"
-              onClick={captureFlashback}
-              aria-label="방금 연주 담기"
-              title="Flashback — 녹음을 안 눌렀어도 재생하며 친 것을 고른 클립에 담습니다"
-              className="h-7 rounded-md border border-rule bg-panel px-1.5 text-[10px] text-ink-2"
-            >담기</button>
+            {/* 녹음 옵션 — 상단 바가 좁아 두 줄로 (바꿔/겹쳐 · 펀치 / 담기) */}
+            <div className="flex shrink-0 flex-col gap-0.5">
+              <div className="flex gap-0.5">
+                <button
+                  type="button"
+                  onClick={() => setRecordMode((m) => (m === 'replace' ? 'overdub' : 'replace'))}
+                  aria-label="녹음 방식"
+                  title="바꿔 녹음(옛 음은 테이크로 남김) / 겹쳐 녹음(더하기)"
+                  className="h-[17px] rounded border border-rule bg-panel px-1 text-[10px] leading-none text-ink-2"
+                >{recordMode === 'replace' ? '바꿔' : '겹쳐'}</button>
+                <button
+                  type="button"
+                  onClick={() => setPunch((v) => !v)}
+                  aria-pressed={punch}
+                  aria-label="펀치 인/아웃"
+                  title="펀치 인/아웃 — 반복 구간 안에서 친 것만 녹음합니다 (앞뒤는 준비 연주)"
+                  className={`h-[17px] rounded border px-1 text-[10px] leading-none ${punch ? 'border-rec bg-rec text-body' : 'border-rule bg-panel text-ink-2'}`}
+                >펀치</button>
+              </div>
+              <button
+                type="button"
+                onClick={captureFlashback}
+                aria-label="방금 연주 담기"
+                title="Flashback — 녹음을 안 눌렀어도 재생하며 친 것을 고른 클립에 담습니다"
+                className="h-[17px] rounded border border-rule bg-panel px-1 text-[10px] leading-none text-ink-2 w-full"
+              >담기</button>
+            </div>
             <button
               type="button"
               onClick={() => setMetronome((on) => !on)}
@@ -1556,7 +1561,7 @@ export function App() {
                 </div>
                 {!clip.audio && editorView === 'list' && <div className="scope-screen flex min-h-0 flex-1 flex-col"><EventList editor={editor} clip={clip} onAudition={audition} /></div>}
                 {clip.audio && <div className="flex min-h-0 flex-1 flex-col"><AudioEditor editor={editor} clip={clip as typeof clip & { audio: NonNullable<typeof clip.audio> }} /></div>}
-                {!clip.audio && editorView === 'score' && <div className="flex min-h-0 flex-1 flex-col"><ScoreView project={project} track={track} clip={clip} /></div>}
+                {!clip.audio && editorView === 'score' && <div className="flex min-h-0 flex-1 flex-col"><ScoreView project={project} track={track} clip={clip} editor={editor} noteLength={noteLengthTicks} onAudition={(midi) => audition(midi, 0)} /></div>}
                 {!clip.audio && editorView === 'steps' && (
                   <div className="scope-screen flex min-h-0 flex-1 flex-col">
                     <StepSequencer editor={editor} track={track} clip={clip} playheadTick={engine.playheadTick}

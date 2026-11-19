@@ -27,6 +27,8 @@ export interface NEvent {
   pitches: Spelled[];
   /** 다음 조각과 붙임줄로 이어지나 */
   tie: boolean;
+  /** 음 id — `pitches` 와 같은 순서 (악보에서 음을 고를 때) */
+  ids?: string[];
 }
 
 export interface Measure {
@@ -119,14 +121,14 @@ export function notate(project: Project, notes: readonly Note[], clipStart: Tick
   let prevTs: TimeSignature | null = null;
   // 곡 기준 시작·끝으로 맞추고, 같은 시작끼리 묶는다
   const events = notes
-    .map((n) => ({ start: q(clipStart + n.startTick), end: q(clipStart + n.startTick + n.lengthTick), midi: n.pitch.midi }))
+    .map((n) => ({ start: q(clipStart + n.startTick), end: q(clipStart + n.startTick + n.lengthTick), midi: n.pitch.midi, id: n.id as string }))
     .map((e) => ({ ...e, end: Math.max(e.end, e.start + GRID) }))
     .sort((a, b) => a.start - b.start || a.midi - b.midi);
-  const groups: { start: Ticks; end: Ticks; midis: number[] }[] = [];
+  const groups: { start: Ticks; end: Ticks; midis: number[]; ids: string[] }[] = [];
   for (const e of events) {
     const g = groups[groups.length - 1];
-    if (g && g.start === e.start) { g.midis.push(e.midi); g.end = Math.min(g.end, e.end); }
-    else groups.push({ start: e.start, end: e.end, midis: [e.midi] });
+    if (g && g.start === e.start) { g.midis.push(e.midi); g.ids.push(e.id); g.end = Math.min(g.end, e.end); }
+    else groups.push({ start: e.start, end: e.end, midis: [e.midi], ids: [e.id] });
   }
   // 다음 묶음이 시작하면 앞 묶음을 거기서 끊는다 (한 성부)
   for (let i = 0; i < groups.length - 1; i++) groups[i]!.end = Math.min(groups[i]!.end, groups[i + 1]!.start);
@@ -147,10 +149,12 @@ export function notate(project: Project, notes: readonly Note[], clipStart: Tick
       if (s > cursor) rest(cursor, s);
       const pieces = split(s, e - s, ts);
       const continues = g.end > pos + len; // 다음 마디로 이어진다
+      // 묶음 안의 음은 이미 높이 순(events 가 그렇게 정렬됐다) — 높이와 id 를 같은 순서로
       pieces.forEach((p, i) => out.push({
         kind: 'note', offset: p.offset, duration: p.d.ticks, type: p.d.type, dots: p.d.dots,
-        pitches: [...g.midis].sort((a, c) => a - c).map((m) => spell(m, fifths)),
+        pitches: g.midis.map((m) => spell(m, fifths)),
         tie: i < pieces.length - 1 || continues,
+        ids: g.ids,
       }));
       cursor = e;
     }
@@ -163,6 +167,32 @@ export function notate(project: Project, notes: readonly Note[], clipStart: Tick
     prevTs = ts;
   }
   return measures;
+}
+
+const STEP_SEMI: Record<Step, number> = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+const STEPS: Step[] = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
+
+/**
+ * 오선 위 자리(온음계 번호 = 옥타브·7 + 음이름) → MIDI. 조표의 올림·내림을 붙인다 —
+ * 악보에서 누른 자리에 음을 넣을 때 (Logic 악보 편집과 같다: G장조에서 F 자리를 누르면 F♯)
+ */
+export function midiFromDiatonic(diatonic: number, fifths: number): number {
+  const octave = Math.floor(diatonic / 7);
+  const step = STEPS[((diatonic % 7) + 7) % 7]!;
+  return (octave + 1) * 12 + STEP_SEMI[step] + keyAlter(fifths, step);
+}
+
+/** 큰보표를 쓸까 — 피아노이거나, 음이 가운데 도 위아래로 넓게 퍼지면 */
+export function wantsGrandStaff(notes: readonly Note[], piano: boolean): boolean {
+  if (piano) return true;
+  if (notes.length === 0) return false;
+  const midis = notes.map((n) => n.pitch.midi);
+  return Math.min(...midis) < 55 && Math.max(...midis) > 67;
+}
+
+/** 큰보표 나누기 — 가운데 도(60)부터 위는 높은음, 아래는 낮은음 */
+export function splitGrandStaff<T extends { pitch: { midi: number } }>(notes: readonly T[]): { treble: T[]; bass: T[] } {
+  return { treble: notes.filter((n) => n.pitch.midi >= 60), bass: notes.filter((n) => n.pitch.midi < 60) };
 }
 
 /** 높은음자리표·낮은음자리표 고르기 — 음 평균이 가운데 도 아래면 낮은음 */

@@ -589,6 +589,29 @@ try {
   await sleep(400);
   const real20 = await ev(`(() => { const p = JSON.parse(localStorage.getItem('project-autosave-v1')); const d = p.project ?? p; return d.tracks.flatMap((t) => t.clips).filter((c) => c.aliasOf).length; })()`);
   record('에일리어스 → 진짜 복사', real20 === 0, `남은 에일리어스 ${real20}`);
+  // 20c3. 악보에서 고치기 — 오선을 누르면 음이 늘고, 고른 음을 Delete 로 지운다
+  const notesNow = () => ev(`(() => { const p = JSON.parse(localStorage.getItem('project-autosave-v1')); const d = p.project ?? p; return d.tracks.reduce((a, t) => a + t.clips.reduce((b, c) => b + c.notes.length, 0), 0); })()`);
+  await clickEl(`[...document.querySelectorAll('[aria-label="편집기 보기"] button')].find((x) => x.textContent === '악보')`);
+  await sleep(500);
+  const sc0 = await notesNow();
+  const staff = await ev(`(() => { const s = document.querySelector('[data-score] svg'); if (!s) return null; s.scrollIntoView({ block: 'center' }); const r = s.getBoundingClientRect(); return { x: r.x + r.width * 0.62, y: r.y + 34 * r.width / 1000 }; })()`);
+  let scoreLog = '악보 없음';
+  let scoreDebug = '';
+  if (staff) {
+    // 화면 아래 알림이 악보 아랫부분을 덮을 수 있다 — 악보에 직접 누르기를 보낸다
+    await ev(`(() => { const s = document.querySelector('[data-score] svg'); s.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: ${staff.x}, clientY: ${staff.y}, pointerId: 1, button: 0, buttons: 1 })); return 'ok'; })()`);
+    await sleep(400);
+    await ev(`document.querySelector('[data-score] > div:last-child').focus(); 'ok'`);
+    const sc1 = await notesNow();
+    await send('Input.dispatchKeyEvent', { type: 'keyDown', code: 'Delete', key: 'Delete', windowsVirtualKeyCode: 46 });
+    await send('Input.dispatchKeyEvent', { type: 'keyUp', code: 'Delete', key: 'Delete', windowsVirtualKeyCode: 46 });
+    await sleep(400);
+    scoreLog = `${sc0} → ${sc1} → ${await notesNow()}`;
+    scoreDebug = await ev(`(() => { const s = document.querySelector('[data-score] svg'); const r = s.getBoundingClientRect(); const top = document.elementFromPoint(${staff.x}, ${staff.y}); return 'svg ' + Math.round(r.x) + ',' + Math.round(r.y) + ' ' + Math.round(r.width) + 'x' + Math.round(r.height) + ' · 누른 곳 ' + (top?.tagName ?? '-') + ' · ' + (document.querySelector('[data-score] span')?.textContent ?? '') + ' · 알림 ' + (document.body.innerText.match(/[^\\n]*(클립|음)[^\\n]*닫기/)?.[0] ?? ''); })()`);
+  }
+  const [sn0, sn1, sn2] = scoreLog.split(' → ').map(Number);
+  record('악보에서 음 넣기·지우기', sn1 === sn0 + 1 && sn2 === sn0, `${scoreLog} · ${scoreDebug}`);
+  await clickEl(`[...document.querySelectorAll('[aria-label="편집기 보기"] button')].find((x) => x.textContent === '피아노 롤')`);
   // 20d. 바운스 인 플레이스 · 프리즈 — 트랙을 오디오로 렌더해 놓고, 얼렸다 녹인다
   const tracksBefore20 = await ev(`(() => { const p = JSON.parse(localStorage.getItem('project-autosave-v1')); return (p.project ?? p).tracks.length; })()`);
   await clickEl(byText('바운스'));

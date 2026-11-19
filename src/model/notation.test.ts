@@ -59,3 +59,22 @@ test('음자리표 고르기 · MusicXML', () => {
   assert.match(xml, /<measure number="2">/);
   assert.equal((xml.match(/<measure /g) ?? []).length, 2);
 });
+
+test('악보 편집 — 누른 자리 → 조표 붙은 음, 큰보표 판단·나누기, 음 id 가 따라온다', async () => {
+  const { midiFromDiatonic, wantsGrandStaff, splitGrandStaff, notate } = await import('./notation.ts');
+  const { createEmptyProject, createNote } = await import('./factory.ts');
+  // C4 = 4·7+0 = 28, F4 = 31
+  assert.equal(midiFromDiatonic(28, 0), 60);
+  assert.equal(midiFromDiatonic(31, 1), 66, 'G 장조의 F 자리는 F♯');
+  assert.equal(midiFromDiatonic(34, -1), 70, 'F 장조의 B 자리는 B♭');
+  const low = createNote({ startTick: 0, lengthTick: 480, midi: 43 });
+  const high = createNote({ startTick: 0, lengthTick: 480, midi: 72 });
+  assert.equal(wantsGrandStaff([low, high], false), true);
+  assert.equal(wantsGrandStaff([high], false), false);
+  const parts = splitGrandStaff([low, high]);
+  assert.deepEqual([parts.treble.length, parts.bass.length], [1, 1]);
+  const p = createEmptyProject('n');
+  const m = notate(p, [low, high], 0, 0, 1);
+  const ev = m[0]!.events.find((e) => e.kind === 'note')!;
+  assert.deepEqual(ev.ids, [low.id, high.id]);
+});

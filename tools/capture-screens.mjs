@@ -407,6 +407,19 @@ export const SCREENS = [
       await sleep(300);
     },
   },
+  {
+    name: 'a22-score-grand', area: 22, title: '악보 — 큰보표(로즈, 가운데 도에서 나눔) · 오선을 눌러 음 넣기 · 고른 음(노랑) ↑↓·Delete',
+    run: async (b) => {
+      await b.clickEl(byLabel('로즈 선택'));
+      await b.clickEl(`[...document.querySelectorAll('[aria-label="편집기 보기"] button')].find((x) => x.textContent === '악보')`);
+      await sleep(500);
+      // 첫 마디 높은음 오선 위쪽을 눌러 음 하나 넣는다 (고른 음은 노랑)
+      const at = await b.ev(`(() => { const s = document.querySelector('[data-score] svg'); const r = s.getBoundingClientRect(); return { x: r.x + r.width * 0.14, y: r.y + 30 * r.width / 1000 }; })()`);
+      await b.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: at.x, y: at.y, button: 'left', clickCount: 1 });
+      await b.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: at.x, y: at.y, button: 'left', clickCount: 1 });
+      await sleep(400);
+    },
+  },
 ];
 
 /** 데모 곡의 한 트랙에 이펙트를 넣고 다시 열어 믹서로 간다 (기본값은 앱의 선언에서 채워진다) */
