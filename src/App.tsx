@@ -34,6 +34,7 @@ import { importAudioBytes, MicRecorder, placeAudio } from './ui/audioUi.ts';
 import { bounceInPlace, freezeTrack, unfreezeTrack } from './editor/freeze.ts';
 import { aliasToCopy, makeAlias } from './editor/aliases.ts';
 import { notesInSpan } from './editor/scrub.ts';
+import { loadScreensets, saveScreenset, screensetSlot } from './ui/screensets.ts';
 import { applyPunch, commitRecording, compFromTake, NoteRecorder, playedToNotes, punchAudioWindow, switchTake } from './editor/recording.ts';
 import { SettingsPanel } from './ui/SettingsPanel.tsx';
 import { useMidiInput } from './audio/midiInput.ts';
@@ -533,6 +534,25 @@ export function App() {
       const target = event.target as HTMLElement | null;
       if (target && /^(INPUT|SELECT|TEXTAREA)$/.test(target.tagName)) return;
 
+      // 스크린셋 — 숫자 키로 불러오기, ⇧+숫자로 저장 (`screensets.ts`)
+      const slot = !event.metaKey && !event.ctrlKey && !event.altKey ? screensetSlot(event.code) : null;
+      if (slot !== null) {
+        event.preventDefault();
+        if (event.shiftKey) {
+          saveScreenset(slot, { view, editorView, sideTab, playOpen });
+          setNotice(`화면 배치를 스크린셋 ${slot} 에 저장했습니다 — 숫자 ${slot} 로 불러옵니다`);
+        } else {
+          const set = loadScreensets()[slot];
+          if (!set) { setNotice(`스크린셋 ${slot} 이 비어 있습니다 — ⇧+${slot} 로 지금 배치를 저장하세요`); return; }
+          setView(set.view);
+          setEditorView(set.editorView);
+          setSideTab(set.sideTab);
+          setPlayOpen(set.playOpen);
+          setNotice(`스크린셋 ${slot}`);
+        }
+        return;
+      }
+
       // 단축키는 명령 목록에서 찾는다 — 설정에서 바꾼 키도 여기로 온다 (`shortcuts.ts`)
       const command = resolveCommand(bindings, event);
       if (!command) return;
@@ -582,7 +602,7 @@ export function App() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [
     bindings, clip, countIn, cursorTick, doCopy, doDuplicate, doPaste, editor, engine, gridTicks,
-    loopFromSelection, project, selection, settings.countInBars,
+    loopFromSelection, project, selection, settings.countInBars, view, editorView, sideTab, playOpen,
   ]);
 
   // 재생 중에는 커서가 재생 위치를 따라간다 — 멈춘 자리에서 다시 시작하려면 필요하다

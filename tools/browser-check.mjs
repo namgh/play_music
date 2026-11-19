@@ -684,6 +684,23 @@ try {
   record('스텝 확률 (⌘ 누르기)', prob22 === '75%', prob22 || '표시 없음');
   await shot('18-steps');
 
+  // 22b. 스크린셋 — ⇧+1 로 지금 배치(믹서)를 저장, 편집기로 옮긴 뒤 1 을 누르면 믹서로 돌아온다
+  await ev(`document.activeElement?.blur(); 'ok'`);
+  await clickEl(`[...document.querySelectorAll('nav[aria-label="화면"] button')][1]`);
+  await sleep(300);
+  await send('Input.dispatchKeyEvent', { type: 'keyDown', code: 'Digit7', key: '&', modifiers: 8 });
+  await send('Input.dispatchKeyEvent', { type: 'keyUp', code: 'Digit7', key: '&', modifiers: 8 });
+  await clickEl(`[...document.querySelectorAll('nav[aria-label="화면"] button')][0]`);
+  await sleep(300);
+  await ev(`document.activeElement?.blur(); 'ok'`);
+  await send('Input.dispatchKeyEvent', { type: 'keyDown', code: 'Digit7', key: '7' });
+  await send('Input.dispatchKeyEvent', { type: 'keyUp', code: 'Digit7', key: '7' });
+  await sleep(400);
+  const ss = await ev(`!!document.querySelector('[data-strip]')`);
+  record('스크린셋 — ⇧+7 저장, 7 로 불러오기', ss === true, ss ? '믹서로 돌아옴' : '안 바뀜');
+  await clickEl(`[...document.querySelectorAll('nav[aria-label="화면"] button')][0]`);
+  await sleep(300);
+
   // 23. 스마트 컨트롤 — 손잡이 끌기, MIDI 이펙트(아르페지에이터) 걸고 재생
   await clickEl(`[...document.querySelectorAll('[role=tab]')].find((b) => b.textContent.includes('컨트롤'))`);
   await sleep(200);
