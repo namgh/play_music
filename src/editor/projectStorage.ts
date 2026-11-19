@@ -11,6 +11,8 @@
 
 import type { Project } from '../model/project.ts';
 import { deserializeProject, ProjectLoadError, serializeProject } from '../model/persistence.ts';
+import { isZip, makeBundle, openBundle, projectAssetIds } from './bundle.ts';
+import { getAsset, putAsset } from '../audio/assets.ts';
 
 const AUTOSAVE_KEY = 'project-autosave-v1';
 
@@ -66,8 +68,42 @@ export function downloadProject(project: Project): void {
   URL.revokeObjectURL(url);
 }
 
-/** 파일에서 프로젝트를 읽는다. 실패 이유를 그대로 올려 보낸다 */
+function download(blob: Blob, name: string): void {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = name;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/**
+ * 파일로 저장 — 오디오·영상이 있으면 **묶음 파일(.zip)** 로 (소리까지 들어간다), 없으면 예전처럼 .json.
+ * 결과: 어떤 파일로 저장했는지와, 이 브라우저에 없어 빠진 에셋 수
+ */
+export async function saveProjectFile(project: Project): Promise<{ kind: 'json' | 'bundle'; missing: number }> {
+  if (projectAssetIds(project).length === 0) {
+    downloadProject(project);
+    return { kind: 'json', missing: 0 };
+  }
+  const { bytes, missing } = await makeBundle(project, getAsset);
+  download(new Blob([bytes as Uint8Array<ArrayBuffer>], { type: 'application/zip' }), projectFileName(project).replace(/\.json$/, '.zip'));
+  return { kind: 'bundle', missing: missing.length };
+}
+
+/** 파일에서 프로젝트를 읽는다(.json 또는 묶음 .zip). 실패 이유를 그대로 올려 보낸다 */
 export async function readProjectFile(file: File): Promise<Project> {
+  const head = new Uint8Array(await file.slice(0, 4).arrayBuffer());
+  if (isZip(head)) {
+    try {
+      const opened = await openBundle(new Uint8Array(await file.arrayBuffer()), putAsset);
+      if (opened.missing.length) console.warn(`묶음 파일에 없는 에셋 ${opened.missing.length}개`);
+      return opened.project;
+    } catch (err) {
+      if (err instanceof ProjectLoadError) throw err;
+      throw new ProjectLoadError(err instanceof Error ? err.message : String(err));
+    }
+  }
   const text = await file.text();
   try {
     return deserializeProject(text);

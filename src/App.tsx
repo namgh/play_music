@@ -9,7 +9,7 @@ import {
   setTempoChange,
 } from './editor/edits.ts';
 import { useProjectEditor } from './editor/useProjectEditor.ts';
-import { downloadProject, loadAutosave, readProjectFile, saveAutosave } from './editor/projectStorage.ts';
+import { loadAutosave, readProjectFile, saveAutosave, saveProjectFile } from './editor/projectStorage.ts';
 import { decodeMidi, encodeMidi } from './model/midi.ts';
 import { createEmptyProject, projectLengthTicks } from './model/factory.ts';
 import type { ClipId, MusicalKey, Note, Project, StackId, TrackId } from './model/project.ts';
@@ -432,6 +432,18 @@ export function App() {
     setNotice(message);
   };
 
+  /** 파일로 저장 — 소리(오디오·영상)가 있으면 묶음 .zip 으로 */
+  const saveFile = async () => {
+    try {
+      const r = await saveProjectFile(project);
+      setNotice(r.kind === 'bundle'
+        ? `소리까지 묶어 .zip 으로 저장했습니다${r.missing ? ` (이 브라우저에 없는 소리 ${r.missing}개는 빠졌습니다)` : ''}`
+        : '파일로 저장했습니다');
+    } catch (err) {
+      setNotice(`저장하지 못했습니다: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
   const onOpenFile = async (file: File | undefined) => {
     if (!file) return;
     try {
@@ -462,7 +474,7 @@ export function App() {
       switch (command) {
         case 'projects': setProjectsOpen(true); return;
         case 'settings': setSettingsOpen(true); return;
-        case 'save': downloadProject(project); setNotice('파일로 저장했습니다'); return;
+        case 'save': void saveFile(); return;
         case 'undo': editor.undo(); return;
         case 'redo': editor.redo(); return;
         case 'copy': doCopy(); return;
@@ -889,7 +901,7 @@ export function App() {
             </button>
             <div className="my-1 h-px bg-rule" />
             <button type="button" className={MENU_ITEM}
-              onClick={() => { downloadProject(project); setNotice('파일로 저장했습니다'); setMenu(null); }}>
+              onClick={() => { void saveFile(); setMenu(null); }}>
               파일로 저장<span className="ml-auto text-[11px] text-ink-3">⌘S</span>
             </button>
             <button type="button" className={MENU_ITEM} onClick={() => { fileInput.current?.click(); setMenu(null); }}>
@@ -913,7 +925,8 @@ export function App() {
         <input
           ref={fileInput}
           type="file"
-          accept="application/json,.json"
+          accept="application/json,.json,application/zip,.zip"
+          aria-label="곡 파일 열기"
           className="hidden"
           onChange={(e) => { void onOpenFile(e.target.files?.[0]); e.target.value = ''; }}
         />

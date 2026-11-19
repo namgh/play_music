@@ -688,6 +688,28 @@ try {
   record('마이크 녹음 (가짜 장치)', mic29.length > 0 && Number(mic29.split(',')[0]) > 0.5, `${mic29}초 · ${await ev(`document.body.innerText.match(/오디오 [\\d.]+초를 녹음|마이크를 열지[^\\n]*|녹음을 저장하지[^\\n]*/)?.[0] ?? ''`)}`);
   await shot('25-audio');
 
+  // 29b. 묶음 파일 — ⌘S 로 소리까지 .zip, 에셋 저장소를 비운 뒤 그 파일을 열면 소리가 돌아온다
+  for (const f of readdirSync(DL)) rmSync(join(DL, f));
+  await send('Input.dispatchKeyEvent', { type: 'keyDown', code: 'KeyS', key: 's', modifiers: 4 });
+  await send('Input.dispatchKeyEvent', { type: 'keyUp', code: 'KeyS', key: 's', modifiers: 4 });
+  let zip29 = null;
+  for (let i = 0; i < 30 && !zip29; i++) { await sleep(300); zip29 = readdirSync(DL).find((f) => f.endsWith('.zip')) ?? null; }
+  record('묶음 파일 저장 (소리 포함 .zip)', zip29 !== null, zip29 ?? '파일이 안 내려옴');
+  if (zip29) {
+    const zipPath = join(DL, zip29);
+    await ev(`new Promise((r) => { const q = indexedDB.deleteDatabase('studio-assets'); q.onsuccess = q.onerror = q.onblocked = () => r('ok'); })`);
+    const doc29 = await send('DOM.getDocument', {});
+    const open29 = await send('DOM.querySelector', { nodeId: doc29.root.nodeId, selector: 'input[aria-label="곡 파일 열기"]' });
+    await send('DOM.setFileInputFiles', { nodeId: open29.nodeId, files: [zipPath] });
+    await sleep(2000);
+    const back29 = await ev(`new Promise((r) => { const q = indexedDB.open('studio-assets', 1); q.onupgradeneeded = () => q.result.createObjectStore('audio'); q.onsuccess = () => { const t = q.result.transaction('audio', 'readonly').objectStore('audio').count(); t.onsuccess = () => r(t.result); }; })`);
+    await clickEl(byTitle('맨 앞으로'));
+    await clickEl(byTitle('커서부터 재생'));
+    let peak29b = 0; for (let i = 0; i < 12; i++) { await sleep(150); peak29b = Math.max(peak29b, await ev('window.__peak()')); }
+    const stop29b = await centerOf(byTitle('정지')); if (stop29b) await click(stop29b.x, stop29b.y);
+    record('묶음 파일 열기 — 비운 저장소에 소리가 돌아와 재생', Number(back29) >= 2 && peak29b > 0.01, `에셋 ${back29}개 · 피크 ${peak29b.toFixed(4)}`);
+  }
+
   // 30. 영상 — 가져오면 창이 뜨고 재생을 따라간다, 3D 패너가 걸린다
   //     ffmpeg 없이 브라우저에서 2초짜리 webm(캔버스 + 사인) 을 만들어 쓴다
   const b64 = await ev(`(async () => {

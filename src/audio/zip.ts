@@ -84,3 +84,41 @@ export function makeZip(entries: readonly ZipEntry[]): Uint8Array {
   for (const part of [...locals, ...centrals, end]) { out.set(part, at); at += part.length; }
   return out;
 }
+
+export class ZipReadError extends Error {}
+
+/**
+ * ZIP 읽기 — **압축 없는(stored) 항목만** (우리가 만든 묶음 파일). 다른 프로그램으로 다시 압축한
+ * 파일(deflate)은 이유를 알려 거절한다. 중앙 디렉터리를 읽어 이름 → 바이트.
+ */
+export function readZip(bytes: Uint8Array): Map<string, Uint8Array> {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  let end = -1;
+  for (let i = bytes.length - 22; i >= Math.max(0, bytes.length - 22 - 65535); i--) {
+    if (view.getUint32(i, true) === 0x06054b50) { end = i; break; }
+  }
+  if (end < 0) throw new ZipReadError('ZIP 파일이 아닙니다');
+  const count = view.getUint16(end + 10, true);
+  let at = view.getUint32(end + 16, true);
+  const dec = new TextDecoder();
+  const out = new Map<string, Uint8Array>();
+  for (let n = 0; n < count; n++) {
+    if (view.getUint32(at, true) !== 0x02014b50) throw new ZipReadError('ZIP 목록이 깨졌습니다');
+    const method = view.getUint16(at + 10, true);
+    const crc = view.getUint32(at + 16, true);
+    const size = view.getUint32(at + 20, true);
+    const nameLen = view.getUint16(at + 28, true);
+    const extraLen = view.getUint16(at + 30, true);
+    const commentLen = view.getUint16(at + 32, true);
+    const local = view.getUint32(at + 42, true);
+    const name = dec.decode(bytes.subarray(at + 46, at + 46 + nameLen));
+    if (method !== 0) throw new ZipReadError(`"${name}" 이 압축돼 있습니다 — 이 앱이 만든 묶음 파일을 그대로 여세요`);
+    const lNameLen = view.getUint16(local + 26, true);
+    const lExtraLen = view.getUint16(local + 28, true);
+    const data = bytes.subarray(local + 30 + lNameLen + lExtraLen, local + 30 + lNameLen + lExtraLen + size);
+    if (crc32(data) !== crc) throw new ZipReadError(`"${name}" 이 손상됐습니다 (CRC)`);
+    out.set(name, data);
+    at += 46 + nameLen + extraLen + commentLen;
+  }
+  return out;
+}
