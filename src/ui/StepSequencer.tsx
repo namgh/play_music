@@ -6,7 +6,7 @@ import { pitchName } from '../model/pitch.ts';
 import { PPQ } from '../model/time.ts';
 import type { ProjectEditor } from '../editor/useProjectEditor.ts';
 import { setVelocity } from '../editor/edits.ts';
-import { clipCovering, ensureClipFor, setRatchet, stepRow, toggleStep } from '../editor/steps.ts';
+import { clipCovering, ensureClipFor, setRatchet, stepRow, toggleStep, setStepProbability } from '../editor/steps.ts';
 
 /**
  * 스텝 시퀀서 보기 (Logic Step Sequencer, `LOGIC_PARITY.md` 1-5) — `steps.ts` 의 설명대로
@@ -78,6 +78,13 @@ export function StepSequencer({ editor, track, clip, playheadTick, onAudition }:
       editor.commit(setRatchet(p, clipId, step, rate, row.anyPitch ? null : row.midi, (cell.count % 4) + 1));
       return;
     }
+    if ((e.metaKey || e.ctrlKey) && cell.note) {
+      // 확률 돌리기: 100 → 75 → 50 → 25 → 100
+      const cur = cell.note.probability ?? 1;
+      const next = cur > 0.8 ? 0.75 : cur > 0.6 ? 0.5 : cur > 0.4 ? 0.25 : 1;
+      editor.commit(setStepProbability(p, clipId, step, rate, row.anyPitch ? null : row.midi, next));
+      return;
+    }
     if (e.altKey && cell.note) {
       editor.commit(setVelocity(p, [cell.note.id], cell.note.velocity >= 0.95 ? 0.6 : 1));
       return;
@@ -91,7 +98,7 @@ export function StepSequencer({ editor, track, clip, playheadTick, onAudition }:
     <div className="flex min-h-[11rem] flex-1 flex-col overflow-hidden rounded-xl bg-screen" data-step-sequencer>
       <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-grid px-3 py-2 text-[11px] text-sink-2">
         <span>{drumMode ? `드럼 판 — 드럼 트랙 ${rows.length}개` : `${track.name} — 음높이 줄`}</span>
-        <span className="text-sink-3">· 누르기 켜기/끄기 · Alt 강세 · Shift 래칫</span>
+        <span className="text-sink-3">· 누르기 켜기/끄기 · Alt 강세 · Shift 래칫 · ⌘ 확률</span>
         <span className="flex-1" />
         <label className="flex items-center gap-1">칸
           <select aria-label="스텝 단위" value={rate} onChange={(e) => setRate(Number(e.target.value))}
@@ -127,6 +134,9 @@ export function StepSequencer({ editor, track, clip, playheadTick, onAudition }:
                     } ${i === cursorStep ? 'ring-1 ring-sink' : ''}`}
                   >
                     {cell.count > 1 && <span className="absolute inset-0 flex items-center justify-center font-num text-[11px] text-acc-ink">{cell.count}</span>}
+                    {cell.note?.probability !== undefined && (
+                      <span className="absolute inset-x-0 bottom-0 text-center font-num text-[9px] leading-none text-acc-ink" data-probability>{Math.round(cell.note.probability * 100)}%</span>
+                    )}
                   </button>
                 );
               }),

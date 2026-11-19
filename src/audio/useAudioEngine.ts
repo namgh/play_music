@@ -20,6 +20,7 @@ import fxUrl from '../generated/fx.wasm?url';
 import { setFxBytes } from './fxRuntime.ts';
 import { putAsset } from './assets.ts';
 import { soloRenderProject } from '../editor/freeze.ts';
+import { ticksToNextLaunch } from '../editor/liveLoops.ts';
 import { encodeWav, peakAmplitude } from './wav.ts';
 import { reportClipping, type ClipReport } from './headroom.ts';
 
@@ -266,9 +267,12 @@ export function useAudioEngine(
    * 라이브 루프 연주 — 곡을 바꾸지 않고 연주용 곡을 반복 재생한다. 칸을 바꾸면 **지금
    * 자리(반복 안에서)부터 이어서** — 처음으로 되돌아가면 박이 끊긴다. null 이면 멈추고 곡으로.
    */
-  const perform = useCallback(async (performance: Project | null) => {
+  const launchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** `quantize` 틱 — 연주 중이면 다음 그 경계에서 바꾼다 (0 = 바로) */
+  const perform = useCallback(async (performance: Project | null, quantize = 0) => {
     try {
       const renderer = await ensure();
+      if (launchTimer.current) { clearTimeout(launchTimer.current); launchTimer.current = null; }
       if (!performance) {
         performingRef.current = null;
         renderer.stop();
@@ -278,13 +282,21 @@ export function useAudioEngine(
         return;
       }
       const wasPlaying = performingRef.current !== null;
-      performingRef.current = performance;
       const loopEnd = performance.loop?.endTick ?? 1;
-      const at = wasPlaying ? (renderer.getPosition().tick % loopEnd) : 0;
-      renderer.setProject(performance);
-      renderer.play(at);
-      setState('playing');
-      setError(null);
+      const apply = (at: number) => {
+        performingRef.current = performance;
+        renderer.setProject(performance);
+        renderer.play(at % loopEnd);
+        setState('playing');
+        setError(null);
+      };
+      if (!wasPlaying) { apply(0); return; }
+      const pos = renderer.getPosition().tick % loopEnd;
+      const wait = ticksToNextLaunch(pos, quantize);
+      if (wait === 0) { apply(pos); return; }
+      // 다음 경계에서 — 그 사이 다른 칸을 누르면 이 예약은 취소되고 새 것으로
+      const ms = (ticksToSeconds(pos + wait, performance.tempo) - ticksToSeconds(pos, performance.tempo)) * 1000;
+      launchTimer.current = setTimeout(() => { launchTimer.current = null; apply(pos + wait); }, Math.max(0, ms - 15));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }

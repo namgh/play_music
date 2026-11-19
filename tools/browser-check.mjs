@@ -671,6 +671,17 @@ try {
   await sleep(300);
   const off22 = await totalNotes();
   record('스텝 칸 켜기·끄기', on22 === total22 + 1 && off22 === on22 - 1, `${total22} → ${on22} → ${off22}`);
+  // 스텝 확률 — 켠 칸을 ⌘ 누르고 누르면 75%
+  await clickEl(`document.querySelector('[data-step-sequencer] button[aria-pressed="false"]')`);
+  await sleep(300);
+  const cellP = await centerOf(`document.querySelector('[data-step-sequencer] button[aria-pressed="true"]')`);
+  if (cellP) {
+    await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: cellP.x, y: cellP.y, button: 'left', clickCount: 1, modifiers: 4 });
+    await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: cellP.x, y: cellP.y, button: 'left', clickCount: 1, modifiers: 4 });
+  }
+  await sleep(300);
+  const prob22 = await ev(`document.querySelector('[data-step-sequencer] [data-probability]')?.textContent ?? ''`);
+  record('스텝 확률 (⌘ 누르기)', prob22 === '75%', prob22 || '표시 없음');
   await shot('18-steps');
 
   // 23. 스마트 컨트롤 — 손잡이 끌기, MIDI 이펙트(아르페지에이터) 걸고 재생

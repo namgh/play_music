@@ -82,6 +82,29 @@ export function toggleStep(
   };
 }
 
+/** 칸의 음들 확률 (1 이면 지운다 = 언제나) */
+export function setStepProbability(project: Project, clipId: ClipId, step: number, rate: Ticks, midi: number | null, probability: number): Project {
+  const found = findClip(project, clipId);
+  if (!found) throw new EditError(`클립 ${clipId} 없음`);
+  const from = step * rate;
+  const p = Math.max(0, Math.min(1, probability));
+  return {
+    ...project,
+    tracks: project.tracks.map((t) => (t.id !== found.track.id ? t : {
+      ...t,
+      clips: t.clips.map((c) => (c.id !== clipId ? c : {
+        ...c,
+        notes: c.notes.map((n) => {
+          if (!(n.startTick >= from && n.startTick < from + rate && (midi === null || n.pitch.midi === midi))) return n;
+          const next = { ...n };
+          if (p >= 1) delete next.probability; else next.probability = p;
+          return next;
+        }),
+      })),
+    })),
+  };
+}
+
 /**
  * 래칫 — 칸 하나를 `count` 번 되풀이한다(하이햇 32분 연타 같은 것). 첫 음의 세기·음높이를
  * 그대로 쓰고, 칸을 똑같이 나눈다. count 1 이면 하나로 되돌린다.

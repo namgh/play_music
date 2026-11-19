@@ -112,6 +112,11 @@ export interface Note {
   pitchCurve: PitchCurve | null;
   expression: Expression | null;
   origin: Origin;
+  /**
+   * 확률 (Logic 스텝 시퀀서 Note Chance, `PARITY_ROUND2.md` 14) — 0~1. 없으면 언제나 울린다.
+   * 울릴지는 음 id·자리에서 정한 씨앗으로 정한다 — 재생과 내보내기가 같다
+   */
+  probability?: number;
 }
 
 // ---------------------------------------------------------------------------

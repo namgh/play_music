@@ -62,3 +62,25 @@ test('드럼 줄 클립 — 덮는 클립을 찾고 없으면 같은 범위로 �
   assert.deepEqual([made.project.tracks[1]!.clips[0]!.startTick, made.project.tracks[1]!.clips[0]!.lengthTick], [0, 4 * PPQ]);
   assert.equal(ensureClipFor(made.project, p.tracks[1]!.id, 0, 4 * PPQ).clipId, made.clipId);
 });
+
+test('스텝 확률 — 저장되고, 재생·내보내기가 같은 결정(결정적), 대략 그 비율', async () => {
+  const { setStepProbability } = await import('./steps.ts');
+  const { collectNoteEvents } = await import('../audio/scheduler.ts');
+  const { roundTrip } = await import('../model/persistence.ts');
+  const { createClip, createEmptyProject, createNote, createTrack } = await import('../model/factory.ts');
+  const p0 = createEmptyProject('p');
+  const t = createTrack({ name: 'h', instrumentId: 'hihat' });
+  const c = createClip({ startTick: 0, lengthTick: 120 * 400 });
+  for (let i = 0; i < 400; i++) c.notes.push(createNote({ startTick: i * 120, lengthTick: 60, midi: 42 }));
+  t.clips.push(c);
+  p0.tracks.push(t);
+  let p = p0;
+  for (let i = 0; i < 400; i++) p = setStepProbability(p, c.id, i, 120, 42, 0.25);
+  assert.equal(roundTrip(p).tracks[0]!.clips[0]!.notes[0]!.probability, 0.25);
+  const a = collectNoteEvents(p, 0, 120 * 400).length;
+  const b = collectNoteEvents(p, 0, 120 * 400).length;
+  assert.equal(a, b, '같은 결정');
+  assert.ok(a > 60 && a < 140, `약 25% — ${a}/400`);
+  const back = setStepProbability(p, c.id, 0, 120, 42, 1);
+  assert.equal(back.tracks[0]!.clips[0]!.notes.find((n) => n.startTick === 0)!.probability, undefined);
+});

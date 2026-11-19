@@ -160,6 +160,7 @@ function parseNote(value: unknown, seen: Set<string>): Note {
     pitchCurve: parsePitchCurve(raw.pitchCurve),
     expression: raw.expression == null ? null : (raw.expression as Note['expression']),
     origin: origin(raw.origin),
+    ...(typeof raw.probability === 'number' && raw.probability < 1 ? { probability: num(raw.probability, 1, 0, 1) } : {}),
   };
 }
 

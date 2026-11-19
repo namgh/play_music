@@ -33,6 +33,17 @@ export interface ScheduledNote {
   pitchCurve: PitchCurve | null;
 }
 
+/** 0~1 결정적 난수 — 음 id·자리 해시 (FNV-1a) */
+export function chance(id: string, tick: Ticks): number {
+  let h = 0x811c9dc5;
+  const s = `${id}@${tick}`;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return (h >>> 8) / 0x1000000;
+}
+
 /**
  * 구간 [fromTick, toTick) 에 시작하는 음을 모은다. 순수 함수.
  *
@@ -57,6 +68,8 @@ export function collectNoteEvents(project: Project, fromTick: Ticks, toTick: Tic
         const clipEnd = clip.startTick + clip.lengthTick;
         const lengthTick = Math.min(note.lengthTick, clipEnd - startTick);
         if (lengthTick <= 0) continue;
+        // 확률 — 음 id 와 자리에서 정한 씨앗이라 재생·내보내기가 같은 결정을 한다
+        if (note.probability !== undefined && note.probability < 1 && chance(note.id, startTick) >= note.probability) continue;
 
         out.push({
           trackId: track.id,

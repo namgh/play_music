@@ -73,3 +73,11 @@ test('장면·칸 지우기', () => {
   p = removeScene(removeScene(p, id), p.liveScenes![0]!.id);
   assert.equal('liveScenes' in p, false);
 });
+
+test('런치 퀀타이즈 — 다음 경계까지 남은 틱', async () => {
+  const { ticksToNextLaunch } = await import('./liveLoops.ts');
+  assert.equal(ticksToNextLaunch(0, 1920), 0);
+  assert.equal(ticksToNextLaunch(500, 1920), 1420);
+  assert.equal(ticksToNextLaunch(1920 * 3 + 10, 480), 470);
+  assert.equal(ticksToNextLaunch(123, 0), 0);
+});

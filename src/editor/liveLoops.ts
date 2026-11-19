@@ -60,6 +60,16 @@ const gcd = (a: number, b: number): number => (b === 0 ? a : gcd(b, a % b));
  * 연주용 곡 — 켜진 칸들을 각 트랙의 클립으로 반복해 깐다. 반복 구간 길이는 칸 길이들의
  * 최소공배수(너무 길면 가장 긴 칸의 4배에서 자른다). 곡의 템포·악기·이펙트·믹서는 그대로.
  */
+/**
+ * 런치 퀀타이즈 (Logic Live Loops Quantize, `PARITY_ROUND2.md` 14) — 연주 중에 칸·장면을 바꾸면 다음 격자에서.
+ * 지금 자리(`pos`, 연주 반복 안 틱)에서 다음 경계까지 몇 틱 남았나. 경계 바로 위면 0
+ */
+export function ticksToNextLaunch(pos: Ticks, grid: Ticks): Ticks {
+  if (grid <= 0) return 0;
+  const r = ((pos % grid) + grid) % grid;
+  return r === 0 ? 0 : grid - r;
+}
+
 export function performanceProject(project: Project, state: LiveState): { project: Project; loopTicks: Ticks } {
   const scenes = project.liveScenes ?? [];
   const active = project.tracks.flatMap((t) => {

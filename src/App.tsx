@@ -1309,7 +1309,7 @@ export function App() {
       )}
       {view === 'live' && (
         <div className="scope-body min-h-0 flex-1 overflow-y-auto p-5">
-          <LiveLoops editor={editor} onPerform={(p) => void engine.perform(p)} playing={engine.state === 'playing'} onNotice={setNotice} />
+          <LiveLoops editor={editor} onPerform={(p, q) => void engine.perform(p, q)} playing={engine.state === 'playing'} onNotice={setNotice} />
         </div>
       )}
       {view === 'mixer' && (

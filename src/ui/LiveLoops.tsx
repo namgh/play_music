@@ -2,6 +2,7 @@ import { useState } from 'react';
 
 import type { Project, TrackId } from '../model/project.ts';
 import type { ProjectEditor } from '../editor/useProjectEditor.ts';
+import { ticksPerBar, ticksPerBeat } from '../model/time.ts';
 import { positionAt } from '../model/meter.ts';
 import { addScenes, arrangeScenes, captureScene, clearCell, performanceProject, removeScene, scenesFromSections } from '../editor/liveLoops.ts';
 import type { LiveState } from '../editor/liveLoops.ts';
@@ -17,7 +18,7 @@ import type { LiveState } from '../editor/liveLoops.ts';
 export interface LiveLoopsProps {
   editor: ProjectEditor;
   /** 연주용 곡을 재생한다 (곡을 바꾸지 않는다) */
-  onPerform: (performance: Project | null) => void;
+  onPerform: (performance: Project | null, quantize: number) => void;
   playing: boolean;
   onNotice: (message: string) => void;
 }
@@ -27,12 +28,16 @@ export function LiveLoops({ editor, onPerform, playing, onNotice }: LiveLoopsPro
   const scenes = project.liveScenes ?? [];
   const [state, setState] = useState<LiveState>({});
   const [played, setPlayed] = useState<string[]>([]);
+  /** 런치 퀀타이즈 — 연주 중에 바꾸면 다음 마디(또는 박)에서 */
+  const [quant, setQuant] = useState<'bar' | 'beat' | 'now'>('bar');
+  const quantTicks = quant === 'now' ? 0 : quant === 'beat' ? ticksPerBeat(project.timeSignature) : ticksPerBar(project.timeSignature);
 
   const perform = (next: LiveState, sceneForLog?: string) => {
     setState(next);
     if (sceneForLog) setPlayed((p) => (p[p.length - 1] === sceneForLog ? p : [...p, sceneForLog]));
     const any = Object.values(next).some(Boolean);
-    onPerform(any ? performanceProject(project, next).project : null);
+    onPerform(any ? performanceProject(project, next).project : null, quantTicks);
+    if (any && playing && quant !== 'now') onNotice(quant === 'bar' ? '다음 마디에서 바뀝니다' : '다음 박에서 바뀝니다');
   };
 
   const launchScene = (id: string) => {
@@ -61,6 +66,14 @@ export function LiveLoops({ editor, onPerform, playing, onNotice }: LiveLoopsPro
           title="반복 구간(⌘L)의 음을 새 장면으로">반복 구간을 장면으로</button>
         <button type="button" disabled={!playing && !Object.values(state).some(Boolean)}
           onClick={() => perform({})} className="h-7 rounded-md border border-rule bg-panel px-2.5 text-xs text-ink disabled:opacity-40">모두 멈춤</button>
+        <label className="flex items-center gap-1 text-[11px] text-ink-2">바꾸는 때
+          <select aria-label="런치 퀀타이즈" value={quant} onChange={(e) => setQuant(e.target.value as 'bar' | 'beat' | 'now')}
+            className="h-7 rounded-md border border-rule bg-panel px-1.5 text-xs text-ink">
+            <option value="bar">다음 마디</option>
+            <option value="beat">다음 박</option>
+            <option value="now">바로</option>
+          </select>
+        </label>
         <button type="button" disabled={played.length === 0}
           onClick={() => {
             editor.commit(arrangeScenes(project, played));
