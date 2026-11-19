@@ -33,6 +33,7 @@ import { putAsset } from './audio/assets.ts';
 import { importAudioBytes, MicRecorder, placeAudio } from './ui/audioUi.ts';
 import { bounceInPlace, freezeTrack, unfreezeTrack } from './editor/freeze.ts';
 import { aliasToCopy, makeAlias } from './editor/aliases.ts';
+import { notesInSpan } from './editor/scrub.ts';
 import { applyPunch, commitRecording, compFromTake, NoteRecorder, playedToNotes, punchAudioWindow, switchTake } from './editor/recording.ts';
 import { SettingsPanel } from './ui/SettingsPanel.tsx';
 import { useMidiInput } from './audio/midiInput.ts';
@@ -1334,6 +1335,11 @@ export function App() {
                 globalSelection={globalSelection}
                 onGlobalSelect={setGlobalSelection}
                 onSeek={seek}
+                onScrub={(from, to) => {
+                  // 재생 중에는 스크럽하지 않는다 (재생 소리와 겹친다)
+                  if (engine.state === 'playing') return;
+                  for (const n of notesInSpan(project, from, to)) void engine.audition(n.trackId, n.midi, 0, n.velocity);
+                }}
                 onNotice={setNotice}
                 tools={<>
           {/* 클립·트랙 조작 — 고른 클립과 트랙에 대해 (`LOGIC_PARITY.md` 3-1 편곡·트랙) */}

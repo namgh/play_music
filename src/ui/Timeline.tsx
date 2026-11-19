@@ -93,14 +93,19 @@ export interface TimelineProps {
   onGlobalSelect: (selection: GlobalSelection) => void;
   /** 커서를 곡 기준 틱으로 옮긴다 */
   onSeek: (tick: number) => void;
+  /** 눈금자를 끄는 동안 — 지나간 구간(`from`→`to`)의 음을 들려준다 (스크럽) */
+  onScrub?: ((from: number, to: number) => void) | undefined;
   onNotice: (message: string) => void;
 }
 
 export function Timeline({
   instrumentFor,
   editor, selectedTrackId, selectedClipId, playheadTick, onSelect, onSelectTrack, readLevel, tools,
-  globalSelection, onGlobalSelect, onSeek, onNotice,
+  globalSelection, onGlobalSelect, onSeek, onNotice, onScrub,
 }: TimelineProps) {
+  // 스크럽 — 눈금자를 누른 채 끌면 그 자리 소리. 끌었으면 마지막 자리로 옮기고 마디 클릭은 무시한다
+  const scrub = useRef<{ x: number; tick: number; moved: boolean } | null>(null);
+  const scrubbed = useRef(false);
   const { project } = editor;
   // 이 곡이 쓰는 악기만 불러온다. 이름은 카탈로그에 있어 목록은 안 기다린다
   const { registry, ready } = useInstruments(project.tracks.map((t) => t.instrumentId));
@@ -321,7 +326,30 @@ export function Timeline({
         {/* 마디 눈금 */}
         <div className="relative flex h-7 border-b border-grid">
           <div className={`${NAME_COL} shrink-0 border-r border-rule bg-body`} />
-          <div className="relative flex-1 bg-screen">
+          <div
+            className="relative flex-1 bg-screen"
+            data-ruler
+            title="누르면 그 마디로 · 누른 채 끌면 스크럽(지나가는 음이 들린다)"
+            onPointerDown={(e) => {
+              const r = e.currentTarget.getBoundingClientRect();
+              scrub.current = { x: e.clientX, tick: ((e.clientX - r.left) / r.width) * totalTicks, moved: false };
+            }}
+            onPointerMove={(e) => {
+              const s = scrub.current;
+              if (!s || e.buttons === 0) return;
+              if (!s.moved && Math.abs(e.clientX - s.x) < 4) return;
+              if (!s.moved) { s.moved = true; e.currentTarget.setPointerCapture(e.pointerId); }
+              const r = e.currentTarget.getBoundingClientRect();
+              const tick = Math.max(0, Math.min(totalTicks, ((e.clientX - r.left) / r.width) * totalTicks));
+              onScrub?.(s.tick, tick);
+              s.tick = tick;
+              onSeek(tick);
+            }}
+            onPointerUp={() => {
+              if (scrub.current?.moved) scrubbed.current = true;
+              scrub.current = null;
+            }}
+          >
             {lines.map((line) => {
               const keyChange = (project.keyChanges ?? []).find((k) => k.tick === line.tick);
               const picked = globalSelection?.kind === 'bar' && globalSelection.bar === line.bar;
@@ -330,7 +358,11 @@ export function Timeline({
                   key={line.bar}
                   type="button"
                   data-bar={line.bar + 1}
-                  onClick={() => { onGlobalSelect(picked ? null : { kind: 'bar', bar: line.bar }); onSeek(line.tick); }}
+                  onClick={() => {
+                    if (scrubbed.current) { scrubbed.current = false; return; }
+                    onGlobalSelect(picked ? null : { kind: 'bar', bar: line.bar });
+                    onSeek(line.tick);
+                  }}
                   title={`${line.bar + 1}마디 — 눌러서 이 마디부터의 박자·조성을 바꿉니다`}
                   style={{ left: pct(line.tick), width: pct(line.lengthTick) }}
                   className={`absolute inset-y-0 flex items-center gap-1 overflow-hidden border-l border-grid pl-1.5 text-left font-num text-[13px] ${

@@ -543,6 +543,18 @@ try {
   const fb20 = await ev(`document.body.innerText.match(/방금 연주 \\d+음을 담았습니다|담을 [^\\n]*/)?.[0] ?? ''`);
   record('Flashback — 녹음 없이 친 연주를 담기', /방금 연주 [1-9]/.test(fb20), fb20);
 
+  // 20c1. 스크럽 — 눈금자를 누른 채 끌면 지나가는 음이 들린다
+  const rulerS = await ev(`(() => { const e = document.querySelector('[data-ruler]'); e.scrollIntoView({ block: 'nearest' }); const r = e.getBoundingClientRect(); return { x: r.x, y: r.y + r.height / 2, w: r.width }; })()`);
+  let peakScrub = 0;
+  await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: rulerS.x + 2, y: rulerS.y, button: 'left', buttons: 1, clickCount: 1 });
+  for (let i = 1; i <= 12; i++) {
+    await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: rulerS.x + 2 + (rulerS.w * 0.25 * i) / 12, y: rulerS.y, button: 'left', buttons: 1 });
+    await sleep(60);
+    peakScrub = Math.max(peakScrub, await ev('window.__peak()'));
+  }
+  await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: rulerS.x + 2 + rulerS.w * 0.25, y: rulerS.y, button: 'left', buttons: 0, clickCount: 1 });
+  for (let i = 0; i < 4; i++) { await sleep(100); peakScrub = Math.max(peakScrub, await ev('window.__peak()')); }
+  record('스크럽 — 눈금자를 끌면 지나가는 음', peakScrub > 0.001, `피크 ${peakScrub.toFixed(4)}`);
   // 20c2. 리전 에일리어스 — 고른 클립 뒤에 원본을 따르는 복사, 음 수가 같다
   await clickEl(byText('에일리어스'));
   await sleep(500);
