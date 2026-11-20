@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useRef, useState } from 'react';
-import type { ReactNode } from 'react';
+import { Menu, MenuButton, type MenuAction } from './Menu.tsx';
 
 import { GlobalTracks } from './GlobalTracks.tsx';
 import { usePeaks } from './audioUi.ts';
@@ -44,7 +44,7 @@ import { LevelMeter } from './LevelMeter.tsx';
  */
 const LANE_HEIGHT = 44;
 /** 왼쪽 설정 칸의 폭. 눈금 줄과 각 행이 **같은 값**을 써야 세로선이 이어진다 */
-const NAME_COL = 'w-[27rem]';
+const NAME_COL = 'w-[24rem]';
 
 const INSTRUMENT_IDS = playableInstrumentIds();
 const INSTRUMENT_GROUPS = instrumentsByCategory();
@@ -83,11 +83,11 @@ export interface TimelineProps {
   /** 트랙 레벨 미터. 없으면 미터를 그리지 않는다 */
   readLevel?: (trackId: TrackId | null) => { peak: number; rms: number } | null;
   /**
-   * 고른 클립·트랙에 대한 조작 버튼. **트랙 영역 바로 위에 둔다** — 위쪽 도구
-   * 줄은 음 편집용이고 이미 꽉 차서, 거기 넣으면 글자가 두 줄로 접힌다.
-   * 커서 위치를 알아야 해서(나누기) 버튼은 `App` 이 만든다
+   * 고른 클립·트랙에 대한 동작 — 우클릭 메뉴와 "클립 ▾" "트랙 ▾" 단추가 같은 목록을 연다
+   * (`UX_REDESIGN.md` 3). 커서 위치를 알아야 해서(나누기) 목록은 `App` 이 만든다
    */
-  tools?: ReactNode;
+  clipMenu: MenuAction[];
+  trackMenu: MenuAction[];
   /** 글로벌 트랙(구간·마커·코드·박자/조성)에서 고른 것 */
   globalSelection: GlobalSelection;
   onGlobalSelect: (selection: GlobalSelection) => void;
@@ -100,7 +100,7 @@ export interface TimelineProps {
 
 export function Timeline({
   instrumentFor,
-  editor, selectedTrackId, selectedClipId, playheadTick, onSelect, onSelectTrack, readLevel, tools,
+  editor, selectedTrackId, selectedClipId, playheadTick, onSelect, onSelectTrack, readLevel, clipMenu, trackMenu,
   globalSelection, onGlobalSelect, onSeek, onNotice, onScrub,
 }: TimelineProps) {
   // 스크럽 — 눈금자를 누른 채 끌면 그 자리 소리. 끌었으면 마지막 자리로 옮기고 마디 클릭은 무시한다
@@ -185,7 +185,53 @@ export function Timeline({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playheadTick]);
   /** 글로벌 트랙 줄 (Logic 의 G) — 보기 설정이라 저장하지 않는다 */
-  const [showGlobals, setShowGlobals] = useState(true);
+  // 기본은 숨김 — 편곡 영역 높이의 1/3 을 늘 차지하면 트랙이 안 보인다. 한 번 켜면 기억한다
+  const [showGlobals, setShowGlobalsRaw] = useState(() => { try { return localStorage.getItem('ui-globals') === '1'; } catch { return false; } });
+  const setShowGlobals = (next: boolean | ((v: boolean) => boolean)) => setShowGlobalsRaw((v) => {
+    const value = typeof next === 'function' ? next(v) : next;
+    try { localStorage.setItem('ui-globals', value ? '1' : '0'); } catch { /* 저장 못 해도 보기는 바뀐다 */ }
+    return value;
+  });
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t && /^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName)) return;
+      if (e.code === 'KeyG' && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) { e.preventDefault(); setShowGlobals((v) => !v); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+  /** 우클릭 메뉴 — 누른 것을 먼저 고르고(목록이 고른 것 기준이다) 그 자리에 연다 */
+  const [contextMenu, setContextMenu] = useState<{ kind: 'clip' | 'track'; x: number; y: number } | null>(null);
+  const pickedTrack = project.tracks.find((t) => t.id === selectedTrackId) ?? null;
+  const pickedClip = pickedTrack?.clips.find((c) => c.id === selectedClipId) ?? null;
+  const clipMenuAll: MenuAction[] = [
+    ...clipMenu,
+    {
+      id: 'clip.duplicate', label: '바로 뒤에 복제', separator: true, disabled: !pickedClip,
+      run: () => {
+        try {
+          const next = duplicateClip(project, pickedClip!.id);
+          editor.commit(next.project);
+          onSelect(pickedTrack!.id, next.clipId);
+        } catch { onNotice('뒤에 자리가 없어 복제하지 못했습니다'); }
+      },
+    },
+    { id: 'clip.delete', label: '클립 삭제', disabled: !pickedClip, run: () => editor.commit(deleteClip(project, pickedClip!.id)) },
+  ];
+  const trackMenuAll: MenuAction[] = [
+    ...trackMenu,
+    // 음색(프리셋) — 이름 칸에 늘 있던 선택 칸을 여기로. 이름이 잘리지 않게 자리를 내준다
+    ...(pickedTrack && ready && Object.keys(resolveInstrument(pickedTrack.instrumentId, registry).tones).length > 1 ? [{
+      id: 'track.tone', label: '음색', separator: true,
+      options: Object.keys(resolveInstrument(pickedTrack.instrumentId, registry).tones).map((tone) => ({
+        label: tone === 'default' ? '기본' : tone,
+        checked: pickedTrack.toneId === tone,
+        run: () => editor.commit(updateTrack(project, pickedTrack.id, { toneId: tone })),
+      })),
+    } satisfies MenuAction] : []),
+    { id: 'track.delete', label: '트랙 삭제', separator: true, disabled: !pickedTrack, run: () => editor.commit(deleteTrack(project, pickedTrack!.id)) },
+  ];
   const hiddenCount = project.tracks.filter((t) => t.hidden).length;
   const visibleRows: ({ kind: 'track'; track: Track } | { kind: 'stack'; stack: TrackStack; members: Track[] })[] = [];
   {
@@ -278,8 +324,8 @@ export function Timeline({
   return (
     <section>
       <div className="mb-2 flex min-w-0 items-center gap-3">
-        <div className={`flex ${NAME_COL} shrink-0 items-center justify-between gap-2 pr-2`}>
-          <h2 className="font-disp text-lg leading-none text-ink">
+        <div className="flex shrink-0 items-center gap-2 pr-1">
+          <h2 className="mr-2 font-disp text-lg leading-none text-ink">
             트랙 <span className="text-ink-3">{project.tracks.length}</span>
           </h2>
           {hiddenCount > 0 && (
@@ -295,7 +341,7 @@ export function Timeline({
             onClick={onAddTrack}
             className="h-7 rounded-md border border-rule bg-panel px-2.5 text-xs text-ink hover:border-ink-3"
           >
-            ＋ 트랙 추가
+            ＋ 트랙
           </button>
           <button
             type="button"
@@ -309,17 +355,16 @@ export function Timeline({
           >＋ 오디오</button>
         </div>
         {/* 도구는 넘치면 옆으로 스크롤한다 — 줄바꿈하면 트랙 영역이 밀려 내려간다 */}
-        {tools && <div className="flex min-w-0 shrink items-center gap-1.5 overflow-x-auto [scrollbar-width:none]">{tools}</div>}
+        <MenuButton label="클립" actions={clipMenuAll} title="고른 클립에 하는 일 — 클립을 우클릭해도 같은 목록이 열립니다" />
+        <MenuButton label="트랙" actions={trackMenuAll} title="고른 트랙에 하는 일 — 트랙 이름 칸을 우클릭해도 같은 목록이 열립니다" />
+        <span className="flex-1" />
         <button
           type="button"
           aria-pressed={showGlobals}
           onClick={() => setShowGlobals((v) => !v)}
-          title="구간·마커·코드 줄을 보이거나 숨깁니다"
+          title="구간·마커·코드·템포 줄을 보이거나 숨깁니다 (G)"
           className={`h-7 shrink-0 rounded-md border px-2 text-xs ${showGlobals ? 'border-ink bg-ink text-body' : 'border-rule bg-panel text-ink-2'}`}
         >글로벌</button>
-        <span className="hidden min-w-0 truncate text-[11px] text-ink-3 2xl:block">
-          빈 곳을 클릭해 클립 추가 · 클립을 클릭해 편집 · 끝을 끌어 길이 조절
-        </span>
       </div>
 
       <div className="overflow-hidden rounded-xl border border-rule">
@@ -398,7 +443,7 @@ export function Timeline({
 
         {project.tracks.length === 0 && (
           <p className="bg-body p-4 text-sm text-ink-3">
-            트랙이 없습니다. 위의 <b>＋ 트랙 추가</b>를 누르면 악기와 클립이 함께 만들어집니다.
+            트랙이 없습니다. 위의 <b>＋ 트랙</b>를 누르면 악기와 클립이 함께 만들어집니다.
           </p>
         )}
 
@@ -441,6 +486,8 @@ export function Timeline({
             {/* 왼쪽 칸 = 이 트랙의 설정. 오른쪽 레인과 **같은 행**이라 눈이 오가지 않는다 */}
             <div
               style={{ height: LANE_HEIGHT }}
+              data-track-head
+              onContextMenu={(e) => { e.preventDefault(); onSelectTrack(track.id); setContextMenu({ kind: 'track', x: e.clientX, y: e.clientY }); }}
               className={`flex ${NAME_COL} shrink-0 items-center gap-1.5 border-r border-rule px-2 ${
                 track.id === selectedTrackId ? 'bg-panel' : 'bg-body'
               }`}
@@ -472,21 +519,6 @@ export function Timeline({
                       <option key={instrument.id} value={instrument.id}>{instrument.name}</option>
                     ))}
                   </optgroup>
-                ))}
-              </select>
-              <select
-                value={track.toneId}
-                aria-label={`${track.name} 음색`}
-                onChange={(event) =>
-                  editor.commit(updateTrack(project, track.id, { toneId: event.target.value }))}
-                className="w-20 shrink-0 rounded-md border border-rule bg-body px-1.5 py-1 text-xs text-ink"
-              >
-                {/* 음색은 정의가 와야 안다 — 오는 동안은 지금 고른 것만 보여 준다 */}
-                {(ready
-                  ? Object.keys(resolveInstrument(track.instrumentId, registry).tones)
-                  : [track.toneId]
-                ).map((tone) => (
-                  <option key={tone} value={tone}>{tone === 'default' ? '기본' : tone}</option>
                 ))}
               </select>
               <button
@@ -548,12 +580,6 @@ export function Timeline({
                   autoOpen[track.id] ? 'border-acc bg-acc text-acc-ink'
                     : track.automation.length > 0 ? 'border-acc text-ink' : 'border-rule text-ink-3 hover:border-ink-3'}`}
               >A</button>
-              <button
-                type="button"
-                onClick={() => editor.commit(deleteTrack(project, track.id))}
-                aria-label={`${track.name} 삭제`}
-                className="h-7 w-7 shrink-0 rounded border border-rule text-xs text-ink-3 hover:border-rec hover:text-rec"
-              >✕</button>
             </div>
 
             <div
@@ -569,6 +595,7 @@ export function Timeline({
                   <div
                     key={clip.id}
                     data-clip
+                    onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onSelect(track.id, clip.id); setContextMenu({ kind: 'clip', x: e.clientX, y: e.clientY }); }}
                     style={{ left: pct(clip.startTick), width: pct(clip.lengthTick) }}
                     data-muted={clip.muted ? 'true' : undefined}
                     className={`absolute inset-y-1 flex items-center overflow-hidden rounded-md pl-1.5 pt-2 text-[10px] ${
@@ -676,6 +703,14 @@ export function Timeline({
           </div>
         )}
       </div>
+      {contextMenu && (
+        <Menu
+          actions={contextMenu.kind === 'clip' ? clipMenuAll : trackMenuAll}
+          x={contextMenu.x} y={contextMenu.y}
+          label={contextMenu.kind === 'clip' ? '클립' : '트랙'}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
     </section>
   );
 }

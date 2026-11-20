@@ -136,7 +136,7 @@ Tier 0·1 편집 조작까지 커밋됨 (2026-08-09).
 오디오가 .json 저장에 안 따라감(묶음 파일·서버 필요). 각 행의 "빠진 핵심" 칸이 다음 작업 목록이다.
 
 - 화면 시안: `design/studio-app.figcraft` (영역마다 페이지) — `npm run design:capture` 로 앱에서 떠 온다 (`design/README.md`)
-- 점검: `npm run check:browser` 95항목 (개발 서버가 떠 있어야 한다). 사람이 귀로 듣는 판정은 여전히 남아 있다
+- 점검: `npm run check:browser` 100항목 (개발 서버가 떠 있어야 한다). 사람이 귀로 듣는 판정은 여전히 남아 있다
 - 새 파일 지도: 편집 `src/editor/{arrangement,tracks,noteTools,automationEdits,mixer,steps,recording,liveLoops,library,sessionPlayers}.ts`,
   소리 `src/audio/{busGraph,midiEffects,audioRegions,assets,bounce,zip,mastering,midiInput}.ts`, 모델 `src/model/{meter,chords,notation,templates}.ts`
 
@@ -153,6 +153,13 @@ Rust 이펙트 코어 `fx/`(→ `src/generated/fx.wasm`, `npm run build:fx`) 70�
 바운스/프리즈·에일리어스·스크럽·템포 트랙·악보 편집/큰보표·스텝 확률/런치 퀀타이즈·스마트 매핑·스크린셋.
 시안 `design/studio-app.figcraft` 22 페이지.
 2-b(17~22): 사이드체인 서로 감지·반복마다 확률·오디오 에일리어스/스크럽·템포 램프·악보 기호 — 스케줄러는 절대 시각 커서.
+
+### 화면 다시 짜기 (2026-11-21, `UX_REDESIGN.md`)
+
+위쪽 3줄 → 1줄. 클립·트랙 동작은 **우클릭 / "클립 ▾" "트랙 ▾" / ⌘K** — 셋이 `App` 의 `MenuAction[]` 한 목록을 쓴다
+(`src/ui/Menu.tsx`, `src/editor/commands.ts`). 새 동작은 그 목록에 넣는다(단추를 늘리지 않는다).
+격자·세기·기능은 편집기 머리, 곡 길이·스윙은 LCD "곡 ▾", 글로벌 트랙은 기본 숨김(G), 오른쪽 칸 I, 알림은 토스트.
+Logic 구조 참고와 시안 3종은 시안 23·24 페이지.
 
 ### 그 밖에는 `ROADMAP.md` 를 따른다
 

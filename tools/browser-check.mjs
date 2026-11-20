@@ -72,6 +72,12 @@ const centerOf = (sel) => ev(`(() => { const e = ${sel}; if (!e) return null; e.
 const clickEl = async (sel) => { const p = await centerOf(sel); if (!p) throw new Error('요소 없음: ' + sel); await click(p.x, p.y); };
 const byText = (t) => `[...document.querySelectorAll('button')].find((b) => b.textContent.trim().includes(${JSON.stringify(t)}))`;
 const byTitle = (t) => `[...document.querySelectorAll('button')].find((b) => (b.title || '').includes(${JSON.stringify(t)}))`;
+// 메뉴 — "클립 ▾" "트랙 ▾" 같은 단추를 열고 그 안의 항목을 누른다 (2026-11-21 화면 다시 짜기)
+const menuDo = async (menu, item) => {
+  await clickEl(`document.querySelector('button[aria-label=${JSON.stringify(menu + ' 메뉴')}]')`);
+  await sleep(150);
+  await clickEl(`[...document.querySelectorAll('[role=menu] button')].find((b) => b.textContent.includes(${JSON.stringify(item)}))`);
+};
 // 내보내기 창 — 열려 있으면 그대로 둔다 (단추가 여닫기를 오간다)
 const openExport = async () => { if (!(await ev(`!!document.querySelector('[role=dialog][aria-label="내보내기"]')`))) await clickEl(`document.querySelector('button[aria-expanded]:not([aria-label])') && [...document.querySelectorAll('button')].find((b) => b.textContent.trim() === '내보내기')`); };
 const noteCount = () => ev(`document.querySelectorAll('.cursor-crosshair [role=button]').length`);
@@ -117,6 +123,8 @@ try {
   await connect();
   await send('Runtime.enable'); await send('Page.enable'); await send('Log.enable');
   await send('Page.addScriptToEvaluateOnNewDocument', { source: TAP });
+  // 글로벌 트랙은 기본 숨김 — 점검은 그 줄들을 누르므로 켜 두고 시작한다 (기본 숨김은 따로 본다)
+  await send('Page.addScriptToEvaluateOnNewDocument', { source: "try { if (localStorage.getItem('ui-globals') === null) localStorage.setItem('ui-globals', '1'); } catch {}" });
   await send('Browser.setDownloadBehavior', { behavior: 'allow', downloadPath: DL });
   await send('Page.navigate', { url: URL_APP });
   await sleep(2500);
@@ -221,13 +229,13 @@ try {
   const shape = () => ev(`(() => { const p = JSON.parse(localStorage.getItem('project-autosave-v1')); const d = p.project ?? p; return d.tracks.map((t) => t.name + ':' + t.clips.map((c) => c.startTick + '+' + c.lengthTick + '/' + c.notes.length).sort((a, b) => parseInt(a) - parseInt(b)).join(',')).join(' | '); })()`);
   const settle = () => sleep(400);
   const s0 = await shape();
-  await clickEl(byText('반복')); await settle();
+  await menuDo('클립', '끝까지 반복'); await settle();
   const sRepeat = await shape();
   record('클립 반복', sRepeat.split(',').length > s0.split(',').length, `${s0}  →  ${sRepeat}`);
 
   const ruler = await ev(`(() => { const r = document.querySelector('[title="클릭해 재생 위치를 옮깁니다"]').getBoundingClientRect(); return { x: r.x, y: r.y + r.height / 2 }; })()`);
   await click(ruler.x + 336, ruler.y);
-  await clickEl(byText('나누기')); await settle();
+  await menuDo('클립', '나누기'); await settle();
   const sSplit = await shape();
   record('클립 나누기 (커서 위치)', sSplit.split(',').length === sRepeat.split(',').length + 1, sSplit);
 
@@ -236,14 +244,14 @@ try {
   await clickEl(byTitle('다시 실행')); await settle();
   record('나누기 되돌리기', sUndo === sRepeat && (await shape()) === sSplit, sUndo);
 
-  await clickEl(byText('합치기')); await settle();
+  await menuDo('클립', '합치기'); await settle();
   const sJoin = await shape();
   record('클립 합치기 (다음 클립과)', sJoin.split(',').length === sSplit.split(',').length - 1, sJoin);
 
-  await clickEl(byText('트랙 복제')); await settle();
+  await menuDo('트랙', '트랙 복제'); await settle();
   const sDup = await shape();
   record('트랙 복제', sDup.split(' | ').length === 2 && sDup.split(' | ')[1].includes('복사'), sDup);
-  await clickEl(`document.querySelector('[aria-label="트랙 위로"]')`); await settle();
+  await menuDo('트랙', '위로 옮기기'); await settle();
   const sMove = await shape();
   record('트랙 순서 바꾸기', sMove.split(' | ')[0].includes('복사'), sMove);
   const n12 = problems.length;
@@ -289,7 +297,7 @@ try {
   await clickEl(`document.querySelector('[aria-label="재생 위치"]')`);
   const lcdTime = await ev(`document.querySelector('[aria-label="재생 위치"]').textContent`);
   record('LCD 분:초 전환', /^\d+:\d\d\.\d$/.test(lcdTime), lcdTime);
-  await clickEl(byText('클립 뮤트')); await sleep(300);
+  await menuDo('클립', '클립 뮤트'); await sleep(300);
   d13 = await saved13();
   record('클립 뮤트', d13.tracks.some((t) => t.clips.some((c) => c.muted === true)), '');
   await send('Page.reload'); await sleep(2500);
@@ -300,12 +308,12 @@ try {
 
   // 14. 트랙 보호·카운트인·스택
   const notes14 = await noteCount();
-  await clickEl(byTitle('고른 트랙을 보호합니다'));
+  await menuDo('트랙', '보호');
   const g14 = await ev(`(() => { const r = document.querySelector('.cursor-crosshair').getBoundingClientRect(); return { x: r.x, y: r.y }; })()`);
   await click(g14.x + 100, g14.y + 40);
   const blockedMsg = await ev(`document.body.innerText.includes('보호돼 있습니다')`);
   record('보호된 트랙은 음을 못 찍는다', (await noteCount()) === notes14 && blockedMsg, `음 ${notes14} → ${await noteCount()}, 알림 ${blockedMsg}`);
-  await clickEl(byTitle('고른 트랙을 보호합니다'));
+  await menuDo('트랙', '보호');
   await clickEl(`document.querySelector('[aria-label="카운트인"]')`);
   await clickEl(byTitle('맨 앞으로'));
   await clickEl(byTitle('커서부터 재생'));
@@ -316,7 +324,7 @@ try {
   const stop14 = await centerOf(byTitle('정지')); if (stop14) await click(stop14.x, stop14.y);
   record('카운트인 — 한 마디 센 뒤 시작', during.startsWith('0:00') || during.startsWith('1.1.'), `0.9초 ${during} → 3.5초 ${after14}`);
   await clickEl(`document.querySelector('[aria-label="카운트인"]')`);
-  await ev(`(() => { const e = document.querySelector('[aria-label="트랙 스택"]'); Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(e, 'new'); e.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+  await menuDo('트랙', '＋ 새 스택');
   await sleep(300);
   const d14 = await ev(`(() => { const p = JSON.parse(localStorage.getItem('project-autosave-v1')); const d = p.project ?? p; return { stacks: (d.stacks ?? []).length, member: d.tracks.some((t) => t.stackId) }; })()`);
   record('트랙 스택 만들기', d14.stacks === 1 && d14.member, JSON.stringify(d14));
@@ -552,7 +560,7 @@ try {
   await sleep(300);
   const stop20c = await centerOf(byTitle('정지')); if (stop20c) await click(stop20c.x, stop20c.y);
   await sleep(300);
-  await clickEl(`document.querySelector('[aria-label="방금 연주 담기"]')`);
+  await clickEl(`document.querySelector('button[title="녹음 방식 · 펀치 · 방금 연주 담기"]')`); await sleep(150); await clickEl(`[...document.querySelectorAll('[role=menu] button')].find((b) => b.textContent.includes('방금 연주 담기'))`);
   await sleep(400);
   const fb20 = await ev(`document.body.innerText.match(/방금 연주 \\d+음을 담았습니다|담을 [^\\n]*/)?.[0] ?? ''`);
   record('Flashback — 녹음 없이 친 연주를 담기', /방금 연주 [1-9]/.test(fb20), fb20);
@@ -606,13 +614,13 @@ try {
   for (let i = 0; i < 4; i++) { await sleep(100); peakScrub = Math.max(peakScrub, await ev('window.__peak()')); }
   record('스크럽 — 눈금자를 끌면 지나가는 음', peakScrub > 0.001, `피크 ${peakScrub.toFixed(4)}`);
   // 20c2. 리전 에일리어스 — 고른 클립 뒤에 원본을 따르는 복사, 음 수가 같다
-  await clickEl(byText('에일리어스'));
+  await menuDo('클립', '에일리어스 만들기');
   await sleep(500);
   const alias20 = await ev(`(() => { const p = JSON.parse(localStorage.getItem('project-autosave-v1')); const d = p.project ?? p; for (const t of d.tracks) for (const c of t.clips) if (c.aliasOf) { const src = t.clips.find((x) => x.id === c.aliasOf) ?? d.tracks.flatMap((x) => x.clips).find((x) => x.id === c.aliasOf); return c.label + ':' + c.notes.length + '/' + (src?.notes.length ?? -1); } return ''; })()`);
   const m20 = /:(\d+)\/(\d+)$/.exec(alias20);
   record('리전 에일리어스 — 원본과 같은 음', !!m20 && m20[1] === m20[2] && Number(m20[1]) > 0, alias20 || '안 생김');
   // 만든 에일리어스가 골라져 있다 — 진짜 복사로 바꿔 둔다 (뒤 점검이 음 수를 센다)
-  await clickEl(byText('진짜 복사로'));
+  await menuDo('클립', '진짜 복사로');
   await sleep(400);
   const real20 = await ev(`(() => { const p = JSON.parse(localStorage.getItem('project-autosave-v1')); const d = p.project ?? p; return d.tracks.flatMap((t) => t.clips).filter((c) => c.aliasOf).length; })()`);
   record('에일리어스 → 진짜 복사', real20 === 0, `남은 에일리어스 ${real20}`);
@@ -651,15 +659,15 @@ try {
   await clickEl(`[...document.querySelectorAll('[aria-label="편집기 보기"] button')].find((x) => x.textContent === '피아노 롤')`);
   // 20d. 바운스 인 플레이스 · 프리즈 — 트랙을 오디오로 렌더해 놓고, 얼렸다 녹인다
   const tracksBefore20 = await ev(`(() => { const p = JSON.parse(localStorage.getItem('project-autosave-v1')); return (p.project ?? p).tracks.length; })()`);
-  await clickEl(byText('바운스'));
+  await menuDo('트랙', '바운스 인 플레이스');
   let bounced = '';
   for (let i = 0; i < 60 && !bounced; i++) { await sleep(500); bounced = await ev(`(() => { const p = JSON.parse(localStorage.getItem('project-autosave-v1')); const d = p.project ?? p; const t = d.tracks.find((x) => x.name.endsWith('(바운스)')); return t ? t.name + ':' + (t.clips[0]?.audio?.assetSec ?? 0).toFixed(1) + '초' : ''; })()`); }
   record('바운스 인 플레이스 — 오디오 트랙이 생김', bounced.length > 0, bounced || '안 생김');
   await clickEl(`[...document.querySelectorAll('[data-track]')][0]?.querySelector('button, select') ?? null`);
-  await clickEl(byText('❄ 프리즈'));
+  await menuDo('트랙', '❄ 프리즈');
   let frozen20 = '';
   for (let i = 0; i < 60 && !frozen20; i++) { await sleep(500); frozen20 = await ev(`(() => { const p = JSON.parse(localStorage.getItem('project-autosave-v1')); const d = p.project ?? p; const t = d.tracks.find((x) => x.frozen); return t ? t.name + ' → ' + d.tracks.find((x) => x.id === t.frozen.audioTrackId)?.name : ''; })()`); }
-  await clickEl(byText('❄ 녹이기'));
+  await menuDo('트랙', '❄ 녹이기');
   await sleep(500);
   const thawed20 = await ev(`(() => { const p = JSON.parse(localStorage.getItem('project-autosave-v1')); const d = p.project ?? p; return d.tracks.some((x) => x.frozen || x.freezeOf) ? '남음' : '녹음'; })()`);
   record('프리즈 · 녹이기', frozen20.length > 0 && thawed20 === '녹음', `${frozen20 || '안 얼림'} · ${thawed20} · 트랙 ${tracksBefore20}개 시작`);
@@ -792,7 +800,7 @@ try {
   await ev(`(() => { const e = document.querySelector('[aria-label="버전 이름"]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(e, '점검 전'); e.dispatchEvent(new Event('input', { bubbles: true })); })()`);
   await clickEl(byText('남기기'));
   await clickEl(`[...document.querySelectorAll('[role=dialog][aria-label="곡 고르기"] button')].find((b) => b.textContent === '닫기')`);
-  await clickEl(byTitle('고른 트랙을 목록에서 숨깁니다'));
+  await menuDo('트랙', '숨기기');
   await sleep(300);
   await clickEl(`document.querySelector('button[title^="파일"]')`);
   await clickEl(byText('새 곡 · 최근 곡 · 버전'));
@@ -996,6 +1004,68 @@ try {
   // 앞 단계들이 남긴 정리 — 편집기로 돌아와 기본 보기로
   await clickEl(`[...document.querySelectorAll('nav[aria-label="화면"] button')][0]`);
   await clickEl(`[...document.querySelectorAll('[role=tab]')].find((b) => b.textContent.includes('음 편집'))`);
+
+  // 24. 화면 다시 짜기 (2026-11-21, `UX_REDESIGN.md`) — 한 줄 머리, 우클릭, 명령 찾기, 글로벌 기본 숨김
+  await ev(`localStorage.removeItem('project-autosave-v1'); localStorage.removeItem('ui-globals'); 'ok'`);
+  await ev(`localStorage.setItem('ui-globals', '0'); 'ok'`);
+  await send('Page.reload'); await sleep(2500);
+  const keyTap = async (code, key, modifiers = 0) => {
+    await send('Input.dispatchKeyEvent', { type: 'keyDown', code, key, modifiers });
+    await send('Input.dispatchKeyEvent', { type: 'keyUp', code, key, modifiers });
+    await sleep(250);
+  };
+  const gl0 = await ev(`document.querySelectorAll('[data-tempo-row], [data-global-row]').length + (document.body.textContent.includes('빈 곳을 눌러 마커 추가') ? 1 : 0)`);
+  await ev(`document.activeElement?.blur(); 'ok'`);
+  await keyTap('KeyG', 'g');
+  const gl1 = await ev(`document.body.textContent.includes('빈 곳을 눌러 마커 추가') ? 1 : 0`);
+  await keyTap('KeyG', 'g');
+  const rows24 = await ev(`(() => { const h = document.querySelector('header'); const bars = [...document.querySelectorAll('header ~ div')].filter((d) => d.className.includes('h-11') && d.className.includes('border-b')); return { header: Math.round(h.getBoundingClientRect().height), editRows: bars.length, headerButtons: h.querySelectorAll(':scope > nav button, :scope > div > button').length }; })()`);
+  record('한 줄 머리 — 편집 줄이 없고 글로벌 트랙은 기본 숨김 (G 로 켬)', gl0 === 0 && gl1 === 1 && rows24.editRows === 0 && rows24.header <= 64, `숨김 ${gl0} → G ${gl1} · ${JSON.stringify(rows24)}`);
+
+  // 우클릭 — 클립 위에서 메뉴가 열리고, 누른 클립이 골라지고, 뮤트가 된다
+  const clip24 = await centerOf(`[...document.querySelectorAll('[data-clip]')].at(-1)`);
+  await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: clip24.x, y: clip24.y, button: 'right', clickCount: 1 });
+  await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: clip24.x, y: clip24.y, button: 'right', clickCount: 1 });
+  await sleep(300);
+  const menu24 = await ev(`[...document.querySelectorAll('[role=menu][aria-label="클립"] button')].map((b) => b.textContent.trim()).join('/')`);
+  await clickEl(`[...document.querySelectorAll('[role=menu] button')].find((b) => b.textContent.includes('클립 뮤트'))`);
+  await sleep(300);
+  const muted24 = await ev(`document.querySelectorAll('[data-clip][data-muted="true"]').length`);
+  record('클립 우클릭 메뉴 → 뮤트', menu24.includes('나누기') && menu24.includes('클립 삭제') && muted24 === 1, `${menu24.slice(0, 80)} · 뮤트 ${muted24}`);
+  // 트랙 이름 칸 우클릭 — 메뉴가 열리고 Esc 로 닫힌다
+  const head24 = await ev(`(() => { const r = document.querySelector('[data-track-head]').getBoundingClientRect(); return { x: r.x + 14, y: r.y + r.height / 2 }; })()`);
+  await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: head24.x, y: head24.y, button: 'right', clickCount: 1 });
+  await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: head24.x, y: head24.y, button: 'right', clickCount: 1 });
+  await sleep(300);
+  const tmenu24 = await ev(`[...document.querySelectorAll('[role=menu][aria-label="트랙"] button')].map((b) => b.textContent.trim()).join('/')`);
+  await keyTap('Escape', 'Escape');
+  const closed24 = await ev(`document.querySelectorAll('[role=menu]').length`);
+  record('트랙 우클릭 메뉴 · Esc 로 닫힘', tmenu24.includes('프리즈') && tmenu24.includes('트랙 삭제') && closed24 === 0, tmenu24.slice(0, 90));
+
+  // 명령 찾기 (⌘K) — "메트로" 를 쳐서 Enter → 메트로놈이 켜진다
+  const metro0 = await ev(`document.querySelector('button[title="메트로놈"]').getAttribute('aria-pressed')`);
+  await keyTap('KeyK', 'k', 4);
+  await ev(`(() => { const i = document.querySelector('[aria-label="명령 이름"]'); if (!i) return 'none'; Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(i, '메트로'); i.dispatchEvent(new Event('input', { bubbles: true })); return 'ok'; })()`);
+  await sleep(250);
+  const found24 = await ev(`[...document.querySelectorAll('[role=dialog][aria-label="명령 찾기"] button')].map((b) => b.textContent).join('|')`);
+  await ev(`document.querySelector('[aria-label="명령 이름"]').focus(); 'ok'`);
+  await keyTap('Enter', 'Enter');
+  const metro1 = await ev(`document.querySelector('button[title="메트로놈"]').getAttribute('aria-pressed')`);
+  record('명령 찾기 (⌘K) → 메트로놈', found24.includes('메트로놈') && metro0 !== metro1 && !(await ev(`!!document.querySelector('[role=dialog][aria-label="명령 찾기"]')`)), `${found24.slice(0, 60)} · ${metro0} → ${metro1}`);
+
+  // 알림은 떠서 나온다 — 편집기가 밀리지 않는다 · 오른쪽 칸 접기(I)
+  const top0 = await ev(`Math.round(document.querySelector('[data-lane]').getBoundingClientRect().y)`);
+  await menuDo('클립', '에일리어스 만들기');
+  await sleep(300);
+  const toast24 = await ev(`(() => { const t = document.querySelector('[data-toast]'); return t ? getComputedStyle(t).position : 'none'; })()`);
+  const top1 = await ev(`Math.round(document.querySelector('[data-lane]').getBoundingClientRect().y)`);
+  await ev(`document.activeElement?.blur(); 'ok'`);
+  const w0 = await ev(`Math.round(document.querySelector('[data-lane]').getBoundingClientRect().width)`);
+  await keyTap('KeyI', 'i');
+  const w1 = await ev(`Math.round(document.querySelector('[data-lane]').getBoundingClientRect().width)`);
+  await keyTap('KeyI', 'i');
+  record('알림이 화면을 안 밀고, I 로 오른쪽 칸을 접는다', toast24 === 'fixed' && top0 === top1 && w1 > w0 + 200, `알림 ${toast24} · 레인 y ${top0}→${top1} · 폭 ${w0}→${w1}`);
+
 } catch (err) {
   record('스크립트 실행', false, String(err.stack ?? err).slice(0, 500));
 } finally {

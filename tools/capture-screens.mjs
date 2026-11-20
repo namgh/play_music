@@ -467,6 +467,36 @@ export const SCREENS = [
       await sleep(300);
     },
   },
+  // ── 24. 화면 다시 짜기 (2026-11-21, `UX_REDESIGN.md`) ──
+  {
+    name: 'a24-main', area: 24, globals: false, title: '다시 짠 화면 — 위쪽 1줄 · 편집기 머리에 격자·세기·기능 · 글로벌 트랙 숨김',
+    run: async () => {},
+  },
+  {
+    name: 'a24-clip-menu', area: 24, globals: false, title: '클립 우클릭 — 나누기·합치기·반복·에일리어스·뮤트·색 ("클립 ▾" 단추도 같은 목록)',
+    run: async (b) => {
+      const p = await b.centerOf(`document.querySelectorAll('[data-clip]')[3]`);
+      await b.mouse('mousePressed', p.x, p.y, { button: 'right', buttons: 2 });
+      await b.mouse('mouseReleased', p.x, p.y, { button: 'right' });
+      await sleep(300);
+    },
+  },
+  {
+    name: 'a24-track-menu', area: 24, globals: false, title: '트랙 ▾ — 복제·순서·스택·보호·숨기기·프리즈·바운스',
+    run: async (b) => { await b.clickEl(`document.querySelector('button[aria-label="트랙 메뉴"]')`); await sleep(300); },
+  },
+  {
+    name: 'a24-palette', area: 24, globals: false, title: '명령 찾기 (⌘K) — 모든 기능을 이름으로',
+    run: async (b) => { await b.ev(`document.activeElement?.blur(); 'ok'`); await b.key('k', 'KeyK', 4); await sleep(200); await b.type(`document.querySelector('[aria-label="명령 이름"]')`, '나누'); await sleep(300); },
+  },
+  {
+    name: 'a24-help-song', area: 24, globals: false, title: '? 빠른 도움말 (바닥의 단축키 글을 여기로)',
+    run: async (b) => { await b.clickEl(`document.querySelector('button[aria-label="도움말"]')`); await sleep(300); },
+  },
+  {
+    name: 'a24-wide', area: 24, globals: true, title: '오른쪽 칸 접기(I) + 글로벌 트랙(G) 켠 모습',
+    run: async (b) => { await b.ev(`document.activeElement?.blur(); 'ok'`); await b.key('i', 'KeyI'); await sleep(300); },
+  },
 ];
 
 /** 데모 곡의 한 트랙에 이펙트를 넣고 다시 열어 믹서로 간다 (기본값은 앱의 선언에서 채워진다) */
@@ -494,7 +524,8 @@ async function capture(b, screen) {
   const seed = JSON.stringify(serializeProject(demoProject()));
   await b.goto('about:blank', 100);
   await b.goto(URL_APP, 1200);
-  await b.ev(`localStorage.setItem('project-autosave-v1', ${seed}); 'ok'`);
+  // 글로벌 트랙은 기본 숨김이다 — 그 줄을 찍는 화면(screen.globals)만 켠다
+  await b.ev(`localStorage.setItem('project-autosave-v1', ${seed}); localStorage.setItem('ui-globals', ${JSON.stringify(screen.globals === false ? '0' : '1')}); 'ok'`);
   await b.goto(URL_APP, 2500);
   await screen.run(b);
   await sleep(500);

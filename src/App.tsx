@@ -12,7 +12,7 @@ import { useProjectEditor } from './editor/useProjectEditor.ts';
 import { loadAutosave, readProjectFile, saveAutosave, saveProjectFile } from './editor/projectStorage.ts';
 import { decodeMidi, encodeMidi } from './model/midi.ts';
 import { createEmptyProject, projectLengthTicks } from './model/factory.ts';
-import type { ClipId, MusicalKey, Note, Project, StackId, TrackId } from './model/project.ts';
+import type { ClipId, MusicalKey, Note, Project, TrackId } from './model/project.ts';
 import { NOTE_NAMES, pitchName } from './model/pitch.ts';
 import { PPQ, secondsToTicks, ticksPerBar, ticksPerBeat, ticksToSeconds } from './model/time.ts';
 import { positionAt } from './model/meter.ts';
@@ -52,6 +52,7 @@ import { instrumentParams, resolveInstrument } from './instruments/resolve.ts';
 import { ENGINE_LABELS, useAudioEngine } from './audio/useAudioEngine.ts';
 import { PianoRoll } from './ui/PianoRoll.tsx';
 import { EditorToolbar } from './ui/EditorToolbar.tsx';
+import { CommandPalette, MenuButton, toCommands, type Command, type MenuAction } from './ui/Menu.tsx';
 import { collectGhosts } from './ui/ghostNotes.ts';
 import type { GhostMode } from './ui/ghostNotes.ts';
 import { clampRange, rangeOfNotes } from './ui/noteRange.ts';
@@ -64,7 +65,7 @@ import { Timeline } from './ui/Timeline.tsx';
 import { Mixer } from './ui/Mixer.tsx';
 import { ThemePanel, useThemeState } from './ui/ThemePanel.tsx';
 import {
-  IconEditor, IconExport, IconFolder, IconGrid, IconLoop, IconSpark, IconMetronome, IconMixer, IconPalette, IconPlay, IconRedo,
+  IconEditor, IconExport, IconFolder, IconGrid, IconLoop, IconSpark, IconMetronome, IconMixer, IconPlay, IconRedo,
   IconRewind, IconStop, IconTuning, IconUndo,
 } from './ui/icons.tsx';
 
@@ -88,6 +89,16 @@ const FIELD = 'h-7 rounded-md border border-rule bg-panel px-2 text-xs text-ink'
 const TOOL_BTN = 'h-7 shrink-0 whitespace-nowrap rounded-md border border-rule bg-panel px-2.5 text-xs text-ink hover:border-ink-3 disabled:opacity-40';
 /** 파일 메뉴의 한 줄 */
 const MENU_ITEM = 'flex h-9 w-full items-center rounded-lg px-3 text-left text-sm text-ink hover:bg-panel';
+
+/** 빠른 도움말(?) — 예전에는 편집기 바닥에 늘 깔려 있던 글이다 */
+const HELP: [string, string][] = [
+  ['음', '빈 곳 클릭 = 추가 · 끌기 = 범위 선택 · Shift+클릭 = 선택 추가 · ↑↓ 반음 · Delete 삭제 · Esc 선택 해제'],
+  ['편집', '⌘C/⌘V 복사·붙여넣기 · ⌘D 복제 · ⌘A 전체 선택 · ⌘Z 되돌리기'],
+  ['재생', 'Space = 커서부터 재생 · 눈금 클릭 = 재생 위치 · ⌘L 고른 구간 반복 · ⌥, ⌥. 마커 이동'],
+  ['클립', '빈 레인 클릭 = 클립 추가 · 끌어서 옮기기 · 끝을 끌어 길이 · 우클릭 = 나누기·합치기·반복·색…'],
+  ['트랙', '이름 칸 우클릭 = 복제·보호·숨기기·프리즈·바운스…'],
+  ['보기', 'G 글로벌 트랙(구간·마커·코드·템포) · I 오른쪽 칸 · 숫자 = 스크린셋(⇧+숫자로 저장)'],
+];
 
 const GRID_OPTIONS: { label: string; ticks: number }[] = [
   { label: '1/4', ticks: PPQ },
@@ -169,7 +180,7 @@ export function App() {
   const [isRecording, setIsRecording] = useState(false);
   const playheadRef = useRef<number | null>(null);
   /** 상단 바에서 열린 띄움 창. 한 번에 하나만 */
-  const [menu, setMenu] = useState<'file' | 'theme' | 'export' | null>(null);
+  const [menu, setMenu] = useState<'file' | 'theme' | 'export' | 'song' | 'help' | null>(null);
   const theme = useThemeState();
   const fileInput = useRef<HTMLInputElement | null>(null);
   const midiInput = useRef<HTMLInputElement | null>(null);
@@ -201,6 +212,9 @@ export function App() {
   const [sideTab, setSideTab] = useState<'inspect' | 'controls' | 'browse'>('inspect');
   /** 연주 칸(건반) — 보기 설정 */
   const [playOpen, setPlayOpen] = useState(false);
+  /** 오른쪽 칸 — 접으면 편집기가 넓어진다 (Logic 의 I) */
+  const [sideOpen, setSideOpen] = useState(true);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   /** 클립 편집기 보기 — 피아노 롤 / 이벤트 목록 */
   const [editorView, setEditorView] = useState<'roll' | 'steps' | 'list' | 'score'>('roll');
   /** 곡 고르기 판 */
@@ -531,8 +545,13 @@ export function App() {
   // 단축키
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      // 명령 찾기는 입력칸 안에서도 연다
+      if ((event.metaKey || event.ctrlKey) && event.code === 'KeyK') { event.preventDefault(); setPaletteOpen((v) => !v); return; }
       const target = event.target as HTMLElement | null;
       if (target && /^(INPUT|SELECT|TEXTAREA)$/.test(target.tagName)) return;
+      if (event.code === 'KeyI' && !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey && view === 'editor') {
+        event.preventDefault(); setSideOpen((v) => !v); return;
+      }
 
       // 스크린셋 — 숫자 키로 불러오기, ⇧+숫자로 저장 (`screensets.ts`)
       const slot = !event.metaKey && !event.ctrlKey && !event.altKey ? screensetSlot(event.code) : null;
@@ -723,6 +742,216 @@ export function App() {
       : 'MIDI 로 내보냈습니다');
   };
 
+  // ── 동작 목록 — 우클릭 메뉴·메뉴 단추·명령 찾기가 같이 쓴다 (`UX_REDESIGN.md` 3) ──
+  const trackIndex = track ? project.tracks.indexOf(track) : -1;
+  const noSel = selection.length === 0;
+  const noteEditActions: MenuAction[] = [
+    { id: 'note.copy', label: '복사', hint: '⌘C', disabled: noSel, run: doCopy },
+    { id: 'note.paste', label: clipboardSize > 0 ? `붙여넣기 (${clipboardSize})` : '붙여넣기', hint: '⌘V', title: '커서 위치에 붙여넣기', disabled: clipboardSize === 0, run: doPaste },
+    { id: 'note.duplicate', label: '바로 뒤에 복제', hint: '⌘D', disabled: noSel, run: doDuplicate },
+    { id: 'note.selectAll', label: '전체 선택', hint: '⌘A', disabled: !clip, run: () => { if (clip) editor.select(clip.notes.map((n) => n.id)); } },
+    { id: 'note.delete', label: '삭제', hint: '⌫', disabled: noSel, run: () => { editor.commit(deleteNotes(project, selection)); editor.select([]); } },
+    { id: 'note.quantize', label: '퀀타이즈 (격자에 맞추기)', separator: true, disabled: noSel, run: () => editor.commit(quantizeNotes(project, selection, gridTicks)) },
+    { id: 'note.loop', label: '고른 구간을 반복 구간으로', hint: '⌘L', disabled: noSel, run: loopFromSelection },
+  ];
+  const noteFnActions: MenuAction[] = [
+    {
+      id: 'note.scale', label: '스케일에 맞추기', disabled: noSel,
+      run: () => runEdit(() => {
+        if (!project.key) throw new Error('조성을 먼저 정하세요 (LCD 의 조성 칸)');
+        editor.commit(scaleQuantize(project, selection, keyAt(project, (clip?.startTick ?? 0) + cursorTick) ?? project.key));
+      }),
+    },
+    { id: 'note.legato', label: '레가토 (다음 음까지)', disabled: noSel, run: () => runEdit(() => editor.commit(forceLegato(project, selection))) },
+    { id: 'note.overlap', label: '겹침 없애기', disabled: noSel, run: () => runEdit(() => editor.commit(removeOverlaps(project, selection))) },
+    { id: 'note.louder', label: '세기 +10%', disabled: noSel, run: () => runEdit(() => editor.commit(scaleVelocity(project, selection, 1.1))) },
+    { id: 'note.softer', label: '세기 −10%', disabled: noSel, run: () => runEdit(() => editor.commit(scaleVelocity(project, selection, 0.9))) },
+    { id: 'note.human', label: '사람처럼 (조금 흔들기)', disabled: noSel, run: () => runEdit(() => editor.commit(humanize(project, selection, { timingTicks: PPQ / 32, velocity: 0.06, seed: Date.now() }))) },
+    ...(['top', 'bottom'] as const).map((which): MenuAction => ({
+      id: `note.${which}`, label: which === 'top' ? '윗성부 떼어내기' : '아랫성부 떼어내기', disabled: noSel, ...(which === 'top' ? { separator: true } : {}),
+      run: () => runEdit(() => {
+        const res = extractVoice(project, selection, which);
+        editor.commit(res.project);
+        setNotice(`${res.moved}개를 새 트랙으로 옮겼습니다`);
+      }),
+    })),
+  ];
+  const recordActions: MenuAction[] = [
+    { id: 'rec.replace', label: '바꿔 녹음 (옛 음은 테이크로)', checked: recordMode === 'replace', run: () => setRecordMode('replace') },
+    { id: 'rec.overdub', label: '겹쳐 녹음 (더하기)', checked: recordMode === 'overdub', run: () => setRecordMode('overdub') },
+    { id: 'rec.punch', label: '펀치 인/아웃', title: '펀치 인/아웃 — 반복 구간 안에서 친 것만 녹음합니다 (앞뒤는 준비 연주)', separator: true, checked: punch, run: () => setPunch((v) => !v) },
+    { id: 'rec.flashback', label: '방금 연주 담기', title: 'Flashback — 녹음을 안 눌렀어도 재생하며 친 것을 고른 클립에 담습니다', separator: true, run: captureFlashback },
+  ];
+  const viewActions: MenuAction[] = [
+    ...VIEWS.map(([id, label]): MenuAction => ({ id: `view.${id}`, label: `${label} 화면`, checked: view === id, run: () => setView(id) })),
+    { id: 'view.side', label: '오른쪽 칸 여닫기', hint: 'I', checked: sideOpen, run: () => setSideOpen((v) => !v), separator: true },
+    { id: 'view.keys', label: '건반 칸 여닫기', checked: playOpen, run: () => setPlayOpen((v) => !v) },
+    { id: 'view.zoomIn', label: '가로 확대', run: () => setZoomX((z) => Math.min(8, z * 1.5)) },
+    { id: 'view.zoomOut', label: '가로 축소', run: () => setZoomX((z) => Math.max(0.25, z / 1.5)) },
+    { id: 'view.theme', label: '화면 색', run: () => setMenu('theme') },
+    { id: 'view.settings', label: '설정 · 단축키 · MIDI 장치', hint: '⌘,', run: () => setSettingsOpen(true) },
+  ];
+  const songActions: MenuAction[] = [
+    { id: 'song.play', label: engine.state === 'playing' ? '정지' : '커서부터 재생', hint: 'Space', run: togglePlay },
+    { id: 'song.rewind', label: '맨 앞으로', run: () => { engine.stop(); setCursorTick(0); } },
+    { id: 'song.metronome', label: '메트로놈', checked: metronome, run: () => setMetronome((on) => !on) },
+    { id: 'song.countIn', label: '카운트인', checked: countIn, run: () => setCountIn((on) => !on) },
+    { id: 'song.prevMarker', label: '이전 마커로', hint: '⌥,', run: () => jumpMarker(-1) },
+    { id: 'song.nextMarker', label: '다음 마커로', hint: '⌥.', run: () => jumpMarker(1) },
+    { id: 'song.undo', label: '되돌리기', hint: '⌘Z', disabled: !editor.canUndo, run: editor.undo },
+    { id: 'song.redo', label: '다시 실행', hint: '⇧⌘Z', disabled: !editor.canRedo, run: editor.redo },
+    { id: 'song.settings', label: '곡 설정 (길이·스윙·템포 변화)', run: () => setMenu('song') },
+  ];
+  const fileActions: MenuAction[] = [
+    { id: 'file.projects', label: '새 곡 · 최근 곡 · 버전', hint: '⌘O', run: () => setProjectsOpen(true) },
+    { id: 'file.save', label: '파일로 저장', hint: '⌘S', run: () => void saveFile() },
+    { id: 'file.open', label: '파일 열기', run: () => fileInput.current?.click() },
+    { id: 'file.midiOut', label: 'MIDI 내보내기', run: exportMidi },
+    { id: 'file.midiIn', label: 'MIDI 가져오기', run: () => midiInput.current?.click() },
+    { id: 'file.audioIn', label: '오디오 가져오기', run: () => audioInput.current?.click() },
+    { id: 'file.videoIn', label: '영상 가져오기', run: () => videoInput.current?.click() },
+    { id: 'file.export', label: '내보내기 (WAV · 스템)', run: () => setMenu('export') },
+  ];
+  const clipActions: MenuAction[] = [
+    {
+      id: 'clip.split', label: '나누기 (커서에서)', title: '고른 클립을 커서 위치에서 둘로 나눕니다',
+      disabled: !clip || cursorTick <= 0 || cursorTick >= clip.lengthTick,
+      run: () => runEdit(() => {
+        const next = splitClip(project, clip!.id, clip!.startTick + cursorTick);
+        editor.commit(next.project);
+        setCursorTick(0);
+        setSelectedClipId(next.rightId);
+      }),
+    },
+    {
+      id: 'clip.join', label: '다음 클립과 합치기', title: '고른 클립을 같은 트랙의 다음 클립과 하나로 합칩니다',
+      disabled: !clip || nextClipOnTrack(project, clip.id) === null,
+      run: () => runEdit(() => {
+        const following = nextClipOnTrack(project, clip!.id)!;
+        editor.commit(joinClips(project, [clip!.id, following.id]).project);
+      }),
+    },
+    {
+      id: 'clip.repeat', label: '끝까지 반복', title: '고른 클립을 곡 끝(또는 다음 클립)까지 되풀이합니다',
+      disabled: !clip,
+      run: () => runEdit(() => {
+        const next = repeatClip(project, clip!.id, { untilTick: projectLengthTicks(project) });
+        editor.commit(next.project);
+        setNotice(`${next.clipIds.length}번 반복했습니다`);
+      }),
+    },
+    {
+      id: 'clip.alias', label: clip?.aliasOf ? '진짜 복사로 바꾸기' : '에일리어스 만들기',
+      title: clip?.aliasOf ? '이 에일리어스를 보통 클립(진짜 복사)으로 바꿉니다' : '에일리어스 — 바로 뒤에, 원본을 고치면 같이 바뀌는 복사를 놓습니다',
+      disabled: !clip,
+      run: () => runEdit(() => {
+        if (clip!.aliasOf) {
+          editor.commit(aliasToCopy(project, clip!.id));
+          setNotice('에일리어스를 보통 클립으로 바꿨습니다 — 이제 원본과 따로 고쳐집니다');
+          return;
+        }
+        const next = makeAlias(project, clip!.id);
+        editor.commit(next.project);
+        setSelectedClipId(next.clipId);
+        setNotice('에일리어스를 만들었습니다 — 원본이나 에일리어스 어느 쪽을 고쳐도 같이 바뀝니다');
+      }),
+    },
+    {
+      id: 'clip.mute', label: '클립 뮤트', title: '고른 클립을 지우지 않고 소리만 뺍니다', separator: true,
+      disabled: !clip, checked: clip?.muted === true,
+      run: () => editor.commit(updateClip(project, clip!.id, { muted: !clip!.muted })),
+    },
+    {
+      id: 'clip.color', label: '색', disabled: !clip,
+      options: [
+        { label: '트랙', checked: !clip?.color, run: () => editor.commit(updateClip(project, clip!.id, { color: null })) },
+        ...['j1', 'j2', 'j3', 'j4', 'j5', 'j6'].map((c, i) => ({
+          label: String(i + 1), checked: clip?.color === c, run: () => editor.commit(updateClip(project, clip!.id, { color: c })),
+        })),
+      ],
+    },
+  ];
+  const trackActions: MenuAction[] = [
+    {
+      id: 'track.duplicate', label: '트랙 복제', title: '고른 트랙을 악기·이펙트·클립째 복제해 바로 아래에 놓습니다',
+      disabled: !track,
+      run: () => runEdit(() => {
+        const next = duplicateTrack(project, track!.id);
+        editor.commit(next.project);
+        setSelectedTrackId(next.trackId);
+        setSelectedClipId(null);
+      }),
+    },
+    {
+      id: 'track.up', label: '위로 옮기기', title: '고른 트랙을 한 칸 위로',
+      disabled: !track || trackIndex <= 0,
+      run: () => editor.commit(moveTrack(project, track!.id, trackIndex - 1)),
+    },
+    {
+      id: 'track.down', label: '아래로 옮기기', title: '고른 트랙을 한 칸 아래로',
+      disabled: !track || trackIndex >= project.tracks.length - 1,
+      run: () => editor.commit(moveTrack(project, track!.id, trackIndex + 1)),
+    },
+    {
+      id: 'track.stack', label: '스택', disabled: !track,
+      options: [
+        { label: '없음', checked: !track?.stackId, run: () => runEdit(() => editor.commit(setTrackStack(project, track!.id, null))) },
+        ...(project.stacks ?? []).map((st) => ({
+          label: st.name, checked: track?.stackId === st.id, run: () => runEdit(() => editor.commit(setTrackStack(project, track!.id, st.id))),
+        })),
+        { label: '＋ 새 스택', run: () => runEdit(() => editor.commit(createStack(project, track!.id).project)) },
+      ],
+    },
+    {
+      id: 'track.lock', label: '보호', title: '고른 트랙을 보호합니다 — 클립·음·오토메이션을 고칠 수 없게', separator: true,
+      disabled: !track, checked: track?.locked === true,
+      run: () => editor.commit(setTrackFlag(project, track!.id, 'locked', !track!.locked)),
+    },
+    {
+      id: 'track.hide', label: '숨기기', title: '고른 트랙을 목록에서 숨깁니다 — 소리는 그대로 납니다',
+      disabled: !track, checked: track?.hidden === true,
+      run: () => editor.commit(setTrackFlag(project, track!.id, 'hidden', !track!.hidden)),
+    },
+    {
+      id: 'track.freeze', label: track?.frozen ? '❄ 녹이기' : '❄ 프리즈',
+      title: '프리즈 — 악기·인서트를 오디오로 구워 CPU 를 아낍니다. 얼린 동안은 고칠 수 없고, 다시 누르면 녹습니다',
+      disabled: !track || track.kind === 'audio' || !!track.freezeOf || engine.exporting, checked: !!track?.frozen,
+      run: () => void (async () => {
+        const t = track!;
+        if (t.frozen) { runEdit(() => { editor.commit(unfreezeTrack(projectRef.current, t.id)); setNotice(`"${t.name}" 을 녹였습니다`); }); return; }
+        setNotice(`"${t.name}" 을 얼리는 중…`);
+        const audio = await engine.renderTrack(t.id);
+        if (!audio) return;
+        runEdit(() => {
+          editor.commit(freezeTrack(projectRef.current, t.id, audio));
+          setNotice(`"${t.name}" 을 얼렸습니다 — 렌더한 소리로 재생해 가볍습니다. 고치려면 녹이세요`);
+        });
+      })(),
+    },
+    {
+      id: 'track.bounce', label: '바운스 인 플레이스',
+      title: '바운스 인 플레이스 — 고른 트랙을 인서트까지 거친 소리로 렌더해 바로 아래 오디오 트랙에 놓고, 원래 트랙은 뮤트',
+      disabled: !track || track.kind === 'audio' || !!track.freezeOf || engine.exporting,
+      run: () => void (async () => {
+        const t = track!;
+        setNotice(`"${t.name}" 을 오디오로 렌더하는 중…`);
+        const audio = await engine.renderTrack(t.id);
+        if (!audio) return;
+        runEdit(() => {
+          const next = bounceInPlace(projectRef.current, t.id, audio);
+          editor.commit(next.project);
+          setSelectedTrackId(next.trackId);
+          setNotice(`"${t.name}" 을 오디오 트랙으로 바운스했습니다 — 원래 트랙은 뮤트해 두었습니다`);
+        });
+      })(),
+    },
+  ];
+
+  const commands: Command[] = [
+    ...toCommands('곡', songActions), ...toCommands('클립', clipActions), ...toCommands('트랙', trackActions),
+    ...toCommands('음', [...noteEditActions, ...noteFnActions]), ...toCommands('녹음', recordActions),
+    ...toCommands('보기', viewActions), ...toCommands('파일', fileActions),
+  ];
   return (
     // **화면 높이에 고정한 앱 프레임.** 편집기의 주인공은 피아노롤이므로 트랙이
     // 몇 개든 항상 보여야 한다 — 문서처럼 아래로 쌓으면 16트랙에서 화면 밖으로 밀린다
@@ -778,15 +1007,6 @@ export function App() {
             <button type="button" title="맨 앞으로" onClick={() => { engine.stop(); setCursorTick(0); }} className={ROUND_BTN}>
               <IconRewind />
             </button>
-            {/* 마커 이동은 넓은 화면에서만 단추로 — 좁으면 ⌥, ⌥. 로 (단추가 내보내기를 밀어낸다) */}
-            <span className="hidden 2xl:contents">
-            <button type="button" title="이전 마커로 (⌥,)" aria-label="이전 마커" onClick={() => jumpMarker(-1)} className={ROUND_BTN}>
-              <span className="text-[11px] font-semibold">◂M</span>
-            </button>
-            <button type="button" title="다음 마커로 (⌥.)" aria-label="다음 마커" onClick={() => jumpMarker(1)} className={ROUND_BTN}>
-              <span className="text-[11px] font-semibold">M▸</span>
-            </button>
-            </span>
             <button
               type="button"
               onClick={togglePlay}
@@ -803,33 +1023,13 @@ export function App() {
               title={isRecording ? '녹음 멈추기' : `커서부터 녹음 — 건반 칸·MIDI 건반으로 칩니다 (${recordMode === 'replace' ? '바꿔 녹음: 옛 음은 테이크로' : '겹쳐 녹음'})`}
               className={`${ROUND_BTN} ${isRecording ? 'border-rec bg-rec text-body' : ''}`}
             ><i className={`h-3 w-3 rounded-full ${isRecording ? 'bg-body' : 'bg-rec'}`} /></button>
-            {/* 녹음 옵션 — 상단 바가 좁아 두 줄로 (바꿔/겹쳐 · 펀치 / 담기) */}
-            <div className="flex shrink-0 flex-col gap-0.5">
-              <div className="flex gap-0.5">
-                <button
-                  type="button"
-                  onClick={() => setRecordMode((m) => (m === 'replace' ? 'overdub' : 'replace'))}
-                  aria-label="녹음 방식"
-                  title="바꿔 녹음(옛 음은 테이크로 남김) / 겹쳐 녹음(더하기)"
-                  className="h-[17px] rounded border border-rule bg-panel px-1 text-[10px] leading-none text-ink-2"
-                >{recordMode === 'replace' ? '바꿔' : '겹쳐'}</button>
-                <button
-                  type="button"
-                  onClick={() => setPunch((v) => !v)}
-                  aria-pressed={punch}
-                  aria-label="펀치 인/아웃"
-                  title="펀치 인/아웃 — 반복 구간 안에서 친 것만 녹음합니다 (앞뒤는 준비 연주)"
-                  className={`h-[17px] rounded border px-1 text-[10px] leading-none ${punch ? 'border-rec bg-rec text-body' : 'border-rule bg-panel text-ink-2'}`}
-                >펀치</button>
-              </div>
-              <button
-                type="button"
-                onClick={captureFlashback}
-                aria-label="방금 연주 담기"
-                title="Flashback — 녹음을 안 눌렀어도 재생하며 친 것을 고른 클립에 담습니다"
-                className="h-[17px] rounded border border-rule bg-panel px-1 text-[10px] leading-none text-ink-2 w-full"
-              >담기</button>
-            </div>
+            {/* 녹음 옵션은 메뉴로 — 17px 단추 셋은 누르기 어렵고 늘 자리를 차지했다 */}
+            <MenuButton
+              label={recordMode === 'replace' ? (punch ? '바꿔·펀치' : '바꿔') : (punch ? '겹쳐·펀치' : '겹쳐')}
+              actions={recordActions}
+              title="녹음 방식 · 펀치 · 방금 연주 담기"
+              className="h-7 shrink-0 whitespace-nowrap rounded-md border border-rule bg-panel px-1.5 text-[11px] text-ink-2 hover:border-ink-3"
+            />
             <button
               type="button"
               onClick={() => setMetronome((on) => !on)}
@@ -852,7 +1052,7 @@ export function App() {
               aria-label="건반"
               title="화면 건반 · 자판으로 연주 · 스텝 입력"
               className={`${ROUND_BTN} ${playOpen ? ROUND_ON : ''}`}
-            ><span className="text-[13px]">🎹</span></button>
+            ><span className="text-[11px] font-semibold">건반</span></button>
             <button
               type="button"
               onClick={() => {
@@ -927,6 +1127,14 @@ export function App() {
             <b className="font-num text-[17px] font-normal leading-none">{here.timeSignature.num}/{here.timeSignature.den}</b>
             <span className="text-[9px] text-sink-3">박자</span>
           </span>
+          <button
+            type="button"
+            aria-label="곡 설정"
+            aria-expanded={menu === 'song'}
+            title="곡 설정 — 길이(마디)·스윙·템포 변화"
+            onClick={() => setMenu(menu === 'song' ? null : 'song')}
+            className={`h-6 rounded px-1.5 text-[11px] ${menu === 'song' ? 'bg-grid-2 text-sink' : 'text-sink-3 hover:text-sink'}`}
+          >곡 ▾</button>
           {project.loop && (
             <>
               <span className="h-6 w-px bg-grid-2" />
@@ -962,15 +1170,12 @@ export function App() {
             onClick={() => setMenu(menu === 'file' ? null : 'file')}
             className={`${ROUND_BTN} ${menu === 'file' ? ROUND_ON : ''}`}
           ><IconFolder /></button>
-          <button
-            type="button"
-            title="색"
-            aria-expanded={menu === 'theme'}
-            onClick={() => setMenu(menu === 'theme' ? null : 'theme')}
-            className={`${ROUND_BTN} ${menu === 'theme' ? ROUND_ON : ''}`}
-          ><IconPalette /></button>
           <button type="button" title="설정 · 단축키 · MIDI 장치 (⌘,)" aria-label="설정" onClick={() => setSettingsOpen(true)} className={ROUND_BTN}>
             <span className="text-[15px]">⚙</span>
+          </button>
+          <button type="button" title="빠른 도움말 · 명령 찾기 (⌘K)" aria-label="도움말" aria-expanded={menu === 'help'}
+            onClick={() => setMenu(menu === 'help' ? null : 'help')} className={`${ROUND_BTN} ${menu === 'help' ? ROUND_ON : ''}`}>
+            <span className="text-[14px] font-semibold">?</span>
           </button>
           {/* 내보내기는 세션의 **끝**이라 이것만 색을 준다 */}
           <button
@@ -1022,6 +1227,8 @@ export function App() {
             <button type="button" className={MENU_ITEM} onClick={() => { audioInput.current?.click(); setMenu(null); }}>오디오 가져오기<span className="ml-auto text-[11px] text-ink-3">WAV·MP3…</span></button>
             <button type="button" className={MENU_ITEM} onClick={() => { videoInput.current?.click(); setMenu(null); }}>영상 가져오기<span className="ml-auto text-[11px] text-ink-3">MP4·MOV</span></button>
             <div className="my-1 h-px bg-rule" />
+            <button type="button" className={MENU_ITEM} onClick={() => setMenu('theme')}>화면 색</button>
+            <div className="my-1 h-px bg-rule" />
             {/* 클라우드는 **얹는 기능**이다 — 로그인하지 않아도 위의 파일 저장·열기는 그대로 된다 */}
             <div className="px-2 py-1.5">
               <CloudPanel project={project} onOpen={(loaded) => editor.commit(loaded)} onNotice={setNotice} />
@@ -1029,6 +1236,69 @@ export function App() {
           </div>
         )}
         {menu === 'theme' && <ThemePanel theme={theme} onClose={() => setMenu(null)} />}
+        {/* 곡 설정 — 곡 전체에 걸리는 값. 음 편집 줄에 섞여 있던 것을 LCD 아래로 */}
+        {menu === 'song' && (
+          <div data-song-menu className="scope-body absolute left-1/2 top-[68px] z-50 flex w-80 -translate-x-1/2 flex-col gap-3 rounded-2xl border border-rule bg-body p-4 text-xs shadow-[0_12px_40px_rgba(0,0,0,0.18)] [&>div]:flex [&>div]:items-center [&>div]:gap-2">
+            <div>
+          <label className="text-[11px] text-ink-3" htmlFor="bars">마디</label>
+          <input
+            id="bars" type="number" min={1} max={512}
+            value={project.lengthBars}
+            onChange={(e) => editor.commit({ ...project, lengthBars: Math.max(1, Math.round(Number(e.target.value))) })}
+            className={`${FIELD} w-14`}
+          />
+            <span className="text-[11px] text-ink-3">곡 길이</span>
+            </div>
+            <div>
+          {/* 스윙 — **곡의 성격이라 프로젝트에 저장된다** */}
+          <label className="ml-1 text-[11px] text-ink-3" htmlFor="swing">스윙</label>
+          <input
+            id="swing" type="range" min={0} max={0.6} step={0.05}
+            value={project.swing ?? 0}
+            onChange={(e) => editor.commit(setSwing(project, Number(e.target.value)))}
+            className="w-20 accent-ink"
+            title={`뒷박을 ${Math.round((project.swing ?? 0) * 100)}% 뒤로 (1/3 이 삼잇단)`}
+          />
+          <span className="w-8 font-num text-sm">{Math.round((project.swing ?? 0) * 100)}%</span>
+            </div>
+            <div>
+          {/* 템포 변화 — 커서 위치에 지점을 놓는다 */}
+          <button
+            type="button"
+            onClick={() => {
+              const at = cursorTick + (clip?.startTick ?? 0);
+              if (at <= 0) {
+                setNotice('곡 시작 템포는 LCD 의 템포 칸에서 바꿉니다');
+                return;
+              }
+              const existing = (project.tempo.changes ?? []).find((c) => c.tick === at);
+              if (existing) {
+                editor.commit(setTempoChange(project, at, null));
+                setNotice('템포 변화를 지웠습니다');
+                return;
+              }
+              editor.commit(setTempoChange(project, at, project.tempo.bpm));
+              setNotice('커서 위치에 템포 변화를 놓았습니다 — LCD 의 템포 칸에서 값을 바꾸세요');
+            }}
+            className={TOOL_BTN}
+            title="커서 위치에 템포 변화를 놓거나 지웁니다"
+          >템포 변화{(project.tempo.changes?.length ?? 0) > 0 ? ` (${project.tempo.changes!.length})` : ''}</button>
+
+            <span className="text-[11px] text-ink-3">템포 줄(G)에서 끌어 고칩니다</span>
+            </div>
+          </div>
+        )}
+        {menu === 'help' && (
+          <div data-help className="scope-body absolute right-5 top-[68px] z-50 w-[26rem] rounded-2xl border border-rule bg-body p-4 text-xs leading-relaxed text-ink-2 shadow-[0_12px_40px_rgba(0,0,0,0.18)]">
+            <button type="button" className={`${MENU_ITEM} mb-2 border border-rule`} onClick={() => { setMenu(null); setPaletteOpen(true); }}>
+              명령 찾기 — 모든 기능을 이름으로<span className="ml-auto text-[11px] text-ink-3">⌘K</span>
+            </button>
+            {HELP.map(([head, body]) => (
+              <p key={head} className="mt-1.5"><b className="mr-2 text-ink">{head}</b>{body}</p>
+            ))}
+          </div>
+        )}
+        {paletteOpen && <CommandPalette commands={commands} onClose={() => setPaletteOpen(false)} />}
 
         <input
           ref={fileInput}
@@ -1119,170 +1389,6 @@ export function App() {
         />
       </header>
 
-      {/* 찍고 고치는 것 — 입력 기본값과 편집 동작. 편집기에서만 */}
-      {view === 'editor' && (
-        <div className="flex h-11 shrink-0 items-center gap-2 overflow-x-auto whitespace-nowrap border-b border-rule px-5 text-xs [scrollbar-width:none] [&>label]:shrink-0">
-          <label className="text-[11px] text-ink-3" htmlFor="grid">격자</label>
-          <select id="grid" value={gridTicks} onChange={(e) => setGridTicks(Number(e.target.value))} className={FIELD}>
-            {GRID_OPTIONS.map((option) => <option key={option.label} value={option.ticks}>{option.label}</option>)}
-          </select>
-          {/* 음 길이 — **격자와 다른 축이다.** 16분 격자에 4분음표를 찍을 수 있어야 한다 */}
-          <label className="ml-1 text-[11px] text-ink-3" htmlFor="notelen">음 길이</label>
-          <select
-            id="notelen"
-            value={noteLengthTicks}
-            onChange={(e) => setNoteLengthTicks(Number(e.target.value))}
-            className={FIELD}
-            title="새로 찍는 음의 길이 (Alt 를 누르면 격자에 안 맞춥니다)"
-          >
-            {GRID_OPTIONS.map((option) => <option key={option.label} value={option.ticks}>{option.label}</option>)}
-          </select>
-          {/* 스윙 — **곡의 성격이라 프로젝트에 저장된다** */}
-          <label className="ml-1 text-[11px] text-ink-3" htmlFor="swing">스윙</label>
-          <input
-            id="swing" type="range" min={0} max={0.6} step={0.05}
-            value={project.swing ?? 0}
-            onChange={(e) => editor.commit(setSwing(project, Number(e.target.value)))}
-            className="w-20 accent-ink"
-            title={`뒷박을 ${Math.round((project.swing ?? 0) * 100)}% 뒤로 (1/3 이 삼잇단)`}
-          />
-          <span className="w-8 font-num text-sm">{Math.round((project.swing ?? 0) * 100)}%</span>
-          {/* 세기 — 찍을 때 적용된다 */}
-          <label className="text-[11px] text-ink-3" htmlFor="vel">세기</label>
-          <input
-            id="vel" type="range" min={0.05} max={1} step={0.05}
-            value={inputVelocity}
-            onChange={(e) => setInputVelocity(Number(e.target.value))}
-            className="w-20 accent-ink"
-            title={`새로 찍는 음의 세기 ${Math.round(inputVelocity * 100)}%`}
-          />
-          <span className="w-8 font-num text-sm">{Math.round(inputVelocity * 127)}</span>
-          <label className="text-[11px] text-ink-3" htmlFor="bars">마디</label>
-          <input
-            id="bars" type="number" min={1} max={512}
-            value={project.lengthBars}
-            onChange={(e) => editor.commit({ ...project, lengthBars: Math.max(1, Math.round(Number(e.target.value))) })}
-            className={`${FIELD} w-14`}
-          />
-          {/* 템포 변화 — 커서 위치에 지점을 놓는다 */}
-          <button
-            type="button"
-            onClick={() => {
-              const at = cursorTick + (clip?.startTick ?? 0);
-              if (at <= 0) {
-                setNotice('곡 시작 템포는 LCD 의 템포 칸에서 바꿉니다');
-                return;
-              }
-              const existing = (project.tempo.changes ?? []).find((c) => c.tick === at);
-              if (existing) {
-                editor.commit(setTempoChange(project, at, null));
-                setNotice('템포 변화를 지웠습니다');
-                return;
-              }
-              editor.commit(setTempoChange(project, at, project.tempo.bpm));
-              setNotice('커서 위치에 템포 변화를 놓았습니다 — LCD 의 템포 칸에서 값을 바꾸세요');
-            }}
-            className={TOOL_BTN}
-            title="커서 위치에 템포 변화를 놓거나 지웁니다"
-          >템포 변화{(project.tempo.changes?.length ?? 0) > 0 ? ` (${project.tempo.changes!.length})` : ''}</button>
-
-          <span className="mx-1 h-5 w-px shrink-0 bg-rule" />
-
-          <button type="button" disabled={selection.length === 0} onClick={doCopy} title="복사 (⌘C)" className={TOOL_BTN}>복사</button>
-          <button type="button" disabled={clipboardSize === 0} onClick={doPaste} title="커서 위치에 붙여넣기 (⌘V)" className={TOOL_BTN}>
-            붙여넣기{clipboardSize > 0 ? ` (${clipboardSize})` : ''}
-          </button>
-          <button
-            type="button"
-            disabled={selection.length === 0}
-            onClick={() => editor.commit(quantizeNotes(project, selection, gridTicks))}
-            className={TOOL_BTN}
-          >퀀타이즈</button>
-          {/* 음 기능 — Logic 피아노 롤 "기능" 메뉴. 고르면 바로 실행하고 제자리로 돌아온다 */}
-          <select
-            aria-label="음 기능"
-            value=""
-            disabled={selection.length === 0}
-            onChange={(e) => {
-              const action = e.target.value;
-              runEdit(() => {
-                switch (action) {
-                  case 'scale': {
-                    if (!project.key) throw new Error('조성을 먼저 정하세요 (LCD 의 조성 칸)');
-                    editor.commit(scaleQuantize(project, selection, keyAt(project, (clip?.startTick ?? 0) + cursorTick) ?? project.key));
-                    break;
-                  }
-                  case 'legato': editor.commit(forceLegato(project, selection)); break;
-                  case 'overlap': editor.commit(removeOverlaps(project, selection)); break;
-                  case 'louder': editor.commit(scaleVelocity(project, selection, 1.1)); break;
-                  case 'softer': editor.commit(scaleVelocity(project, selection, 0.9)); break;
-                  case 'human': editor.commit(humanize(project, selection, { timingTicks: PPQ / 32, velocity: 0.06, seed: Date.now() })); break;
-                  case 'top':
-                  case 'bottom': {
-                    const r = extractVoice(project, selection, action);
-                    editor.commit(r.project);
-                    setNotice(`${r.moved}개를 새 트랙으로 옮겼습니다`);
-                    break;
-                  }
-                  default: break;
-                }
-              });
-            }}
-            className={FIELD}
-          >
-            <option value="">기능…</option>
-            <option value="scale">스케일에 맞추기</option>
-            <option value="legato">레가토 (다음 음까지)</option>
-            <option value="overlap">겹침 없애기</option>
-            <option value="louder">세기 +10%</option>
-            <option value="softer">세기 −10%</option>
-            <option value="human">사람처럼 (조금 흔들기)</option>
-            <option value="top">윗성부 떼어내기</option>
-            <option value="bottom">아랫성부 떼어내기</option>
-          </select>
-          <select
-            aria-label="음 색"
-            value={noteColor}
-            onChange={(e) => setNoteColor(e.target.value as NoteColorMode)}
-            className={FIELD}
-            title="음을 무엇으로 칠할지 — 음정 손댄 것 / 세기 / 음이름"
-          >
-            <option value="edit">색: 손댄 음</option>
-            <option value="velocity">색: 세기</option>
-            <option value="pitch">색: 음이름</option>
-          </select>
-          {/* 선택한 음을 다른 트랙으로 — 드럼에 잘못 찍었을 때 지우고 다시 찍지 않아도 된다 */}
-          {selection.length > 0 && project.tracks.length > 1 && (
-            <select
-              value=""
-              aria-label="선택한 음을 다른 트랙으로"
-              onChange={(e) => {
-                if (!e.target.value) return;
-                try {
-                  editor.commit(moveNotesToTrack(project, selection, e.target.value as TrackId));
-                  setNotice(`${selection.length}개를 옮겼습니다`);
-                } catch (err) {
-                  setNotice(err instanceof Error ? err.message : String(err));
-                }
-              }}
-              className={FIELD}
-            >
-              <option value="">트랙으로 이동…</option>
-              {project.tracks
-                .filter((t) => t.id !== track?.id)
-                .map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-            </select>
-          )}
-          <span className="flex-1" />
-          {/* 줌 — 가로는 마디를, 세로는 줄을 늘린다 */}
-          <span className="text-[11px] text-ink-3">확대</span>
-          <button type="button" onClick={() => setZoomX((z) => Math.max(0.25, z / 1.5))} className={TOOL_BTN} title="가로 축소">가로 −</button>
-          <button type="button" onClick={() => setZoomX((z) => Math.min(8, z * 1.5))} className={TOOL_BTN} title="가로 확대">＋</button>
-          <button type="button" onClick={() => setZoomY((z) => Math.max(0.5, z / 1.3))} className={TOOL_BTN} title="세로 축소">세로 −</button>
-          <button type="button" onClick={() => setZoomY((z) => Math.min(4, z * 1.3))} className={TOOL_BTN} title="세로 확대">＋</button>
-        </div>
-      )}
-
       {/* 피크 경고 — 조용히 잘린 파일이 나가는 것을 막는다 (`ROADMAP.md` P3).
           **고칠 방법까지 같이 준다.** 여유 안으로 들어오는 마스터 게인을 계산해 한 번에 적용한다 */}
       {engine.clip && (
@@ -1304,10 +1410,13 @@ export function App() {
         </div>
       )}
 
+      {/* 알림은 떠서 나온다 — 띠가 끼어들면 편집기 높이가 출렁여 누르려던 자리가 달아난다 */}
       {(engine.error || notice) && (
         <p
-          className={`mx-5 mt-2 shrink-0 rounded-xl border px-4 py-2.5 text-sm ${
-            engine.error ? 'border-rec/40 bg-rec/10 text-ink' : 'border-rule bg-panel text-ink-2'
+          role="status"
+          data-toast
+          className={`scope-body fixed bottom-5 left-1/2 z-[60] max-w-[min(46rem,92vw)] -translate-x-1/2 rounded-xl border px-4 py-2.5 text-sm shadow-[0_12px_40px_rgba(0,0,0,0.18)] ${
+            engine.error ? 'border-rec bg-body text-ink' : 'border-rule bg-body text-ink-2'
           }`}
         >
           {engine.error ?? notice}
@@ -1339,7 +1448,7 @@ export function App() {
       )}
 
       {view === 'editor' && (
-        <div className="grid min-h-0 flex-1 gap-4 px-5 pb-4 pt-3 lg:grid-cols-[1fr_320px]">
+        <div className={`grid min-h-0 flex-1 gap-4 px-5 pb-4 pt-3 ${sideOpen ? 'lg:grid-cols-[1fr_320px]' : ''}`}>
           {/* **왼쪽 열이 세로를 나눠 갖는다.** 편곡 영역은 자기 몫 안에서 스크롤하고,
               남는 높이는 전부 피아노롤이 가져간다 */}
           <div className="flex min-h-0 min-w-0 flex-col gap-3">
@@ -1367,173 +1476,8 @@ export function App() {
                   void engine.scrubAudio(to);
                 }}
                 onNotice={setNotice}
-                tools={<>
-          {/* 클립·트랙 조작 — 고른 클립과 트랙에 대해 (`LOGIC_PARITY.md` 3-1 편곡·트랙) */}
-          <button
-            type="button"
-            disabled={!clip || cursorTick <= 0 || cursorTick >= clip.lengthTick}
-            onClick={() => runEdit(() => {
-              const next = splitClip(project, clip!.id, clip!.startTick + cursorTick);
-              editor.commit(next.project);
-              setCursorTick(0);
-              setSelectedClipId(next.rightId);
-            })}
-            title="고른 클립을 커서 위치에서 둘로 나눕니다"
-            className={TOOL_BTN}
-          >나누기</button>
-          <button
-            type="button"
-            disabled={!clip || nextClipOnTrack(project, clip.id) === null}
-            onClick={() => runEdit(() => {
-              const following = nextClipOnTrack(project, clip!.id)!;
-              editor.commit(joinClips(project, [clip!.id, following.id]).project);
-            })}
-            title="고른 클립을 같은 트랙의 다음 클립과 하나로 합칩니다"
-            className={TOOL_BTN}
-          >합치기</button>
-          <button
-            type="button"
-            disabled={!clip}
-            onClick={() => runEdit(() => {
-              const next = repeatClip(project, clip!.id, { untilTick: projectLengthTicks(project) });
-              editor.commit(next.project);
-              setNotice(`${next.clipIds.length}번 반복했습니다`);
-            })}
-            title="고른 클립을 곡 끝(또는 다음 클립)까지 되풀이합니다"
-            className={TOOL_BTN}
-          >반복</button>
-          <button
-            type="button"
-            disabled={!clip}
-            onClick={() => runEdit(() => {
-              if (clip!.aliasOf) {
-                editor.commit(aliasToCopy(project, clip!.id));
-                setNotice('에일리어스를 보통 클립으로 바꿨습니다 — 이제 원본과 따로 고쳐집니다');
-                return;
-              }
-              const next = makeAlias(project, clip!.id);
-              editor.commit(next.project);
-              setSelectedClipId(next.clipId);
-              setNotice('에일리어스를 만들었습니다 — 원본이나 에일리어스 어느 쪽을 고쳐도 같이 바뀝니다');
-            })}
-            title={clip?.aliasOf ? '이 에일리어스를 보통 클립(진짜 복사)으로 바꿉니다' : '에일리어스 — 바로 뒤에, 원본을 고치면 같이 바뀌는 복사를 놓습니다'}
-            className={TOOL_BTN}
-          >{clip?.aliasOf ? '진짜 복사로' : '에일리어스'}</button>
-          <button
-            type="button"
-            disabled={!clip}
-            aria-pressed={clip?.muted === true}
-            onClick={() => editor.commit(updateClip(project, clip!.id, { muted: !clip!.muted }))}
-            title="고른 클립을 지우지 않고 소리만 뺍니다"
-            className={`${TOOL_BTN} ${clip?.muted ? 'border-ink bg-ink text-body' : ''}`}
-          >{clip?.muted ? '뮤트됨' : '클립 뮤트'}</button>
-          <select
-            aria-label="클립 색"
-            disabled={!clip}
-            value={clip?.color ?? ''}
-            onChange={(e) => editor.commit(updateClip(project, clip!.id, { color: e.target.value || null }))}
-            className={FIELD}
-            title="고른 클립만 다른 색으로"
-          >
-            <option value="">트랙 색</option>
-            {['j1', 'j2', 'j3', 'j4', 'j5', 'j6'].map((c, i) => <option key={c} value={c}>색 {i + 1}</option>)}
-          </select>
-          <button
-            type="button"
-            disabled={!track}
-            aria-pressed={track?.locked === true}
-            onClick={() => editor.commit(setTrackFlag(project, track!.id, 'locked', !track!.locked))}
-            title="고른 트랙을 보호합니다 — 클립·음·오토메이션을 고칠 수 없게"
-            className={`${TOOL_BTN} ${track?.locked ? 'border-ink bg-ink text-body' : ''}`}
-          >{track?.locked ? '보호됨' : '보호'}</button>
-          <button
-            type="button"
-            disabled={!track}
-            aria-pressed={track?.hidden === true}
-            onClick={() => editor.commit(setTrackFlag(project, track!.id, 'hidden', !track!.hidden))}
-            title="고른 트랙을 목록에서 숨깁니다 — 소리는 그대로 납니다"
-            className={`${TOOL_BTN} ${track?.hidden ? 'border-ink bg-ink text-body' : ''}`}
-          >{track?.hidden ? '숨김' : '숨기기'}</button>
-          <select
-            aria-label="트랙 스택"
-            disabled={!track}
-            value={track?.stackId ?? ''}
-            onChange={(e) => runEdit(() => {
-              const v = e.target.value;
-              if (v === 'new') editor.commit(createStack(project, track!.id).project);
-              else editor.commit(setTrackStack(project, track!.id, (v || null) as StackId | null));
-            })}
-            className={FIELD}
-            title="고른 트랙을 스택에 넣습니다 — 스택은 접고 한꺼번에 뮤트·솔로합니다"
-          >
-            <option value="">스택 없음</option>
-            {(project.stacks ?? []).map((st) => <option key={st.id} value={st.id}>{st.name}</option>)}
-            <option value="new">＋ 새 스택</option>
-          </select>
-          <button
-            type="button"
-            disabled={!track}
-            onClick={() => runEdit(() => {
-              const next = duplicateTrack(project, track!.id);
-              editor.commit(next.project);
-              setSelectedTrackId(next.trackId);
-              setSelectedClipId(null);
-            })}
-            title="고른 트랙을 악기·이펙트·클립째 복제해 바로 아래에 놓습니다"
-            className={TOOL_BTN}
-          >트랙 복제</button>
-          <button
-            type="button"
-            disabled={!track || track.kind === 'audio' || !!track.freezeOf || engine.exporting}
-            onClick={() => void (async () => {
-              const t = track!;
-              setNotice(`"${t.name}" 을 오디오로 렌더하는 중…`);
-              const audio = await engine.renderTrack(t.id);
-              if (!audio) return;
-              runEdit(() => {
-                const next = bounceInPlace(projectRef.current, t.id, audio);
-                editor.commit(next.project);
-                setSelectedTrackId(next.trackId);
-                setNotice(`"${t.name}" 을 오디오 트랙으로 바운스했습니다 — 원래 트랙은 뮤트해 두었습니다`);
-              });
-            })()}
-            title="바운스 인 플레이스 — 고른 트랙을 인서트까지 거친 소리로 렌더해 바로 아래 오디오 트랙에 놓고, 원래 트랙은 뮤트"
-            className={TOOL_BTN}
-          >바운스</button>
-          <button
-            type="button"
-            disabled={!track || track.kind === 'audio' || !!track.freezeOf || engine.exporting}
-            aria-pressed={!!track?.frozen}
-            onClick={() => void (async () => {
-              const t = track!;
-              if (t.frozen) { runEdit(() => { editor.commit(unfreezeTrack(projectRef.current, t.id)); setNotice(`"${t.name}" 을 녹였습니다`); }); return; }
-              setNotice(`"${t.name}" 을 얼리는 중…`);
-              const audio = await engine.renderTrack(t.id);
-              if (!audio) return;
-              runEdit(() => {
-                editor.commit(freezeTrack(projectRef.current, t.id, audio));
-                setNotice(`"${t.name}" 을 얼렸습니다 — 렌더한 소리로 재생해 가볍습니다. 고치려면 녹이세요`);
-              });
-            })()}
-            title="프리즈 — 악기·인서트를 오디오로 구워 CPU 를 아낍니다. 얼린 동안은 고칠 수 없고, 다시 누르면 녹습니다"
-            className={`${TOOL_BTN} ${track?.frozen ? 'border-ink bg-ink text-body' : ''}`}
-          >{track?.frozen ? '❄ 녹이기' : '❄ 프리즈'}</button>
-          {(['up', 'down'] as const).map((dir) => {
-            const index = track ? project.tracks.indexOf(track) : -1;
-            const to = dir === 'up' ? index - 1 : index + 1;
-            return (
-              <button
-                key={dir}
-                type="button"
-                disabled={!track || to < 0 || to >= project.tracks.length}
-                onClick={() => editor.commit(moveTrack(project, track!.id, to))}
-                title={dir === 'up' ? '고른 트랙을 한 칸 위로' : '고른 트랙을 한 칸 아래로'}
-                aria-label={dir === 'up' ? '트랙 위로' : '트랙 아래로'}
-                className={TOOL_BTN}
-              >{dir === 'up' ? '▲' : '▼'}</button>
-            );
-          })}
-                </>}
+                clipMenu={clipActions}
+                trackMenu={trackActions}
                 onSelectTrack={(id) => {
                   setSelectedTrackId(id);
                   setSelectedClipId(project.tracks.find((t) => t.id === id)?.clips[0]?.id ?? null);
@@ -1572,6 +1516,9 @@ export function App() {
                   )}
                   <span className="flex-1" />
                   {/* 같은 클립을 보는 두 방식 — 그림(피아노 롤) / 숫자(이벤트 목록) */}
+                  <button type="button" aria-pressed={sideOpen} aria-label="오른쪽 칸" title="오른쪽 칸(음 편집·컨트롤·브라우저) 여닫기 (I)"
+                    onClick={() => setSideOpen((v) => !v)}
+                    className={`order-last h-6 self-center rounded border px-1.5 text-[11px] ${sideOpen ? 'border-ink bg-ink text-body' : 'border-rule bg-panel text-ink-2'}`}>칸</button>
                   <div className={`gap-0.5 self-center rounded-md bg-panel p-0.5 ${clip.audio ? 'hidden' : 'flex'}`} role="tablist" aria-label="편집기 보기">
                     {(['roll', 'steps', 'list', 'score'] as const).map((v) => (
                       <button key={v} type="button" role="tab" aria-selected={editorView === v} onClick={() => setEditorView(v)}
@@ -1579,6 +1526,76 @@ export function App() {
                       >{v === 'roll' ? '피아노 롤' : v === 'steps' ? '스텝' : v === 'list' ? '이벤트 목록' : '악보'}</button>
                     ))}
                   </div>
+                </div>
+                {/* 편집기 머리 — 찍고 고치는 설정은 **편집기 안**에 둔다 (Logic 피아노 롤 머리, `UX_REDESIGN.md` 3-2) */}
+                <div data-editor-bar className={`mb-2 flex h-8 shrink-0 items-center gap-2 overflow-x-auto whitespace-nowrap text-xs [scrollbar-width:none] [&>label]:shrink-0 ${clip.audio ? 'hidden' : ''}`}>
+          <MenuButton label="편집" actions={noteEditActions} title="복사·붙여넣기·복제·퀀타이즈" />
+          <MenuButton label="기능" actions={noteFnActions} title="고른 음에 하는 일 — 레가토·스케일·사람처럼…" />
+          <span className="mx-0.5 h-5 w-px shrink-0 bg-rule" />
+          <label className="text-[11px] text-ink-3" htmlFor="grid">격자</label>
+          <select id="grid" value={gridTicks} onChange={(e) => setGridTicks(Number(e.target.value))} className={FIELD}>
+            {GRID_OPTIONS.map((option) => <option key={option.label} value={option.ticks}>{option.label}</option>)}
+          </select>
+          {/* 음 길이 — **격자와 다른 축이다.** 16분 격자에 4분음표를 찍을 수 있어야 한다 */}
+          <label className="ml-1 text-[11px] text-ink-3" htmlFor="notelen">음 길이</label>
+          <select
+            id="notelen"
+            value={noteLengthTicks}
+            onChange={(e) => setNoteLengthTicks(Number(e.target.value))}
+            className={FIELD}
+            title="새로 찍는 음의 길이 (Alt 를 누르면 격자에 안 맞춥니다)"
+          >
+            {GRID_OPTIONS.map((option) => <option key={option.label} value={option.ticks}>{option.label}</option>)}
+          </select>
+          {/* 세기 — 찍을 때 적용된다 */}
+          <label className="text-[11px] text-ink-3" htmlFor="vel">세기</label>
+          <input
+            id="vel" type="range" min={0.05} max={1} step={0.05}
+            value={inputVelocity}
+            onChange={(e) => setInputVelocity(Number(e.target.value))}
+            className="w-20 accent-ink"
+            title={`새로 찍는 음의 세기 ${Math.round(inputVelocity * 100)}%`}
+          />
+          <span className="w-8 font-num text-sm">{Math.round(inputVelocity * 127)}</span>
+          <select
+            aria-label="음 색"
+            value={noteColor}
+            onChange={(e) => setNoteColor(e.target.value as NoteColorMode)}
+            className={FIELD}
+            title="음을 무엇으로 칠할지 — 음정 손댄 것 / 세기 / 음이름"
+          >
+            <option value="edit">색: 손댄 음</option>
+            <option value="velocity">색: 세기</option>
+            <option value="pitch">색: 음이름</option>
+          </select>
+          {/* 선택한 음을 다른 트랙으로 — 드럼에 잘못 찍었을 때 지우고 다시 찍지 않아도 된다 */}
+          {selection.length > 0 && project.tracks.length > 1 && (
+            <select
+              value=""
+              aria-label="선택한 음을 다른 트랙으로"
+              onChange={(e) => {
+                if (!e.target.value) return;
+                try {
+                  editor.commit(moveNotesToTrack(project, selection, e.target.value as TrackId));
+                  setNotice(`${selection.length}개를 옮겼습니다`);
+                } catch (err) {
+                  setNotice(err instanceof Error ? err.message : String(err));
+                }
+              }}
+              className={FIELD}
+            >
+              <option value="">트랙으로 이동…</option>
+              {project.tracks
+                .filter((t) => t.id !== track?.id)
+                .map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </select>
+          )}
+          <span className="flex-1" />
+          <span className="text-[11px] text-ink-3">확대</span>
+          <button type="button" onClick={() => setZoomX((z) => Math.max(0.25, z / 1.5))} className={TOOL_BTN} title="가로 축소">가로 −</button>
+          <button type="button" onClick={() => setZoomX((z) => Math.min(8, z * 1.5))} className={TOOL_BTN} title="가로 확대">＋</button>
+          <button type="button" onClick={() => setZoomY((z) => Math.max(0.5, z / 1.3))} className={TOOL_BTN} title="세로 축소">세로 −</button>
+          <button type="button" onClick={() => setZoomY((z) => Math.min(4, z * 1.3))} className={TOOL_BTN} title="세로 확대">＋</button>
                 </div>
                 {!clip.audio && editorView === 'list' && <div className="scope-screen flex min-h-0 flex-1 flex-col"><EventList editor={editor} clip={clip} onAudition={audition} /></div>}
                 {clip.audio && <div className="flex min-h-0 flex-1 flex-col"><AudioEditor editor={editor} clip={clip as typeof clip & { audio: NonNullable<typeof clip.audio> }} /></div>}
@@ -1617,13 +1634,6 @@ export function App() {
                     <PitchCurveLane editor={editor} clip={clip} onAudition={audition} />
                   </div>
                 </div>
-                {/* 건반 칸이 열리면 이 도움말이 피아노롤을 덮는다 — 그때는 건반 칸이 같은 몫의 도움말을 준다 */}
-                <p className={`mt-2 shrink-0 text-[11px] leading-relaxed text-ink-3 ${playOpen ? 'hidden' : ''}`}>
-                  빈 곳 클릭 = 음 추가 · 끌기 = 범위 선택 · Shift+클릭 = 선택 추가 ·
-                  눈금 클릭 = 재생 위치 · Space = 커서부터 재생 ·
-                  ⌘C/⌘V 복사·붙여넣기 · ⌘D 복제 · ⌘A 전체 선택 · ⌘L 선택 구간 반복 ·
-                  ↑↓ 반음 · Delete 삭제 · Esc 선택 해제
-                </p>
               </section>
             ) : (
               <p className="rounded-xl border border-dashed border-rule p-6 text-sm text-ink-3">
@@ -1634,7 +1644,7 @@ export function App() {
 
           {/* **오른쪽은 "이 편집기"의 열이다.** 줄 접기·음역·고스트는 화면에 대한
               설정이고, 그 아래가 선택한 음의 인스펙터다 */}
-          <aside className="scope-body flex min-h-0 min-w-0 flex-col gap-4 overflow-y-auto">
+          <aside data-side className={`scope-body min-h-0 min-w-0 flex-col gap-4 overflow-y-auto ${sideOpen ? 'flex' : 'hidden'}`}>
             {/* 오른쪽 칸 — 음 편집(인스펙터) 과 브라우저(소리 찾기) 를 탭으로 */}
             <div className="flex gap-1 rounded-lg bg-panel p-1" role="tablist" aria-label="오른쪽 칸">
               {(['inspect', 'controls', 'browse'] as const).map((tab) => (
