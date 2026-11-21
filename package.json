@@ -35,7 +35,10 @@
     "demo:80s": "node --experimental-strip-types tools/song-billiejean.mjs",
     "levels": "node --experimental-strip-types tools/levels.mjs",
     "lowend": "node --experimental-strip-types tools/lowend.mjs",
-    "partials": "node --experimental-strip-types tools/partials.mjs"
+    "partials": "node --experimental-strip-types tools/partials.mjs",
+    "desktop:dev": "RESONA_DEV_URL=http://127.0.0.1:5173 electron .",
+    "desktop": "vite build && electron .",
+    "desktop:smoke": "RESONA_SMOKE=1 electron ."
   },
   "dependencies": {
     "react": "^19.2.8",
@@ -47,8 +50,10 @@
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
     "@vitejs/plugin-react": "^6.0.5",
+    "electron": "^45.4.1",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
     "vite": "^8.2.0"
-  }
+  },
+  "main": "desktop/main.cjs"
 }
