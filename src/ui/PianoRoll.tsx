@@ -207,6 +207,7 @@ export function PianoRoll({
 
   const onGridPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     if (event.target !== gridRef.current) return; // 노트를 눌렀으면 노트 핸들러가 처리한다
+    if (event.button !== 0) return; // 우클릭은 메뉴 — 음을 찍지 않는다
     const rect = gridRef.current?.getBoundingClientRect();
     if (!rect) return;
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -298,6 +299,11 @@ export function PianoRoll({
     anchorMidi: number,
   ) => {
     event.stopPropagation();
+    // 우클릭은 끌기가 아니다 — 누른 음을 고르기만 하고, 메뉴는 바깥(`App`)이 연다
+    if (event.button !== 0) {
+      if (!selection.includes(noteId)) editor.select([noteId]);
+      return;
+    }
     event.currentTarget.setPointerCapture(event.pointerId);
 
     // Shift 는 선택에 더한다 (빼기도 같은 키로 — 토글)

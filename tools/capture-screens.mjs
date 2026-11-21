@@ -23,6 +23,14 @@ const OUT = R('../design/screens/');
 const DOM2SVG = readFileSync(R('./lib/dom2svg.js'), 'utf8');
 
 /** 화면 목록. `area` 는 `LOGIC_PARITY.md` 3-1 의 영역 번호 */
+/** "클립 ▾" "트랙 ▾" 메뉴를 열고 항목을 누른다 (2026-11-21 화면 다시 짜기) */
+async function menuDo(b, menu, item) {
+  await b.clickEl(`document.querySelector('button[aria-label=${JSON.stringify(menu + ' 메뉴')}]')`);
+  await sleep(150);
+  await b.clickEl(`[...document.querySelectorAll('[role=menu] button')].find((x) => x.textContent.trim() === ${JSON.stringify(item)} || x.textContent.includes(${JSON.stringify(item)}))`);
+  await sleep(150);
+}
+
 export const SCREENS = [
   {
     name: 'a01-arrange-section', area: 1, title: '편곡 — 구간 고름 (복제·이동·삭제)',
@@ -45,14 +53,13 @@ export const SCREENS = [
     name: 'a02-track-stack', area: 2, title: '트랙 — 스택(드럼) · 보호(베이스) · 카운트인',
     run: async (b) => {
       await b.clickEl(byLabel('킥 선택'));
-      await b.choose(byLabel('트랙 스택'), 'new');
+      await menuDo(b, '트랙', '＋ 새 스택');
       await sleep(200);
       await b.clickEl(byLabel('스네어 선택'));
-      const stackId = await b.ev(`document.querySelector('[data-stack]').dataset.stack`);
-      await b.choose(byLabel('트랙 스택'), stackId);
+      await menuDo(b, '트랙', await b.ev(`document.querySelector('[aria-label="스택 이름"]').value`));
       await sleep(200);
       await b.clickEl(byLabel('베이스 선택'));
-      await b.clickEl(byTitle('고른 트랙을 보호합니다'));
+      await menuDo(b, '트랙', '보호');
       await b.clickEl(byLabel('카운트인'));
     },
   },
@@ -60,15 +67,14 @@ export const SCREENS = [
     name: 'a02-track-stack-collapsed', area: 2, title: '트랙 — 스택 접힘 · 숨긴 트랙 보기',
     run: async (b) => {
       await b.clickEl(byLabel('킥 선택'));
-      await b.choose(byLabel('트랙 스택'), 'new');
+      await menuDo(b, '트랙', '＋ 새 스택');
       await sleep(200);
       await b.clickEl(byLabel('스네어 선택'));
-      const stackId = await b.ev(`document.querySelector('[data-stack]').dataset.stack`);
-      await b.choose(byLabel('트랙 스택'), stackId);
+      await menuDo(b, '트랙', await b.ev(`document.querySelector('[aria-label="스택 이름"]').value`));
       await sleep(200);
       await b.clickEl(`document.querySelector('[aria-label$="접기"]')`);
       await b.clickEl(byLabel('패드 선택'));
-      await b.clickEl(byTitle('고른 트랙을 목록에서 숨깁니다'));
+      await menuDo(b, '트랙', '숨기기');
     },
   },
   {

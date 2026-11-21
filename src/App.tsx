@@ -52,7 +52,7 @@ import { instrumentParams, resolveInstrument } from './instruments/resolve.ts';
 import { ENGINE_LABELS, useAudioEngine } from './audio/useAudioEngine.ts';
 import { PianoRoll } from './ui/PianoRoll.tsx';
 import { EditorToolbar } from './ui/EditorToolbar.tsx';
-import { CommandPalette, MenuButton, toCommands, type Command, type MenuAction } from './ui/Menu.tsx';
+import { CommandPalette, Menu, MenuButton, toCommands, type Command, type MenuAction } from './ui/Menu.tsx';
 import { collectGhosts } from './ui/ghostNotes.ts';
 import type { GhostMode } from './ui/ghostNotes.ts';
 import { clampRange, rangeOfNotes } from './ui/noteRange.ts';
@@ -215,6 +215,8 @@ export function App() {
   /** 오른쪽 칸 — 접으면 편집기가 넓어진다 (Logic 의 I) */
   const [sideOpen, setSideOpen] = useState(true);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  /** 피아노 롤 우클릭 메뉴 — 편집·기능 메뉴와 같은 목록 */
+  const [rollMenu, setRollMenu] = useState<{ x: number; y: number } | null>(null);
   /** 클립 편집기 보기 — 피아노 롤 / 이벤트 목록 */
   const [editorView, setEditorView] = useState<'roll' | 'steps' | 'list' | 'score'>('roll');
   /** 곡 고르기 판 */
@@ -1591,11 +1593,17 @@ export function App() {
             </select>
           )}
           <span className="flex-1" />
-          <span className="text-[11px] text-ink-3">확대</span>
-          <button type="button" onClick={() => setZoomX((z) => Math.max(0.25, z / 1.5))} className={TOOL_BTN} title="가로 축소">가로 −</button>
-          <button type="button" onClick={() => setZoomX((z) => Math.min(8, z * 1.5))} className={TOOL_BTN} title="가로 확대">＋</button>
-          <button type="button" onClick={() => setZoomY((z) => Math.max(0.5, z / 1.3))} className={TOOL_BTN} title="세로 축소">세로 −</button>
-          <button type="button" onClick={() => setZoomY((z) => Math.min(4, z * 1.3))} className={TOOL_BTN} title="세로 확대">＋</button>
+          {/* 확대 — 막대 둘 (가로·세로). 단추 넷이던 것을 줄였다. 로그 눈금이라 가운데가 1배 */}
+          <label className="flex items-center gap-1 text-[11px] text-ink-3" title="가로 확대 — 마디를 넓힌다">
+            가로
+            <input aria-label="가로 확대" type="range" min={-2} max={3} step={0.1} value={Math.log2(zoomX)}
+              onChange={(e) => setZoomX(2 ** Number(e.target.value))} onDoubleClick={() => setZoomX(1)} className="w-20 accent-ink" />
+          </label>
+          <label className="flex items-center gap-1 text-[11px] text-ink-3" title="세로 확대 — 줄을 높인다">
+            세로
+            <input aria-label="세로 확대" type="range" min={-1} max={2} step={0.1} value={Math.log2(zoomY)}
+              onChange={(e) => setZoomY(2 ** Number(e.target.value))} onDoubleClick={() => setZoomY(1)} className="w-16 accent-ink" />
+          </label>
                 </div>
                 {!clip.audio && editorView === 'list' && <div className="scope-screen flex min-h-0 flex-1 flex-col"><EventList editor={editor} clip={clip} onAudition={audition} /></div>}
                 {clip.audio && <div className="flex min-h-0 flex-1 flex-col"><AudioEditor editor={editor} clip={clip as typeof clip & { audio: NonNullable<typeof clip.audio> }} /></div>}
@@ -1606,7 +1614,12 @@ export function App() {
                       onAudition={(trackId, midi) => void engine.audition(trackId, midi, 0)} />
                   </div>
                 )}
-                <div className={`scope-screen min-h-0 flex-1 flex-col gap-2 ${editorView === 'roll' && !clip.audio ? 'flex' : 'hidden'}`}>
+                <div
+                  data-roll
+                  onContextMenu={(e) => { e.preventDefault(); setRollMenu({ x: e.clientX, y: e.clientY }); }}
+                  className={`scope-screen min-h-0 flex-1 flex-col gap-2 ${editorView === 'roll' && !clip.audio ? 'flex' : 'hidden'}`}
+                >
+                  {rollMenu && <Menu actions={[...noteEditActions, ...noteFnActions.map((a, i) => (i === 0 ? { ...a, separator: true } : a))]} x={rollMenu.x} y={rollMenu.y} label="음" onClose={() => setRollMenu(null)} />}
                   <PianoRoll
                     className="min-h-[11rem] flex-1"
                     editor={editor}

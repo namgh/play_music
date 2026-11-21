@@ -1053,6 +1053,25 @@ try {
   const metro1 = await ev(`document.querySelector('button[title="메트로놈"]').getAttribute('aria-pressed')`);
   record('명령 찾기 (⌘K) → 메트로놈', found24.includes('메트로놈') && metro0 !== metro1 && !(await ev(`!!document.querySelector('[role=dialog][aria-label="명령 찾기"]')`)), `${found24.slice(0, 60)} · ${metro0} → ${metro1}`);
 
+  // 피아노 롤 우클릭 — 빈 곳은 음을 찍지 않고, 음 위는 그 음을 고르고 메뉴를 연다 (세기 +10%)
+  const rc = async (x, y) => { await send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'right', buttons: 2, clickCount: 1 }); await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'right', clickCount: 1 }); await sleep(300); };
+  // 새 곡의 클립은 비어 있다 — 먼저 하나 찍는다 (격자는 길어서 위쪽 보이는 곳을 누른다)
+  await ev(`document.querySelector('.cursor-crosshair').scrollIntoView({ block: 'start' }); 'ok'`);
+  const g24 = await ev(`(() => { const r = document.querySelector('.cursor-crosshair').getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width }; })()`);
+  await click(g24.x + 60, g24.y + 50); await sleep(400);
+  const n24a = await noteCount();
+  const grid24 = { x: g24.x + 300, y: g24.y + 20 };
+  await rc(grid24.x, grid24.y);
+  const emptyMenu24 = await ev(`!!document.querySelector('[role=menu][aria-label="음"]')`);
+  await keyTap('Escape', 'Escape');
+  const n24b = await noteCount();
+  const note24 = await centerOf(`document.querySelector('.cursor-crosshair [role=button]')`);
+  const vel = () => ev(`(() => { const p = JSON.parse(localStorage.getItem('project-autosave-v1')); const d = p.project ?? p; return d.tracks.flatMap((t) => t.clips.flatMap((c) => c.notes.map((n) => n.velocity))).reduce((a, b) => a + b, 0).toFixed(3); })()`);
+  const v24a = await vel();
+  if (note24) { await rc(note24.x, note24.y); await clickEl(`[...document.querySelectorAll('[role=menu][aria-label="음"] button')].find((b) => b.textContent.includes('세기 +10%'))`); await sleep(400); }
+  const v24b = await vel();
+  record('피아노 롤 우클릭 — 빈 곳은 안 찍고, 음 위는 골라서 메뉴', emptyMenu24 && n24a === n24b && !!note24 && Number(v24b) > Number(v24a), `음 ${n24a}→${n24b} · 세기 합 ${v24a}→${v24b}`);
+
   // 알림은 떠서 나온다 — 편집기가 밀리지 않는다 · 오른쪽 칸 접기(I)
   const top0 = await ev(`Math.round(document.querySelector('[data-lane]').getBoundingClientRect().y)`);
   await menuDo('클립', '에일리어스 만들기');
