@@ -394,7 +394,7 @@ export function App() {
     if (!track) return;
     try {
       const recorder = new MicRecorder();
-      await recorder.start();
+      await recorder.start(settings.audioInputId);
       const from = cursorTick + (clip?.startTick ?? 0);
       mic.current = { recorder, fromTick: from, trackId: track.id, punch: punchRange() };
       setIsRecording(true);
@@ -555,7 +555,7 @@ export function App() {
       if ((event.metaKey || event.ctrlKey) && event.code === 'KeyK') { event.preventDefault(); setPaletteOpen((v) => !v); return; }
       const target = event.target as HTMLElement | null;
       if (target && /^(INPUT|SELECT|TEXTAREA)$/.test(target.tagName)) return;
-      if (event.code === 'KeyI' && !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey && view === 'editor') {
+      if (event.code === 'KeyI' && !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey && view === 'editor' && !playOpen) {
         event.preventDefault(); setSideOpen((v) => !v); return;
       }
 
@@ -1209,7 +1209,8 @@ export function App() {
         )}
         {settingsOpen && (
           <SettingsPanel editor={editor} settings={settings} onSettings={setSettings}
-            midi={{ ...midiDevice, lastNote: midiLast }} onClose={() => setSettingsOpen(false)} />
+            midi={{ ...midiDevice, lastNote: midiLast }} onClose={() => setSettingsOpen(false)}
+            audio={{ info: engine.audioInfo, setOutput: engine.setOutputDevice }} />
         )}
         {projectsOpen && <ProjectPanel project={project} onOpen={openProject} onClose={() => setProjectsOpen(false)} />}
         {menu === 'export' && (

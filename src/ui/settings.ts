@@ -14,9 +14,22 @@ export interface AppSettings {
   bindings: Partial<Bindings>;
   /** 쓸 MIDI 입력 장치 id. null 이면 끔 */
   midiInputId: string | null;
+  /** 소리가 나갈 장치 id. null 이면 시스템 기본 */
+  audioOutputId: string | null;
+  /** 마이크(녹음 입력) 장치 id. null 이면 시스템 기본 */
+  audioInputId: string | null;
+  /** 지연과 안정의 균형 — 작게(연주·녹음) / 보통 / 크게(트랙이 많아 끊길 때) */
+  latency: LatencyMode;
 }
 
-export const DEFAULT_SETTINGS: AppSettings = { countInBars: 1, metronomeLevel: 0.8, bindings: {}, midiInputId: null };
+export type LatencyMode = 'interactive' | 'balanced' | 'playback';
+export const LATENCY_MODES: { id: LatencyMode; label: string; hint: string }[] = [
+  { id: 'interactive', label: '작게', hint: '건반을 치거나 녹음할 때 — 누르면 바로 난다' },
+  { id: 'balanced', label: '보통', hint: '끊김이 가끔 있을 때' },
+  { id: 'playback', label: '크게', hint: '트랙·이펙트가 많아 소리가 끊길 때 — 연주는 조금 늦게 난다' },
+];
+
+export const DEFAULT_SETTINGS: AppSettings = { countInBars: 1, metronomeLevel: 0.8, bindings: {}, midiInputId: null, audioOutputId: null, audioInputId: null, latency: 'interactive' };
 const KEY = 'settings-v1';
 
 export function loadSettings(): AppSettings {
@@ -27,6 +40,9 @@ export function loadSettings(): AppSettings {
       metronomeLevel: typeof raw.metronomeLevel === 'number' ? Math.max(0, Math.min(1, raw.metronomeLevel)) : 0.8,
       bindings: raw.bindings && typeof raw.bindings === 'object' ? raw.bindings : {},
       midiInputId: typeof raw.midiInputId === 'string' ? raw.midiInputId : null,
+      audioOutputId: typeof raw.audioOutputId === 'string' ? raw.audioOutputId : null,
+      audioInputId: typeof raw.audioInputId === 'string' ? raw.audioInputId : null,
+      latency: LATENCY_MODES.some((m) => m.id === raw.latency) ? raw.latency! : 'interactive',
     };
   } catch {
     return { ...DEFAULT_SETTINGS };

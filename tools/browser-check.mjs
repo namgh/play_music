@@ -1085,6 +1085,24 @@ try {
   await keyTap('KeyI', 'i');
   record('알림이 화면을 안 밀고, I 로 오른쪽 칸을 접는다', toast24 === 'fixed' && top0 === top1 && w1 > w0 + 200, `알림 ${toast24} · 레인 y ${top0}→${top1} · 폭 ${w0}→${w1}`);
 
+
+  // 25. 설정 오디오 탭 — 장치·지연·스피커 배치 (2026-11-22). 웹에서는 서라운드가 잠겨 있고 이유를 말한다
+  await clickEl(byTitle('맨 앞으로')); await clickEl(byTitle('커서부터 재생')); await sleep(600);
+  { const st = await centerOf(byTitle('정지')); if (st) await click(st.x, st.y); }
+  await clickEl(`document.querySelector('[aria-label="설정"]')`); await sleep(300);
+  await clickEl(`[...document.querySelectorAll('[role=dialog][aria-label="설정"] [role=tab]')].find((b) => b.textContent === '오디오')`); await sleep(500);
+  const audio25 = await ev(`(() => { const t = document.querySelector('[data-audio-tab]'); if (!t) return null; return { out: !!t.querySelector('[aria-label="출력 장치"]'), inp: !!t.querySelector('[aria-label="입력 장치"]'), info: t.querySelector('[data-audio-info]')?.textContent ?? '', locked: t.querySelector('[data-layout="5.1"]')?.dataset.available, stereo: t.querySelector('[data-layout="stereo"]')?.dataset.available, reason: t.querySelector('[data-surround-reason]')?.textContent ?? '' }; })()`);
+  await clickEl(`[...document.querySelectorAll('[data-audio-tab] button')].find((b) => b.textContent === '크게')`); await sleep(300);
+  const latency25 = await ev(`JSON.parse(localStorage.getItem('settings-v1') ?? '{}').latency`);
+  await clickEl(`[...document.querySelectorAll('[data-audio-tab] button')].find((b) => b.textContent === '작게')`); await sleep(200);
+  await clickEl(`[...document.querySelectorAll('[role=dialog][aria-label="설정"] button')].find((b) => b.textContent === '닫기')`);
+  record('설정 오디오 탭 — 장치 칸·지금 값·지연 저장, 웹은 서라운드 잠김과 이유', !!audio25 && audio25.out && audio25.inp && /kHz/.test(audio25.info) && audio25.locked === 'false' && audio25.stereo === 'true' && /설치형/.test(audio25.reason) && latency25 === 'playback', JSON.stringify(audio25).slice(0, 260) + ' · ' + latency25);
+  // 프로필 단추 — 로그인 전에도 늘 보이고, 계정 창이 "안 해도 된다"고 말한다
+  await clickEl(`document.querySelector('[aria-label="계정"]')`); await sleep(400);
+  const acct25 = await ev(`document.querySelector('[role=dialog][aria-label="계정"]')?.textContent ?? ''`);
+  await clickEl(`[...document.querySelectorAll('[role=dialog][aria-label="계정"] button')].find((b) => b.textContent === '닫기')`);
+  record('프로필 단추 · 로그인 전 계정 창', acct25.includes('로그인하지 않아도') && acct25.includes('로그인 · 가입'), acct25.slice(0, 60));
+
 } catch (err) {
   record('스크립트 실행', false, String(err.stack ?? err).slice(0, 500));
 } finally {

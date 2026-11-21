@@ -196,6 +196,8 @@ export function Timeline({
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
       if (t && /^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName)) return;
+      // 건반 칸이 열려 있으면 글자 키는 **음**이다 (G = 솔) — 그때는 보기 단축키를 쉰다
+      if (document.querySelector('[data-play-surface]')) return;
       if (e.code === 'KeyG' && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) { e.preventDefault(); setShowGlobals((v) => !v); }
     };
     window.addEventListener('keydown', onKey);

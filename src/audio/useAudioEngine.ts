@@ -62,6 +62,24 @@ export const DEFAULT_BOUNCE: BounceOptions = {
   startTick: 0, endTick: Number.MAX_SAFE_INTEGER, tailSec: 2, sampleRate: 48000, bitDepth: 24, normalizeDb: null, stems: false,
 };
 
+export interface AudioInfo { sampleRate: number; latencyMs: number; maxChannels: number }
+
+/** 설정에서 오디오 선호를 읽는다 — 훅 밖(엔진을 깨우는 순간)에서 쓰므로 저장소에서 바로 */
+function audioPrefs(): { latency: AudioContextLatencyCategory; outputId: string | null } {
+  try {
+    const raw = JSON.parse(localStorage.getItem('settings-v1') ?? '{}') as { latency?: string; audioOutputId?: unknown };
+    const latency = raw.latency === 'balanced' || raw.latency === 'playback' ? raw.latency : 'interactive';
+    return { latency, outputId: typeof raw.audioOutputId === 'string' ? raw.audioOutputId : null };
+  } catch { return { latency: 'interactive', outputId: null }; }
+}
+
+/** 출력 장치를 바꾼다. 못 바꾸면 이유를 돌려준다 (장치가 뽑혔거나 브라우저가 안 준다) */
+async function applySink(ctx: AudioContext, id: string): Promise<string | null> {
+  const withSink = ctx as AudioContext & { setSinkId?: (id: string) => Promise<void> };
+  if (typeof withSink.setSinkId !== 'function') return '이 브라우저는 출력 장치를 고르게 해 주지 않습니다';
+  try { await withSink.setSinkId(id); return null; } catch (e) { return e instanceof Error ? e.message : String(e); }
+}
+
 export function useAudioEngine(
   project: Project,
   registry: ReadonlyMap<string, InstrumentDefinition>,
@@ -93,7 +111,12 @@ export function useAudioEngine(
   }, []);
 
   const ensure = useCallback(async (): Promise<AudioRenderer> => {
-    if (!ctxRef.current) ctxRef.current = new AudioContext({ latencyHint: 'interactive' });
+    if (!ctxRef.current) {
+      // 설정(오디오 탭)의 지연·출력 장치로 연다. 지연은 컨텍스트를 만들 때만 정해진다
+      const prefs = audioPrefs();
+      ctxRef.current = new AudioContext({ latencyHint: prefs.latency });
+      if (prefs.outputId) await applySink(ctxRef.current, prefs.outputId);
+    }
     const ctx = ctxRef.current;
 
     if (!rendererRef.current) {
@@ -457,7 +480,25 @@ export function useAudioEngine(
     ...DEFAULT_BOUNCE, endTick: projectLengthTicks(projectRef.current),
   }), [bounce]);
 
+  /** 출력 장치를 바로 바꾼다 (엔진이 아직 안 깼으면 다음에 깰 때 설정에서 읽는다) */
+  const setOutputDevice = useCallback(async (id: string | null): Promise<string | null> => {
+    const ctx = ctxRef.current;
+    if (!ctx) return null;
+    return applySink(ctx, id ?? '');
+  }, []);
+  /** 지금 열린 출력 — 설정 화면이 보여 준다. 엔진이 안 깼으면 null */
+  const audioInfo = useCallback((): AudioInfo | null => {
+    const ctx = ctxRef.current;
+    if (!ctx) return null;
+    return {
+      sampleRate: ctx.sampleRate,
+      latencyMs: ((ctx.baseLatency ?? 0) + ((ctx as AudioContext & { outputLatency?: number }).outputLatency ?? 0)) * 1000,
+      maxChannels: ctx.destination.maxChannelCount,
+    };
+  }, []);
+
   return {
+    setOutputDevice, audioInfo,
     state, playheadTick, error, exporting, engineKind, clip, readLevel, readEffectMeters, compensationSamples,
     play, stop, audition, liveOn, liveOff, renderTrack, scrubAudio, previewInstrument, perform, exportWav, bounce, renderMix, setMetronome,
   };

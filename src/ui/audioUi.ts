@@ -94,8 +94,9 @@ export class MicRecorder {
   private chunks: Blob[] = [];
   private stream: MediaStream | null = null;
 
-  async start(): Promise<void> {
-    this.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+  /** `deviceId` — 설정에서 고른 마이크. 없으면 시스템 기본 */
+  async start(deviceId: string | null = null): Promise<void> {
+    this.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, ...(deviceId ? { deviceId: { exact: deviceId } } : {}) } });
     this.recorder = new MediaRecorder(this.stream);
     this.chunks = [];
     this.recorder.ondataavailable = (e) => { if (e.data.size > 0) this.chunks.push(e.data); };

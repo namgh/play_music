@@ -13,18 +13,130 @@ import type { MidiDevice } from '../audio/midiInput.ts';
  * 조율(A4)은 곡의 성질이라 프로젝트에 저장하고 나머지는 앱 설정이다.
  */
 
+import { LATENCY_MODES } from './settings.ts';
+import type { AudioInfo } from '../audio/useAudioEngine.ts';
+import { capabilities, platformInfo } from '../platform/platform.ts';
+
 export interface SettingsPanelProps {
   editor: ProjectEditor;
   settings: AppSettings;
   onSettings: (s: AppSettings) => void;
   midi: { devices: MidiDevice[]; error: string | null; supported: boolean; lastNote: string | null };
   onClose: () => void;
+  /** 소리 엔진 — 지금 열린 출력 정보와, 출력 장치를 바로 바꾸는 길 */
+  audio: { info: () => AudioInfo | null; setOutput: (id: string | null) => Promise<string | null> };
 }
 
-type Tab = 'general' | 'keys' | 'midi';
-const TAB_LABEL: Record<Tab, string> = { general: '일반', keys: '단축키', midi: 'MIDI 장치' };
+type Tab = 'general' | 'audio' | 'keys' | 'midi';
+const TAB_LABEL: Record<Tab, string> = { general: '일반', audio: '오디오', keys: '단축키', midi: 'MIDI 장치' };
 
-export function SettingsPanel({ editor, settings, onSettings, midi, onClose }: SettingsPanelProps) {
+interface Device { id: string; label: string }
+
+/** 오디오 탭 — 출력·입력 장치, 지연, 스피커 배치. 장치 이름은 마이크 권한을 줘야 브라우저가 알려 준다 */
+function AudioTab({ settings, onSettings, audio }: Pick<SettingsPanelProps, 'settings' | 'onSettings' | 'audio'>) {
+  const [outputs, setOutputs] = useState<Device[]>([]);
+  const [inputs, setInputs] = useState<Device[]>([]);
+  const [named, setNamed] = useState(true);
+  const [message, setMessage] = useState<string | null>(null);
+  const [info, setInfo] = useState<AudioInfo | null>(audio.info());
+  const refresh = async () => {
+    try {
+      const all = await navigator.mediaDevices.enumerateDevices();
+      const pick = (kind: MediaDeviceKind, word: string) => all.filter((d) => d.kind === kind && d.deviceId !== 'default')
+        .map((d, i) => ({ id: d.deviceId, label: d.label || `${word} ${i + 1}` }));
+      setOutputs(pick('audiooutput', '출력'));
+      setInputs(pick('audioinput', '입력'));
+      setNamed(all.some((d) => d.label !== ''));
+    } catch { setMessage('장치 목록을 받지 못했습니다'); }
+  };
+  useEffect(() => {
+    void refresh();
+    const md = navigator.mediaDevices;
+    md?.addEventListener?.('devicechange', refresh);
+    return () => md?.removeEventListener?.('devicechange', refresh);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const caps = capabilities(platformInfo(), info?.maxChannels ?? 2, typeof (AudioContext.prototype as { setSinkId?: unknown }).setSinkId === 'function');
+  const SELECT = 'h-8 min-w-0 flex-1 rounded-md border border-rule bg-panel px-2 text-xs text-ink';
+  return (
+    <div className="space-y-5 text-sm text-ink" data-audio-tab>
+      <section>
+        <h3 className="mb-2 text-[11px] font-semibold text-ink-3">장치</h3>
+        <div className="space-y-2">
+          <div className="flex items-center gap-3">
+            <span className="w-28 shrink-0 text-xs text-ink-2">출력 (스피커)</span>
+            <select aria-label="출력 장치" className={SELECT} disabled={!caps.pickOutput} value={settings.audioOutputId ?? ''}
+              onChange={async (e) => {
+                const id = e.target.value || null;
+                onSettings({ ...settings, audioOutputId: id });
+                const problem = await audio.setOutput(id);
+                setMessage(problem ? `출력을 바꾸지 못했습니다: ${problem}` : null);
+                setInfo(audio.info());
+              }}>
+              <option value="">시스템 기본</option>
+              {outputs.map((d) => <option key={d.id} value={d.id}>{d.label}</option>)}
+            </select>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="w-28 shrink-0 text-xs text-ink-2">입력 (마이크)</span>
+            <select aria-label="입력 장치" className={SELECT} value={settings.audioInputId ?? ''}
+              onChange={(e) => onSettings({ ...settings, audioInputId: e.target.value || null })}>
+              <option value="">시스템 기본</option>
+              {inputs.map((d) => <option key={d.id} value={d.id}>{d.label}</option>)}
+            </select>
+          </div>
+          {!caps.pickOutput && <p className="text-[11px] text-ink-3">이 브라우저는 출력 장치를 고르게 해 주지 않습니다 — 시스템 설정의 기본 출력으로 나갑니다.</p>}
+          {!named && (
+            <p className="text-[11px] text-ink-3">
+              장치 이름이 안 보이면 마이크 권한이 필요합니다.
+              <button type="button" className="ml-2 underline" onClick={async () => {
+                try { (await navigator.mediaDevices.getUserMedia({ audio: true })).getTracks().forEach((t) => t.stop()); await refresh(); }
+                catch { setMessage('마이크 권한을 받지 못했습니다 — 브라우저(또는 시스템) 설정에서 허용해 주세요'); }
+              }}>이름 보기</button>
+            </p>
+          )}
+          {message && <p role="alert" className="text-[11px] text-rec">{message}</p>}
+        </div>
+      </section>
+
+      <section>
+        <h3 className="mb-2 text-[11px] font-semibold text-ink-3">지연</h3>
+        <div className="flex items-center gap-2">
+          {LATENCY_MODES.map((m) => (
+            <button key={m.id} type="button" aria-pressed={settings.latency === m.id} title={m.hint}
+              onClick={() => onSettings({ ...settings, latency: m.id })}
+              className={`h-8 rounded-md border px-3 text-xs ${settings.latency === m.id ? 'border-ink bg-ink text-body' : 'border-rule bg-panel'}`}>{m.label}</button>
+          ))}
+          <span className="text-[11px] text-ink-3">{LATENCY_MODES.find((m) => m.id === settings.latency)?.hint}</span>
+        </div>
+        <p className="mt-2 text-[11px] text-ink-3">
+          지연을 바꾸면 앱을 다시 열 때부터 적용됩니다.
+          {info
+            ? <span className="ml-1 font-num text-ink-2" data-audio-info>지금: {Math.round(info.sampleRate / 100) / 10}kHz · 지연 {info.latencyMs.toFixed(1)}ms · 출력 {info.maxChannels}채널</span>
+            : <span className="ml-1">한 번 재생하면 지금 값이 여기 보입니다.</span>}
+        </p>
+      </section>
+
+      <section>
+        <h3 className="mb-2 text-[11px] font-semibold text-ink-3">스피커 배치</h3>
+        <div className="flex flex-wrap items-center gap-2">
+          {caps.layouts.map((l) => (
+            <span key={l.id} data-layout={l.id} data-available={l.available}
+              className={`flex h-8 items-center rounded-md border px-3 text-xs ${l.available ? 'border-ink text-ink' : 'border-dashed border-rule text-ink-3'}`}>
+              {l.label}{l.available ? '' : ' · 잠김'}
+            </span>
+          ))}
+        </div>
+        <p className="mt-2 text-[11px] text-ink-3" data-surround-reason>
+          {caps.surroundReason ?? '이 장치는 서라운드 출력을 받습니다.'}
+          {' '}지금 서라운드 패너는 헤드폰용(바이노럴)으로 섞습니다 — 스피커 채널로 내보내는 것은 다음 단계입니다.
+        </p>
+      </section>
+    </div>
+  );
+}
+
+export function SettingsPanel({ editor, settings, onSettings, midi, onClose, audio }: SettingsPanelProps) {
   const { project } = editor;
   const [tab, setTab] = useState<Tab>('general');
   const [capturing, setCapturing] = useState<CommandId | null>(null);
@@ -128,6 +240,8 @@ export function SettingsPanel({ editor, settings, onSettings, midi, onClose }: S
               ))}
             </div>
           )}
+
+          {tab === 'audio' && <AudioTab settings={settings} onSettings={onSettings} audio={audio} />}
 
           {tab === 'midi' && (
             <div className="space-y-3 text-sm">
