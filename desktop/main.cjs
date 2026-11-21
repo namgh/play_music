@@ -14,7 +14,9 @@ const DEV_URL = process.env.RESONA_DEV_URL || '';
 const API = (process.env.RESONA_API || 'http://localhost:8000').replace(/\/$/, '');
 const DIST = path.join(__dirname, '..', 'dist');
 const APP_ORIGIN = 'app://resona';
-const SMOKE = process.env.RESONA_SMOKE === '1';
+const SMOKE = !!process.env.RESONA_SMOKE;
+// 시험은 진짜 사용자 자료와 섞이지 않게 따로 둔 폴더에서 돈다
+if (process.env.RESONA_USER_DATA) app.setPath('userData', process.env.RESONA_USER_DATA);
 
 // 다채널 출력 — 장치가 5.1·7.1 을 받으면 그대로 연다 (윈도우는 이 스위치가 있어야 스테레오로 안 접힌다)
 app.commandLine.appendSwitch('try-supported-channel-layouts');
@@ -49,7 +51,8 @@ function serveApp() {
       headers.delete('referer');
       const body = request.method === 'GET' || request.method === 'HEAD' ? undefined : await request.arrayBuffer();
       try {
-        return await net.fetch(API + url.pathname + url.search, { method: request.method, headers, body, redirect: 'manual' });
+        // credentials: 'include' — 이 프로세스의 쿠키 저장소에서 리프레시 쿠키를 싣고, 받은 Set-Cookie 를 거기 담는다
+        return await net.fetch(API + url.pathname + url.search, { method: request.method, headers, body, redirect: 'manual', credentials: 'include' });
       } catch (err) {
         return new Response(JSON.stringify({ error: { code: 'network', message: String(err && err.message || err) } }),
           { status: 502, headers: { 'content-type': 'application/json' } });
@@ -94,8 +97,40 @@ function createWindow() {
   });
 
   void win.loadURL(home);
-  if (SMOKE) win.webContents.once('did-finish-load', () => { void smoke(); });
+  if (SMOKE) win.webContents.once('did-finish-load', () => { const m = process.env.RESONA_SMOKE; void (m === 'signup' || m === 'session' ? smokeLogin(m) : smoke()); });
   win.on('closed', () => { win = null; });
+}
+
+/**
+ * 로그인 시험 — `signup` 은 새 계정으로 가입하고, `session` 은 **껐다 켠 뒤에도** 로그인이 남았는지 본다.
+ * 화면 스크립트가 쿠키를 읽을 수 없는지도 같이 본다
+ */
+async function smokeLogin(mode) {
+  try {
+    await new Promise((r) => setTimeout(r, 2500));
+    const email = process.env.RESONA_SMOKE_EMAIL;
+    const report = await win.webContents.executeJavaScript(`(async () => {
+      const out = { mode: ${JSON.stringify(mode)} };
+      if (out.mode === 'signup') {
+        const r = await fetch('/v1/auth/signup', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: ${JSON.stringify(email)}, password: 'desktop-smoke-pw-1' }) });
+        out.signup = r.status;
+      }
+      const r2 = await fetch('/v1/auth/refresh', { method: 'POST', credentials: 'include' });
+      out.refresh = r2.status;
+      const token = r2.ok ? (await r2.json()).access_token : null;
+      if (token) { const me = await fetch('/v1/me', { headers: { authorization: 'Bearer ' + token } }); out.me = me.status; out.email = me.ok ? (await me.json()).email : null; }
+      out.cookieVisibleToPage = document.cookie.includes('resona_refresh');
+      out.profile = document.querySelector('[aria-label="계정"]')?.dataset.signedIn ?? null;
+      return out;
+    })()`);
+    const jar = await session.defaultSession.cookies.get({ name: 'resona_refresh' });
+    report.cookieInJar = jar.length; report.httpOnly = jar[0] ? jar[0].httpOnly : null;
+    await session.defaultSession.cookies.flushStore();
+    console.log('SMOKE ' + JSON.stringify(report));
+  } catch (err) {
+    console.log('SMOKE ' + JSON.stringify({ error: String(err && err.message || err) }));
+  }
+  app.quit();
 }
 
 /** 자동 시험 — 화면이 뜨고 엔진이 깨는지, 출력이 몇 채널까지 열리는지 찍고 끝낸다 */

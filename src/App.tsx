@@ -52,6 +52,7 @@ import { instrumentParams, resolveInstrument } from './instruments/resolve.ts';
 import { ENGINE_LABELS, useAudioEngine } from './audio/useAudioEngine.ts';
 import { PianoRoll } from './ui/PianoRoll.tsx';
 import { EditorToolbar } from './ui/EditorToolbar.tsx';
+import { AccountPanel, initialOf, useAccount } from './ui/AccountPanel.tsx';
 import { CommandPalette, Menu, MenuButton, toCommands, type Command, type MenuAction } from './ui/Menu.tsx';
 import { collectGhosts } from './ui/ghostNotes.ts';
 import type { GhostMode } from './ui/ghostNotes.ts';
@@ -215,6 +216,9 @@ export function App() {
   /** 오른쪽 칸 — 접으면 편집기가 넓어진다 (Logic 의 I) */
   const [sideOpen, setSideOpen] = useState(true);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  /** 계정 — 로그인 상태가 머리 줄에 늘 보인다 */
+  const account = useAccount();
+  const [accountOpen, setAccountOpen] = useState(false);
   /** 피아노 롤 우클릭 메뉴 — 편집·기능 메뉴와 같은 목록 */
   const [rollMenu, setRollMenu] = useState<{ x: number; y: number } | null>(null);
   /** 클립 편집기 보기 — 피아노 롤 / 이벤트 목록 */
@@ -813,6 +817,7 @@ export function App() {
     { id: 'file.audioIn', label: '오디오 가져오기', run: () => audioInput.current?.click() },
     { id: 'file.videoIn', label: '영상 가져오기', run: () => videoInput.current?.click() },
     { id: 'file.export', label: '내보내기 (WAV · 스템)', run: () => setMenu('export') },
+    { id: 'file.account', label: account.signedIn ? '계정 (비밀번호 · 로그아웃 · 사용량)' : '로그인 · 가입', run: () => setAccountOpen(true) },
   ];
   const clipActions: MenuAction[] = [
     {
@@ -1179,6 +1184,13 @@ export function App() {
             onClick={() => setMenu(menu === 'help' ? null : 'help')} className={`${ROUND_BTN} ${menu === 'help' ? ROUND_ON : ''}`}>
             <span className="text-[14px] font-semibold">?</span>
           </button>
+          {/* 프로필 — 누구로 로그인했는지 늘 보인다. 로그인 전에는 빈 사람 모양 */}
+          <button type="button" aria-label="계정" data-signed-in={account.signedIn}
+            title={account.signedIn ? `${account.me?.email ?? '로그인됨'} — 계정` : '로그인하지 않았습니다 — 눌러서 로그인 (안 해도 곡은 만들 수 있습니다)'}
+            onClick={() => setAccountOpen(true)}
+            className={`${ROUND_BTN} ${account.signedIn ? 'border-ink bg-ink text-body' : ''}`}>
+            <span className="text-[13px] font-semibold">{account.signedIn ? (initialOf(account.me) || '·') : '👤'}</span>
+          </button>
           {/* 내보내기는 세션의 **끝**이라 이것만 색을 준다 */}
           <button
             type="button"
@@ -1300,6 +1312,7 @@ export function App() {
             ))}
           </div>
         )}
+        {accountOpen && <AccountPanel me={account.me} signedIn={account.signedIn} onReload={account.reload} onClose={() => setAccountOpen(false)} onNotice={setNotice} />}
         {paletteOpen && <CommandPalette commands={commands} onClose={() => setPaletteOpen(false)} />}
 
         <input

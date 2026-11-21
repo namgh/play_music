@@ -13,9 +13,14 @@ WORKDIR /srv
 
 # 의존성 레이어를 먼저 굳힌다. 코드만 바뀌면 여기는 캐시가 산다
 COPY pyproject.toml ./
-RUN pip install --upgrade pip && pip install .
+# 패키지 자리는 `src/` 다 — 아직 복사 전이라 빈 자리를 만들어 **의존성만** 깐다
+# (없으면 "'src' does not exist" 로 빌드가 멈춘다)
+RUN mkdir -p src/resona && touch src/resona/__init__.py \
+    && pip install --upgrade pip && pip install .
 
 COPY src ./src
+# 이제 진짜 코드를 깐다 (의존성은 위 레이어에 이미 있다)
+RUN pip install --no-deps --force-reinstall .
 COPY alembic.ini ./
 
 # **root 로 돌리지 않는다.** 컨테이너가 뚫렸을 때 할 수 있는 일을 줄인다
