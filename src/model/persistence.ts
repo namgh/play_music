@@ -400,6 +400,10 @@ function optionalGlobals(raw: Record<string, unknown>, seen: Set<string>): Parti
       out.video = { assetId: v.assetId, name: str(v.name, '영상'), durationSec: num(v.durationSec, 0, 0), offsetSec: num(v.offsetSec, 0, -3600, 3600) };
     }
   }
+  if (raw.timecode != null) {
+    const t = asRecord(raw.timecode, '타임코드');
+    out.timecode = { fps: num(t.fps, 24, 1, 240), startSec: num(t.startSec, 0, 0, 24 * 3600) };
+  }
   if (raw.liveScenes != null) {
     out.liveScenes = asArray(raw.liveScenes, '라이브 루프').map((entry) => {
       const sc = asRecord(entry, '장면');

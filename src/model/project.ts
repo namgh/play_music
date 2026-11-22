@@ -500,6 +500,8 @@ export interface Project {
   stacks?: TrackStack[];
   /** 영상 (Logic 무비 트랙) — 소리처럼 에셋 저장소에 있고, 곡 처음과 `offsetSec` 만큼 어긋나 시작한다 */
   video?: { assetId: string; name: string; durationSec: number; offsetSec: number };
+  /** 타임코드 표기 (영상 작업) — 프레임 수와 시작 타임코드. 없으면 24프레임·0초 (`timecode.ts`) */
+  timecode?: { fps: number; startSec: number };
   /** 라이브 루프 장면들 (`src/editor/liveLoops.ts`) */
   liveScenes?: LiveScene[];
   /** 버스(Aux) */

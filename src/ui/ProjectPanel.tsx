@@ -2,6 +2,7 @@ import { useState } from 'react';
 
 import type { Project } from '../model/project.ts';
 import { TEMPLATES, projectFromTemplate } from '../model/templates.ts';
+import { DEMO_SONGS } from '../model/songs.ts';
 import {
   browserKv, deleteVersion, getProject, listProjects, listVersions, loadVersion, putProject, removeProject, saveVersion,
 } from '../editor/library.ts';
@@ -59,6 +60,26 @@ export function ProjectPanel({ project, onOpen, onClose }: ProjectPanelProps) {
                   ))}
                 </span>
                 <span className="font-num text-[13px] text-ink-3">{t.bpm} BPM · {t.bars}마디{t.key ? ` · ${t.key.tonic}${t.key.mode === 'minor' ? 'm' : ''}` : ''}</span>
+              </button>
+            ))}
+          </div>
+
+          <h3 className={`${H} mt-6`}>예제 곡 — 다 지어진 곡을 열어 고쳐 보세요 (전부 음표라 한 음씩 바꿀 수 있습니다)</h3>
+          <div className="grid grid-cols-2 gap-2.5">
+            {DEMO_SONGS.map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                data-demo-song={s.id}
+                onClick={() => {
+                  putProject(browserKv, project, Date.now());
+                  onOpen(s.build(), `예제 곡 "${s.name}" 을 열었습니다 — 스페이스로 들어 보세요`);
+                }}
+                className="flex flex-col gap-1 rounded-xl border border-rule bg-panel p-3 text-left hover:border-ink"
+              >
+                <span className="text-sm font-semibold text-ink">{s.name}</span>
+                <span className="text-[11px] text-ink-2">{s.description}</span>
+                <span className="font-num text-[13px] text-ink-3">{s.bpm} BPM · {s.meter} · {s.bars}마디 · {s.key.tonic}{s.key.mode === 'minor' ? 'm' : ''}</span>
               </button>
             ))}
           </div>

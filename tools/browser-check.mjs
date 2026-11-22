@@ -811,6 +811,32 @@ try {
   record('버전 남기기·돌아가기 (돌아가기 전 상태도 남음)', hidden24 === 0 && versions24 >= 2, `숨긴 트랙 ${hidden24} · 버전 ${versions24}개`);
   await shot('20-projects');
 
+  // 예제 곡 (2026-11-23) — 다 지어진 곡을 열어 듣고, 한 음을 고치고, 원래 곡으로 돌아온다
+  const cur24 = await ev(`(() => { const p = JSON.parse(localStorage.getItem('project-autosave-v1')); const d = p.project ?? p; return d.name + ':' + d.tracks.length; })()`);
+  for (const [songId, songName, trackCount] of [['first-snow-night', '첫눈 오는 밤', 10], ['little-bells', '작은 종소리', 8]]) {
+    const nSong = problems.length;
+    await clickEl(`document.querySelector('button[title^="파일"]')`);
+    await clickEl(byText('새 곡 · 최근 곡 · 버전'));
+    await clickEl(`document.querySelector('[data-demo-song="${songId}"]')`);
+    await sleep(700);
+    const opened = await ev(`(() => { const p = JSON.parse(localStorage.getItem('project-autosave-v1')); const d = p.project ?? p; const notes = d.tracks.flatMap((t) => t.clips.flatMap((c) => c.notes)); return d.name + ':' + d.tracks.length + ':' + notes.length + ':' + notes.filter((n) => n.lyric).length + ':' + (d.sections ?? []).length; })()`);
+    await clickEl(byTitle('맨 앞으로'));
+    await clickEl(byTitle('커서부터 재생'));
+    let peakSong = 0; for (let i = 0; i < 24; i++) { await sleep(150); peakSong = Math.max(peakSong, await ev('window.__peak()')); }
+    const stopSong = await centerOf(byTitle('정지')); if (stopSong) await click(stopSong.x, stopSong.y);
+    const [oName, oTracks, oNotes, oLyrics, oSections] = opened.split(':');
+    record(`예제 곡 "${songName}" 열고 재생`, oName === songName && Number(oTracks) === trackCount && Number(oNotes) > 300 && Number(oLyrics) >= 40 && Number(oSections) >= 5 && peakSong > 0.01 && peakSong < 1 && problems.length === nSong,
+      `트랙 ${oTracks} · 음 ${oNotes} · 가사 ${oLyrics}자 · 구간 ${oSections} · 피크 ${peakSong.toFixed(3)} · 새 오류 ${problems.length - nSong}`);
+    if (songId === 'first-snow-night') await shot('20b-demo-dance'); else await shot('20c-demo-carol');
+  }
+  await clickEl(`document.querySelector('button[title^="파일"]')`);
+  await clickEl(byText('새 곡 · 최근 곡 · 버전'));
+  await clickEl(`[...document.querySelectorAll('[data-recent="${cur24.split(':')[0]}"] button')].find((b) => b.textContent === '열기')`);
+  await sleep(500);
+  const backSong = await ev(`(() => { const p = JSON.parse(localStorage.getItem('project-autosave-v1')); const d = p.project ?? p; return d.name + ':' + d.tracks.length; })()`);
+  const diag24 = backSong === cur24 ? '' : await ev(`(async () => { const m = await import('/src/model/persistence.ts'); const out = []; for (const k of Object.keys(localStorage)) { if (!k.startsWith('library-project-')) continue; try { const p = m.deserializeProject(localStorage.getItem(k)); out.push(p.name + ' ok'); } catch (e) { out.push(k + ' ✗ ' + String(e.message).slice(0, 200)); } } return out.join(' | ') + ' // keys ' + Object.keys(localStorage).join(',').slice(0, 300) + ' // dialog ' + !!document.querySelector('[role=dialog][aria-label="곡 고르기"]'); })()`);
+  record('예제 곡에서 원래 곡으로 돌아오기', backSong === cur24, `${cur24} → ${backSong} ${diag24}`);
+
   // 25. 설정 — 단축키 바꾸기가 실제로 먹는다, 한글 입력과 상관없이 위치로
   await clickEl(`document.querySelector('[aria-label="설정"]')`);
   await clickEl(`[...document.querySelectorAll('[role=dialog][aria-label="설정"] [role=tab]')].find((b) => b.textContent === '단축키')`);
@@ -979,6 +1005,33 @@ try {
   await sleep(300);
   const scene30 = await ev(`(() => { const p = JSON.parse(localStorage.getItem('project-autosave-v1')); const d = p.project ?? p; return (d.markers ?? []).filter((m) => m.name.startsWith('장면')).length; })()`);
   record('장면 마커', scene30 >= 1, `${scene30}개`);
+  // 영화음악 (2026-11-22) — 타임코드 LCD, 히트 포인트에 템포 맞추기, 영상과 함께 내보내기
+  await clickEl(`document.querySelector('[aria-label="재생 위치"]')`); await sleep(150);
+  const lcdA = await ev(`document.querySelector('[aria-label="재생 위치"]').dataset.lcdMode`);
+  if (lcdA !== 'tc') { await clickEl(`document.querySelector('[aria-label="재생 위치"]')`); await sleep(150); }
+  if ((await ev(`document.querySelector('[aria-label="재생 위치"]').dataset.lcdMode`)) !== 'tc') { await clickEl(`document.querySelector('[aria-label="재생 위치"]')`); await sleep(150); }
+  const tc30 = await ev(`document.querySelector('[aria-label="재생 위치"]').textContent`);
+  const vtc30 = await ev(`document.querySelector('[data-video-tc]')?.textContent ?? ''`);
+  while ((await ev(`document.querySelector('[aria-label="재생 위치"]').dataset.lcdMode`)) !== 'bars') { await clickEl(`document.querySelector('[aria-label="재생 위치"]')`); await sleep(150); }
+  record('타임코드 — LCD 와 영상 창에 시:분:초:프레임', /^\d\d:\d\d:\d\d:\d\d$/.test(tc30) && /^\d\d:\d\d:\d\d:\d\d$/.test(vtc30), `LCD ${tc30} · 영상 ${vtc30}`);
+  const bpm30a = await ev(`(() => { const p = JSON.parse(localStorage.getItem('project-autosave-v1')); return (p.project ?? p).tempo.bpm; })()`);
+  await clickEl(byTitle('맨 앞으로'));
+  // 박 사이(어긋난 자리)로 가서 맞춘다 — 눈금자를 1마디 조금 지난 곳에
+  const ruler30 = await ev(`(() => { const r = document.querySelector('[data-ruler]').getBoundingClientRect(); return { x: r.x, y: r.y + r.height / 2, w: r.width }; })()`);
+  await click(ruler30.x + ruler30.w * 0.37, ruler30.y); await sleep(300);
+  await ev(`(() => { const p = JSON.parse(localStorage.getItem('project-autosave-v1')); return 'ok'; })()`);
+  await clickEl(byText('박에 맞추기')); await sleep(400);
+  const fit30 = await ev(`(() => { const p = JSON.parse(localStorage.getItem('project-autosave-v1')); const d = p.project ?? p; return { bpm: d.tempo.bpm, note: document.querySelector('[data-toast]')?.textContent ?? '' }; })()`);
+  record('히트 포인트 — 지금 자리가 박에 오게 템포 맞추기 (또는 이유를 말함)', /번째 박|하지 않았습니다|이미|자동으로 맞추지 않습니다/.test(fit30.note), `템포 ${bpm30a} → ${fit30.bpm} · ${fit30.note.slice(0, 70)}`);
+  for (const f of readdirSync(DL)) rmSync(join(DL, f));
+  await clickEl(`document.querySelector('[data-video-export]')`);
+  let webm30 = null;
+  for (let i = 0; i < 80 && !webm30; i++) { await sleep(500); webm30 = readdirSync(DL).find((f) => /\.(webm|mp4)$/.test(f)) ?? null; }
+  await sleep(500);
+  const size30 = webm30 ? readFileSync(join(DL, webm30)).length : 0;
+  // 내보낸 파일을 다시 열어 그림·소리 트랙이 다 있는지 본다
+  const probe30 = webm30 ? await ev(`(async () => { const v = document.createElement('video'); v.muted = true; v.src = URL.createObjectURL(new Blob([Uint8Array.from(atob(${JSON.stringify(readFileSync(join(DL, webm30)).toString('base64'))}), (c) => c.charCodeAt(0))], { type: 'video/webm' })); await new Promise((r, j) => { v.onloadeddata = r; v.onerror = () => j(new Error('열 수 없음')); }); await v.play(); await new Promise((r) => setTimeout(r, 600)); const s = v.captureStream(); const out = { w: v.videoWidth, h: v.videoHeight, video: s.getVideoTracks().length, audio: s.getAudioTracks().length, t: v.currentTime }; v.pause(); return out; })().catch((e) => ({ error: String(e) }))`) : null;
+  record('영상과 함께 내보내기 — 그림과 소리가 든 파일', size30 > 20000 && !!probe30 && probe30.video === 1 && probe30.audio === 1 && probe30.w > 0, `${webm30 ?? '파일 없음'} ${(size30 / 1024).toFixed(0)}KB · ${JSON.stringify(probe30)}`);
   await shot('26-video');
 
   // 31. 도우미 — 세션 건반 연주자(코드 따라), 마스터링 도우미(재고 적용)

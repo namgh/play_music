@@ -559,6 +559,8 @@ export class WorkletRenderer implements AudioRenderer {
 
   private disposeTrack(runtime: TrackRuntime): void {
     runtime.node.port.postMessage({ type: 'allOff' });
+    // 워크릿이 wasm 인스턴스를 놓게 한다 — 안 그러면 곡을 바꿔 열 때마다 트랙 수만큼 쌓인다
+    runtime.node.port.postMessage({ type: 'dispose' });
     runtime.node.disconnect();
     runtime.gainNode.disconnect();
     runtime.automationGain.disconnect();

@@ -136,9 +136,22 @@ Tier 0·1 편집 조작까지 커밋됨 (2026-08-09).
 오디오가 .json 저장에 안 따라감(묶음 파일·서버 필요). 각 행의 "빠진 핵심" 칸이 다음 작업 목록이다.
 
 - 화면 시안: `design/studio-app.figcraft` (영역마다 페이지) — `npm run design:capture` 로 앱에서 떠 온다 (`design/README.md`)
-- 점검: `npm run check:browser` 103항목 (개발 서버가 떠 있어야 한다). 사람이 귀로 듣는 판정은 여전히 남아 있다
+- 점검: `npm run check:browser` 109항목 (개발 서버가 떠 있어야 한다). 사람이 귀로 듣는 판정은 여전히 남아 있다
 - 새 파일 지도: 편집 `src/editor/{arrangement,tracks,noteTools,automationEdits,mixer,steps,recording,liveLoops,library,sessionPlayers}.ts`,
   소리 `src/audio/{busGraph,midiEffects,audioRegions,assets,bounce,zip,mastering,midiInput}.ts`, 모델 `src/model/{meter,chords,notation,templates}.ts`
+
+### 설치형·계정·설정·영화음악·예제 곡 (2026-11-22~23)
+
+- **설치형 (Electron)**: `desktop/{main,preload}.cjs` — `dist/` 를 `app://resona/` 로 띄우고 `/v1/*` 는 서버로 넘긴다
+  (리프레시 쿠키가 Electron 쿠키 저장소에 남는다). `npm run desktop` · `desktop:dev` · `desktop:smoke`.
+  웹과 설치형의 차이는 `src/platform/platform.ts` 의 `capabilities()` 한 곳에서만 가른다 — 화면·엔진은 하나다.
+  **아직 없음**: 설치 파일 묶기·자동 업데이트, 실제 5.1 패닝(패너는 바이노럴뿐), Link·MTC.
+- **계정**: `src/ui/AccountPanel.tsx` + `src/api/me.ts` (프로필·요금제·저장 용량·비밀번호·모든 기기 로그아웃·탈퇴). 점검 `node tools/account-check.mjs` (서버 스택 필요).
+- **설정**: `src/ui/SettingsPanel.tsx` 탭 일반/오디오/단축키/MIDI. 오디오 = 출력·입력 장치, 지연 모드, 스피커 배치.
+- **영화음악**: `src/model/timecode.ts`(타임코드·히트 포인트에 템포 맞추기), `src/audio/videoExport.ts`(영상과 함께 WebM 으로, 실시간).
+- **예제 곡**: `src/model/songs.ts` — 겨울 댄스곡 "첫눈 오는 밤" · 캐롤풍 왈츠 "작은 종소리". 오디오가 아니라 **전부 음표**(출처 `ai`, 가사는 멜로디 음에,
+  구간마다 클립)라 열어서 한 음씩 고칠 수 있다. 곡 고르기(`ProjectPanel`)의 "예제 곡"에서 연다.
+  새 곡을 더할 때는 `songs.test.ts` 가 조 안의 음·클립 경계·피크(잘림)를 잡는다 — 트랙 게인은 그 시험의 피크를 보고 잡는다.
 
 ### 이펙트 확장 — 84종 (2026-11-19, `EFFECTS_PLAN.md`)
 

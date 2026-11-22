@@ -49,14 +49,33 @@ export interface OfflineExportRequest {
 export async function renderOfflineWithWorklet(
   request: OfflineExportRequest,
 ): Promise<Float32Array[]> {
-  const { project, tracks, registry, wasmBytes, sampleRate, lengthSec } = request;
+  // **버릴 수 있는 iframe 안에서 굽는다.**
+  //
+  // Chrome 은 wasm 메모리를 한 탭에 120개쯤만 주는데, 오프라인 컨텍스트의 워크릿이 쥔 것은
+  // 렌더가 끝나도, 참조를 끊어도, GC 를 강제로 돌려도 돌아오지 않는다 (실측 2026-11-23).
+  // 그래서 6트랙 곡을 스무 번쯤 내보내면(바운스·프리즈 포함) 그 뒤로는 새 트랙이 소리를 못 냈다.
+  // 컨텍스트를 iframe 의 것으로 만들고 끝나면 iframe 을 떼면 그 워크릿 스코프가 통째로 사라진다
+  const frame = document.createElement('iframe');
+  frame.style.display = 'none';
+  frame.setAttribute('aria-hidden', 'true');
+  document.body.appendChild(frame);
+  try {
+    const Ctor = (frame.contentWindow as (Window & typeof globalThis) | null)?.OfflineAudioContext ?? OfflineAudioContext;
+    const offline = new Ctor({
+      numberOfChannels: 2,
+      length: Math.max(1, Math.ceil(request.lengthSec * request.sampleRate)),
+      sampleRate: request.sampleRate,
+    });
+    return await renderInto(offline, request);
+  } finally {
+    frame.remove();
+  }
+}
 
-  const offline = new OfflineAudioContext({
-    numberOfChannels: 2,
-    length: Math.max(1, Math.ceil(lengthSec * sampleRate)),
-    sampleRate,
-  });
-  await offline.audioWorklet.addModule(WORKLET_URL);
+async function renderInto(offline: OfflineAudioContext, request: OfflineExportRequest): Promise<Float32Array[]> {
+  const { project, tracks, registry, wasmBytes, sampleRate } = request;
+  // iframe(about:blank) 기준이 아니라 이 문서 기준의 주소로
+  await offline.audioWorklet.addModule(new URL(WORKLET_URL, document.baseURI).href);
   markWorkletContext(offline);
   setTransport(offline, { anchor: 0, bpm: project.tempo.bpm });
 
@@ -83,12 +102,14 @@ export async function renderOfflineWithWorklet(
 
   // 사이드체인 — 트랙 끝 노드와 각 체인을 모아 두었다가 다 지은 뒤 잇는다 (재생과 같은 함수)
   const trackEnds = new Map<string, AudioNode>();
+  const voiceNodes: AudioWorkletNode[] = [];
   const owners: { owner: string; chain: EffectChain }[] = [{ owner: 'master', chain: master }];
   for (const track of tracks) {
     const instrument = resolveInstrument(track.instrumentId, registry);
     const params = instrumentParams(instrument, track.toneId, track.toneParams);
 
     const node = new AudioWorkletNode(offline, 'ks-string', { outputChannelCount: [2] });
+    voiceNodes.push(node);
     const gain = offline.createGain();
     gain.gain.value = track.gain * instrument.baseLevel * vcaScale(project, track);
     const pan = offline.createStereoPanner();
@@ -171,5 +192,10 @@ export async function renderOfflineWithWorklet(
   }
   wireSidechains(owners, (id) => trackEnds.get(id), []);
   const rendered = await offline.startRendering();
-  return Array.from({ length: rendered.numberOfChannels }, (_, ch) => rendered.getChannelData(ch));
+  // 다 구웠으면 wasm 인스턴스를 곧바로 놓는다 — 내보내기·바운스·프리즈를 거듭하면
+  // 트랙 수만큼씩 쌓여 나중에 여는 곡이 "Cannot allocate Wasm memory" 로 소리를 못 냈다 (2026-11-23)
+  for (const node of voiceNodes) { node.port.postMessage({ type: 'dispose' }); node.disconnect(); }
+  for (const { chain } of owners) chain.dispose();
+  // 복사해서 낸다 — 버퍼는 곧 떼어질 iframe 의 것이다
+  return Array.from({ length: rendered.numberOfChannels }, (_, ch) => new Float32Array(rendered.getChannelData(ch)));
 }

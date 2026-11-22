@@ -52,6 +52,7 @@ import { instrumentParams, resolveInstrument } from './instruments/resolve.ts';
 import { ENGINE_LABELS, useAudioEngine } from './audio/useAudioEngine.ts';
 import { PianoRoll } from './ui/PianoRoll.tsx';
 import { EditorToolbar } from './ui/EditorToolbar.tsx';
+import { DEFAULT_TIMECODE, FRAME_RATES, formatTimecode } from './model/timecode.ts';
 import { AccountPanel, initialOf, useAccount } from './ui/AccountPanel.tsx';
 import { CommandPalette, Menu, MenuButton, toCommands, type Command, type MenuAction } from './ui/Menu.tsx';
 import { collectGhosts } from './ui/ghostNotes.ts';
@@ -165,7 +166,7 @@ export function App() {
   /** 글로벌 트랙(구간·마커·코드·마디)에서 고른 것 — 보기 상태라 저장하지 않는다 */
   const [globalSelection, setGlobalSelection] = useState<GlobalSelection>(null);
   /** LCD 위치 표시 — 마디.박 또는 분:초 */
-  const [lcdMode, setLcdMode] = useState<'bars' | 'time'>('bars');
+  const [lcdMode, setLcdMode] = useState<'bars' | 'time' | 'tc'>('bars');
   const taps = useRef<number[]>([]);
   /** 단축키 처리기가 늘 최신 마커 이동을 부르게 */
   const jumpMarkerRef = useRef<(d: 1 | -1) => void>(() => {});
@@ -677,6 +678,7 @@ export function App() {
   const here = positionAt(project, songCursor);
   const position = lcdMode === 'bars'
     ? `${here.bar + 1}.${here.beat + 1}.${Math.floor((here.tickInBeat / ticksPerBeat(here.timeSignature)) * 100).toString().padStart(2, '0')}`
+    : lcdMode === 'tc' ? formatTimecode(ticksToSeconds(songCursor, project.tempo), project.timecode ?? DEFAULT_TIMECODE)
     : (() => {
         const sec = ticksToSeconds(songCursor, project.tempo);
         return `${Math.floor(sec / 60)}:${Math.floor(sec % 60).toString().padStart(2, '0')}.${Math.floor((sec % 1) * 10)}`;
@@ -1077,10 +1079,11 @@ export function App() {
         <div className="flex h-11 shrink-0 items-center gap-3 rounded-[10px] bg-screen px-3 2xl:gap-4 2xl:px-3.5 text-sink">
           <button
             type="button"
-            onClick={() => setLcdMode((m) => (m === 'bars' ? 'time' : 'bars'))}
-            title={lcdMode === 'bars' ? '마디.박 — 눌러서 분:초로' : '분:초 — 눌러서 마디.박으로'}
+            onClick={() => setLcdMode((m) => (m === 'bars' ? 'time' : m === 'time' ? 'tc' : 'bars'))}
+            data-lcd-mode={lcdMode}
+            title={lcdMode === 'bars' ? '마디.박 — 눌러서 분:초로' : lcdMode === 'time' ? '분:초 — 눌러서 타임코드(시:분:초:프레임)로' : `타임코드 ${(project.timecode ?? DEFAULT_TIMECODE).fps}프레임 — 눌러서 마디.박으로 (프레임 수는 곡 ▾)`}
             aria-label="재생 위치"
-            className="w-[104px] text-left font-num text-[28px] leading-none text-acc-2"
+            className={`text-left font-num leading-none text-acc-2 ${lcdMode === 'tc' ? 'w-[132px] text-[21px]' : 'w-[104px] text-[28px]'}`}
           >{position}</button>
           <span className="h-6 w-px bg-grid-2" />
           <label className="flex flex-col gap-0.5">
@@ -1205,7 +1208,7 @@ export function App() {
 
         {/* 영상 창은 편집기·라이브 루프에서만 — 믹서·도우미에서는 아래쪽 단추를 덮는다 */}
         {project.video && (view === 'editor' || view === 'live') && (
-          <VideoPanel editor={editor} songTick={songCursor} playing={engine.state === 'playing'} onNotice={setNotice} />
+          <VideoPanel editor={editor} songTick={songCursor} playing={engine.state === 'playing'} onNotice={setNotice} renderMix={engine.renderMix} busy={engine.exporting} />
         )}
         {settingsOpen && (
           <SettingsPanel editor={editor} settings={settings} onSettings={setSettings}
@@ -1300,6 +1303,20 @@ export function App() {
           >템포 변화{(project.tempo.changes?.length ?? 0) > 0 ? ` (${project.tempo.changes!.length})` : ''}</button>
 
             <span className="text-[11px] text-ink-3">템포 줄(G)에서 끌어 고칩니다</span>
+            </div>
+            {/* 타임코드 — 영상 작업용. LCD 를 두 번 누르면 시:분:초:프레임으로 보인다 */}
+            <div>
+              <label className="text-[11px] text-ink-3" htmlFor="tc-fps">타임코드</label>
+              <select id="tc-fps" aria-label="프레임 수" className={FIELD} value={(project.timecode ?? DEFAULT_TIMECODE).fps}
+                onChange={(e) => editor.commit({ ...project, timecode: { ...(project.timecode ?? DEFAULT_TIMECODE), fps: Number(e.target.value) } })}>
+                {FRAME_RATES.map((f) => <option key={f} value={f}>{f} 프레임</option>)}
+              </select>
+              <select aria-label="시작 타임코드" className={FIELD} value={(project.timecode ?? DEFAULT_TIMECODE).startSec}
+                onChange={(e) => editor.commit({ ...project, timecode: { ...(project.timecode ?? DEFAULT_TIMECODE), startSec: Number(e.target.value) } })}>
+                <option value={0}>00:00:00:00 부터</option>
+                <option value={3600}>01:00:00:00 부터</option>
+                <option value={36000}>10:00:00:00 부터</option>
+              </select>
             </div>
           </div>
         )}
@@ -1431,13 +1448,14 @@ export function App() {
         <p
           role="status"
           data-toast
-          className={`scope-body fixed bottom-5 left-1/2 z-[60] max-w-[min(46rem,92vw)] -translate-x-1/2 rounded-xl border px-4 py-2.5 text-sm shadow-[0_12px_40px_rgba(0,0,0,0.18)] ${
+          // 알림은 누르는 것을 가로막지 않는다 — 창 아래쪽 단추(최근 곡 '열기' 등)를 덮어 눌리지 않던 적이 있다. '닫기' 만 받는다
+          className={`scope-body pointer-events-none fixed bottom-5 left-1/2 z-[60] max-w-[min(46rem,92vw)] -translate-x-1/2 rounded-xl border px-4 py-2.5 text-sm shadow-[0_12px_40px_rgba(0,0,0,0.18)] ${
             engine.error ? 'border-rec bg-body text-ink' : 'border-rule bg-body text-ink-2'
           }`}
         >
           {engine.error ?? notice}
           {!engine.error && (
-            <button type="button" onClick={() => setNotice(null)} className="ml-3 text-xs underline">닫기</button>
+            <button type="button" onClick={() => setNotice(null)} className="pointer-events-auto ml-3 text-xs underline">닫기</button>
           )}
         </p>
       )}

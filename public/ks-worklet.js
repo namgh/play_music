@@ -35,6 +35,10 @@ const PARAM_COUNT = 72;
  */
 const STALE_FRAMES = 12000; // 48kHz 에서 0.25초
 
+/** 버린 트랙·이펙트가 놓은 wasm 인스턴스 — 새로 만들지 않고 돌려 쓴다 (이 워크릿 스코프 안에서) */
+const VOICE_FREE = [];
+const FX_FREE = [];
+
 class KsProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
@@ -122,14 +126,31 @@ class KsProcessor extends AudioWorkletProcessor {
         this.pendingOff.length = 0;
         if (this.wasm) this.wasm.all_off();
         break;
+      // 버린 트랙은 wasm 인스턴스를 곧바로 놓는다 — 곡을 몇 번 바꿔 열면 트랙 수만큼 쌓여
+      // "Cannot allocate Wasm memory" 로 새 곡이 소리를 못 냈다 (2026-11-23)
+      case 'dispose':
+        this.disposed = true;
+        this.pending.length = 0;
+        this.pendingOff.length = 0;
+        // 인스턴스는 버리지 않고 돌려 쓴다 — Chrome 은 wasm 메모리를 한 탭에 120개쯤만 주고,
+        // 참조를 끊어도 제때 거두지 않는다 (실측). 다음 트랙이 `init` 으로 새로 시작한다
+        if (this.wasm) { this.wasm.all_off(); VOICE_FREE.push(this.wasm); }
+        this.wasm = null;
+        this.viewBuffer = null;
+        this.paramView = null;
+        this.outputView = null;
+        this.outputViewR = null;
+        this.curveView = null;
+        break;
       default:
         break;
     }
   }
 
   async load(bytes) {
-    const { instance } = await WebAssembly.instantiate(bytes, {});
-    const exports = instance.exports;
+    let exports = VOICE_FREE.pop();
+    if (!exports) exports = (await WebAssembly.instantiate(bytes, {})).instance.exports;
+    if (this.disposed) { VOICE_FREE.push(exports); return; }
     exports.init(sampleRate);
     this.wasm = exports;
     this.refreshViews();
@@ -257,7 +278,8 @@ class KsProcessor extends AudioWorkletProcessor {
 
     if (!this.wasm) {
       for (const channel of channels) channel.fill(0);
-      return true;
+      // 버린 노드는 false 로 끝낸다 — 브라우저가 프로세서를 거둬 간다
+      return !this.disposed;
     }
 
     let written = 0;
@@ -363,7 +385,7 @@ class RustFxProcessor extends AudioWorkletProcessor {
     this.port.onmessage = (event) => {
       const m = event.data;
       // 버린 노드는 wasm 인스턴스를 곧바로 놓는다 — 메모리가 GC 를 기다리며 쌓이지 않게
-      if (m?.type === 'dispose') { this.alive = false; this.fx = null; this.mem = null; }
+      if (m?.type === 'dispose') { this.alive = false; if (this.fx) FX_FREE.push(this.fx); this.fx = null; this.mem = null; }
       else if (m?.type === 'transport') {
         if (typeof m.anchor === 'number') this.anchor = m.anchor;
         if (typeof m.bpm === 'number') this.bpm = m.bpm;
@@ -372,7 +394,8 @@ class RustFxProcessor extends AudioWorkletProcessor {
     try {
       if (!fxModule && opts.bytes) fxModule = new WebAssembly.Module(opts.bytes);
       if (!fxModule) throw new Error('fx.wasm 이 아직 없다');
-      const fx = new WebAssembly.Instance(fxModule, {}).exports;
+      // 버려진 이펙트의 인스턴스를 돌려 쓴다 (`fx_create` 가 상태를 새로 짓는다) — 위 VOICE_FREE 와 같은 이유
+      const fx = FX_FREE.pop() ?? new WebAssembly.Instance(fxModule, {}).exports;
       // 첫 값을 먼저 쓴다 — 구조가 파라미터에 달린 이펙트(IR 길이 등)가 처음부터 맞는 모양이어야 한다
       // 주소를 **먼저** 얻는다 — 첫 호출이 상태를 할당하며 메모리를 키우면 미리 잡아 둔 버퍼가 떨어져 나간다
       const paramsAt = fx.fx_params();
