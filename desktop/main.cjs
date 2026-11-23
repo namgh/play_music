@@ -9,6 +9,8 @@ const { app, BrowserWindow, protocol, net, shell, ipcMain, session } = require('
 const path = require('node:path');
 const fs = require('node:fs');
 const { pathToFileURL } = require('node:url');
+const http = require('node:http');
+const crypto = require('node:crypto');
 
 const DEV_URL = process.env.RESONA_DEV_URL || '';
 const API = (process.env.RESONA_API || 'http://localhost:8000').replace(/\/$/, '');
@@ -166,6 +168,57 @@ async function smoke() {
 ipcMain.handle('resona:info', () => ({
   kind: 'desktop', os: process.platform, version: app.getVersion(), electron: process.versions.electron, chrome: process.versions.chrome,
 }));
+
+/**
+ * 구글 로그인 — **시스템 브라우저에서 한다.** 구글은 앱에 든 창에서의 로그인을 막고,
+ * 사용자도 주소창이 보여야 진짜 구글인지 안다.
+ *
+ *   앱: 127.0.0.1 의 빈 포트를 열고, 검증값(verifier)을 만들어 그 해시만 서버에 준다
+ *   → 브라우저: 구글 로그인 → 서버 콜백 → `http://127.0.0.1:포트/callback?code=…`
+ *   → 앱: 그 코드와 검증값을 화면에 돌려준다 → 화면이 서버에서 세션으로 바꾼다
+ *
+ * 코드는 한 번·2분짜리이고 검증값 없이는 못 쓴다 — 다른 프로그램이 포트를 엿봐도 소용없다.
+ */
+let loginServer = null;
+ipcMain.handle('resona:google-login', async () => {
+  if (loginServer) { loginServer.close(); loginServer = null; }
+  const verifier = crypto.randomBytes(48).toString('base64url');
+  const challenge = crypto.createHash('sha256').update(verifier).digest('base64url');
+  const page = (text) => `<!doctype html><meta charset="utf-8"><title>RESONA</title><body style="font:16px system-ui;display:grid;place-items:center;height:100vh;margin:0"><p>${text}</p>`;
+
+  const server = http.createServer();
+  loginServer = server;
+  await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
+  const port = server.address().port;
+
+  const done = new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('로그인을 기다리다 시간이 지났습니다. 다시 해 주세요')), 5 * 60 * 1000);
+    server.on('request', (req, res) => {
+      const url = new URL(req.url, `http://127.0.0.1:${port}`);
+      if (url.pathname !== '/callback') { res.writeHead(404).end(); return; }
+      const code = url.searchParams.get('code');
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      res.end(page(code ? '로그인했습니다. 이 창을 닫고 RESONA 로 돌아가세요.' : '로그인을 마치지 못했습니다. RESONA 에서 다시 해 주세요.'));
+      clearTimeout(timer);
+      if (code) resolve(code); else reject(new Error('로그인을 마치지 못했습니다'));
+    });
+  });
+
+  try {
+    const res = await net.fetch(`${API}/v1/auth/google/start?desktop_port=${port}&desktop_challenge=${challenge}`);
+    const body = await res.json();
+    if (!res.ok || !body.authorization_url) throw new Error((body.error && body.error.message) || '구글 로그인을 시작하지 못했습니다');
+    // 구글 주소만 연다 — 서버가 엉뚱한 주소를 주더라도 브라우저로 넘기지 않는다
+    if (new URL(body.authorization_url).hostname !== 'accounts.google.com') throw new Error('로그인 주소가 올바르지 않습니다');
+    await shell.openExternal(body.authorization_url);
+    const code = await done;
+    if (win) { if (win.isMinimized()) win.restore(); win.show(); win.focus(); }
+    return { code, verifier };
+  } finally {
+    server.close();
+    if (loginServer === server) loginServer = null;
+  }
+});
 
 app.whenReady().then(() => {
   if (!DEV_URL) serveApp();

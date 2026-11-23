@@ -1154,7 +1154,7 @@ try {
   await clickEl(`document.querySelector('[aria-label="계정"]')`); await sleep(400);
   const acct25 = await ev(`document.querySelector('[role=dialog][aria-label="계정"]')?.textContent ?? ''`);
   await clickEl(`[...document.querySelectorAll('[role=dialog][aria-label="계정"] button')].find((b) => b.textContent === '닫기')`);
-  record('프로필 단추 · 로그인 전 계정 창', acct25.includes('로그인하지 않아도') && acct25.includes('로그인 · 가입'), acct25.slice(0, 60));
+  record('프로필 단추 · 로그인 전 계정 창', acct25.includes('로그인하지 않아도') && acct25.includes('구글로 로그인'), acct25.slice(0, 60));
 
 } catch (err) {
   record('스크립트 실행', false, String(err.stack ?? err).slice(0, 500));

@@ -1,3 +1,4 @@
+// **주의**: 이 점검은 이메일·비밀번호 가입으로 계정을 만든다 — 서버를 `PASSWORD_AUTH_ENABLED=true` 로 띄워야 돈다 (기본은 구글 로그인만)
 // 계정 흐름 점검 — **서버가 떠 있어야 한다** (server/ 에서 docker compose --profile app up -d, 개발 서버 5173).
 // 가입 → 프로필 단추 → 이름 바꾸기 → 비밀번호 바꾸기 → 로그아웃 → 새 비밀번호로 로그인 → 새로고침 뒤 유지 → 모든 기기 로그아웃
 import { launch, sleep } from './lib/chrome.mjs';

@@ -12,7 +12,7 @@ from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select, update
 
 from resona.core.deps import Config, Db, client_ip
-from resona.core.errors import Conflict, Unauthorized
+from resona.core.errors import Conflict, NotFound, Unauthorized
 from resona.core.ratelimit import check as rate_check
 from resona.core.security import (
     create_access_token,
@@ -125,10 +125,20 @@ async def _send_verify_mail(session: Db, user: User) -> None:
     )
 
 
+def _require_password_auth(settings: Config) -> None:
+    """이메일·비밀번호 가입과 로그인은 꺼 둘 수 있다 (`password_auth_enabled`).
+    꺼져 있으면 없는 길이다"""
+    if not settings.password_auth_enabled:
+        raise NotFound(
+            "이메일 로그인은 쓰지 않습니다. 구글로 로그인해 주세요", code="password_auth_disabled"
+        )
+
+
 @router.post("/signup", response_model=TokenOut, status_code=status.HTTP_201_CREATED)
 async def signup(
     body: SignupIn, request: Request, response: Response, session: Db, settings: Config
 ) -> TokenOut:
+    _require_password_auth(settings)
     ip = client_ip(request) or "unknown"
     await rate_check("signup", ip)
 
@@ -213,6 +223,7 @@ async def signup(
 async def login(
     body: LoginIn, request: Request, response: Response, session: Db, settings: Config
 ) -> TokenOut:
+    _require_password_auth(settings)
     ip = client_ip(request) or "unknown"
     email = body.email.lower()
     # 계정과 IP 를 **둘 다** 센다. 하나만 세면 우회가 쉽다
@@ -453,7 +464,12 @@ async def reset_password(body: ResetIn, request: Request, session: Db) -> Respon
 
 @router.get("/google/start")
 async def google_start(
-    request: Request, next: Annotated[str, Query(max_length=200)] = "/"
+    request: Request,
+    next: Annotated[str, Query(max_length=200)] = "/",
+    desktop_port: Annotated[int | None, Query(ge=1024, le=65535)] = None,
+    desktop_challenge: Annotated[
+        str | None, Query(min_length=43, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
+    ] = None,
 ) -> dict[str, str]:
     """로그인 URL 을 만들어 준다. 리다이렉트는 클라이언트가 한다 —
     XHR 로 부르면 302 를 다루기 번거롭고, 앱마다 이동 방식이 다르다"""
@@ -462,7 +478,13 @@ async def google_start(
     # "//evil.com" 이나 "https://evil.com" 이 통과하면 피싱 도구가 된다
     if not next.startswith("/") or next.startswith("//"):
         next = "/"
-    url, state = await google_oauth.start(next_path=next)
+    # **설치형 앱** — 로그인은 시스템 브라우저에서 하고,
+    # 끝나면 앱이 열어 둔 127.0.0.1 포트로 돌아간다.
+    # 둘 다 있어야 한다: 포트(어디로 돌아갈지)와 챌린지(그 앱만 교환할 수 있게)
+    desktop = None
+    if desktop_port is not None and desktop_challenge is not None:
+        desktop = {"port": desktop_port, "challenge": desktop_challenge}
+    url, state = await google_oauth.start(next_path=next, desktop=desktop)
     return {"authorization_url": url, "state": state}
 
 
@@ -507,12 +529,47 @@ async def google_callback(
     if not next_path.startswith("/") or next_path.startswith("//"):
         next_path = "/"
 
+    desktop = stored.get("desktop")
+    if desktop:
+        # **설치형으로 돌아간다.** 여기(시스템 브라우저)에 쿠키를 심으면 앱은 그걸 못 쓴다.
+        # 대신 한 번 쓰는 교환 코드를 앱의 127.0.0.1 포트로 넘기고, 앱이 그 코드와
+        # 처음에 만든 검증값으로 `/desktop/exchange` 를 불러 자기 쿠키 저장소에 세션을 받는다.
+        # 주소는 **127.0.0.1 고정** — 포트만 받으므로 다른 곳으로 보낼 수 없다
+        handoff = await google_oauth.create_handoff(str(user.id), desktop["challenge"])
+        return RedirectResponse(
+            f"http://127.0.0.1:{int(desktop['port'])}/callback?code={handoff}", status_code=303
+        )
+
     response = RedirectResponse(f"{target}{next_path}?login=google", status_code=303)
     # 쿠키만 심는다. 액세스 토큰은 SPA 가 refresh 로 받아 간다
     await _issue_tokens(
         session, response, settings, user, user_agent=request.headers.get("user-agent")
     )
     return response
+
+
+class DesktopExchangeIn(BaseModel):
+    code: str = Field(min_length=20, max_length=200)
+    verifier: str = Field(min_length=43, max_length=128)
+
+
+@router.post("/desktop/exchange", response_model=TokenOut)
+async def desktop_exchange(
+    body: DesktopExchangeIn, request: Request, response: Response, session: Db, settings: Config
+) -> TokenOut:
+    """설치형 앱이 브라우저 로그인의 결과를 세션으로 바꾼다.
+
+    코드는 **한 번, 2분 안에만** 쓰이고, 로그인을 시작한 앱만 아는 검증값(PKCE 와 같은 꼴)이
+    맞아야 한다 — 같은 컴퓨터의 다른 프로그램이 127.0.0.1 로 온 코드를 엿봐도 쓸 수 없다.
+    """
+    await rate_check("oauth_start", client_ip(request) or "unknown")
+    user_id = await google_oauth.consume_handoff(body.code, body.verifier)
+    user = await session.get(User, uuid.UUID(user_id))
+    if user is None or user.status in ("deleted", "purged"):
+        raise Unauthorized("계정을 찾을 수 없습니다", code="account_not_found")
+    return await _issue_tokens(
+        session, response, settings, user, user_agent=request.headers.get("user-agent")
+    )
 
 
 async def _link_or_create_google_user(

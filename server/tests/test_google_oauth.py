@@ -400,3 +400,93 @@ async def test_linking_an_unverified_account_drops_its_password_and_sessions(
     client.cookies.clear()
     client.cookies.set("resona_refresh", attacker_refresh)
     assert (await client.post("/v1/auth/refresh")).status_code == 401
+
+
+# --- 설치형 앱: 브라우저에서 로그인하고 앱으로 돌아온다 ------------------------
+
+
+def _pkce() -> tuple[str, str]:
+    import base64
+    import hashlib
+    import secrets
+
+    verifier = secrets.token_urlsafe(48)
+    digest = hashlib.sha256(verifier.encode()).digest()
+    return verifier, base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
+
+
+async def _desktop_login(client, fake_exchange, email: str) -> tuple[str, str]:
+    """(교환 코드, 검증값) — 콜백이 앱의 127.0.0.1 포트로 돌려보낸 것"""
+    verifier, challenge = _pkce()
+    res = await client.get(
+        f"/v1/auth/google/start?desktop_port=51234&desktop_challenge={challenge}"
+    )
+    assert res.status_code == 200, res.text
+    params = parse_qs(urlparse(res.json()["authorization_url"]).query)
+    fake_exchange["id_token"] = make_id_token(
+        nonce=params["nonce"][0], email=email, sub=f"sub-{uuid.uuid4().hex[:8]}"
+    )
+    back = await client.get(f"/v1/auth/google/callback?code=abc&state={res.json()['state']}")
+    assert back.status_code == 303
+    to = urlparse(back.headers["location"])
+    # **127.0.0.1 로만 돌아간다** — 그리고 브라우저 쪽에는 세션 쿠키를 심지 않는다
+    assert (to.scheme, to.hostname, to.port, to.path) == ("http", "127.0.0.1", 51234, "/callback")
+    assert "resona_refresh" not in back.headers.get("set-cookie", "")
+    return parse_qs(to.query)["code"][0], verifier
+
+
+async def test_desktop_login_hands_the_session_to_the_app(client, unique_email, fake_exchange):
+    code, verifier = await _desktop_login(client, fake_exchange, unique_email)
+    client.cookies.clear()
+    res = await client.post("/v1/auth/desktop/exchange", json={"code": code, "verifier": verifier})
+    assert res.status_code == 200, res.text
+    me = await client.get("/v1/me", headers=auth(res.json()["access_token"]))
+    assert me.json()["email"] == unique_email
+    # 앱의 쿠키 저장소에 리프레시 쿠키가 들어왔다 — 껐다 켜도 로그인이 남는다
+    assert (await client.post("/v1/auth/refresh")).status_code == 200
+
+
+async def test_desktop_code_is_single_use(client, unique_email, fake_exchange):
+    code, verifier = await _desktop_login(client, fake_exchange, unique_email)
+    body = {"code": code, "verifier": verifier}
+    assert (await client.post("/v1/auth/desktop/exchange", json=body)).status_code == 200
+    again = await client.post("/v1/auth/desktop/exchange", json=body)
+    assert again.status_code == 401
+    assert again.json()["error"]["code"] == "oauth_handoff_invalid"
+
+
+async def test_desktop_code_is_useless_without_the_apps_verifier(
+    client, unique_email, fake_exchange
+):
+    """같은 컴퓨터의 다른 프로그램이 127.0.0.1 로 온 코드를 엿봐도 쓸 수 없다.
+    그리고 한 번 틀리면 코드가 사라진다 — 여러 번 찍어 볼 수 없다"""
+    code, verifier = await _desktop_login(client, fake_exchange, unique_email)
+    wrong, _ = _pkce()
+    bad = await client.post("/v1/auth/desktop/exchange", json={"code": code, "verifier": wrong})
+    assert bad.status_code == 401
+    real = await client.post(
+        "/v1/auth/desktop/exchange", json={"code": code, "verifier": verifier}
+    )
+    assert real.status_code == 401
+
+
+async def test_desktop_port_must_be_a_plain_port(client):
+    _, challenge = _pkce()
+    for port in ("80", "70000", "evil.com", "51234@evil.com"):
+        res = await client.get(
+            f"/v1/auth/google/start?desktop_port={port}&desktop_challenge={challenge}"
+        )
+        assert res.status_code == 422, port
+
+
+async def test_password_signup_and_login_are_off_by_default(client, unique_email, monkeypatch):
+    """로그인은 구글만 쓴다 — 설정을 켜지 않으면 이메일 가입·로그인 길은 없다"""
+    from resona.core.config import get_settings
+
+    monkeypatch.setenv("PASSWORD_AUTH_ENABLED", "false")
+    get_settings.cache_clear()
+    body = {"email": unique_email, "password": PASSWORD}
+    for path in ("/v1/auth/signup", "/v1/auth/login"):
+        res = await client.post(path, json=body)
+        assert res.status_code == 404, path
+        assert res.json()["error"]["code"] == "password_auth_disabled"

@@ -45,7 +45,7 @@ npm run dev
 | 문서 | 내용 |
 |---|---|
 | [docs/GUIDE.md](docs/GUIDE.md) | 사용 가이드 — 화면 구성, 곡 만드는 순서, 내보내기, 단축키 |
-| [docs/AUTH.md](docs/AUTH.md) | 로그인 설계 — 이메일 가입과 구글 로그인을 한 계정으로 |
+| [docs/AUTH.md](docs/AUTH.md) | 로그인 설계 — 구글 로그인 하나, 설치형 앱의 로그인 경로 |
 | [server/README.md](server/README.md) | 서버(FastAPI) 실행과 구조 |
 | [LOGIC_PARITY.md](LOGIC_PARITY.md) | Logic Pro 대비 기능 표 — 무엇이 되고 무엇이 아직인지 |
 | [CLAUDE.md](CLAUDE.md) | 개발 규칙과 작업 기록 |
@@ -72,8 +72,8 @@ docker compose --profile app up -d   # postgres · redis · api(8000) · worker 
 
 개발 서버(5173)는 `/v1` 요청을 `localhost:8000` 으로 넘깁니다.
 
-- **구글 로그인**: Google Cloud Console에서 OAuth 클라이언트를 만들고 `.env` 의 `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI` 를 채웁니다. 승인된 리디렉션 URI에 `http://localhost:8000/v1/auth/google/callback` 을 넣습니다.
-- **확인 메일**: Gmail SMTP를 쓰려면 `SMTP_USER`, `SMTP_PASSWORD`(앱 비밀번호)를 채웁니다.
+- **구글 로그인** (로그인 수단은 이것 하나입니다): Google Cloud Console에서 OAuth 클라이언트를 만들고 `.env` 의 `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI` 를 채웁니다. 승인된 리디렉션 URI에 `http://localhost:8000/v1/auth/google/callback` 을 넣습니다.
+- 팀 초대 메일을 쓰려면 `SMTP_USER`, `SMTP_PASSWORD`(Gmail 앱 비밀번호)를 채웁니다.
 
 ## 개발
 

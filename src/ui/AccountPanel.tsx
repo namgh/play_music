@@ -82,7 +82,7 @@ export function AccountPanel({ me, signedIn, onReload, onClose, onNotice }: {
             <p>로그인하지 않아도 곡을 만들고 이 {desktop ? '컴퓨터' : '브라우저'}에 저장하고 내보낼 수 있습니다.</p>
             <p>로그인하면 곡을 서버에 저장해 다른 기기에서 이어서 할 수 있습니다.</p>
             <button type="button" data-account-login onClick={() => { onClose(); navigate('/login'); }}
-              className="h-9 rounded-full bg-cta px-5 text-[13px] font-semibold text-cta-ink">로그인 · 가입</button>
+              className="h-9 rounded-full bg-cta px-5 text-[13px] font-semibold text-cta-ink">구글로 로그인</button>
           </div>
         ) : (
           <div className="min-h-0 flex-1 space-y-6 overflow-y-auto p-5 text-sm text-ink">

@@ -89,7 +89,9 @@ def _b64url(raw: bytes) -> str:
     return base64.urlsafe_b64encode(raw).decode().rstrip("=")
 
 
-async def start(*, next_path: str = "/") -> tuple[str, str]:
+async def start(
+    *, next_path: str = "/", desktop: dict[str, Any] | None = None
+) -> tuple[str, str]:
     """(로그인 URL, state). state 는 클라이언트가 다시 들고 오지 않아도 된다 —
     구글이 콜백에 실어 준다"""
     client_id, _, redirect_uri = credentials()
@@ -105,7 +107,9 @@ async def start(*, next_path: str = "/") -> tuple[str, str]:
     # state 검증을 건너뛰고 로그인시키는 것보다 안 되는 편이 낫다
     await r.core().set(
         r.key("oauth", "state", state),
-        json.dumps({"nonce": nonce, "verifier": verifier, "next": next_path}),
+        json.dumps(
+            {"nonce": nonce, "verifier": verifier, "next": next_path, "desktop": desktop}
+        ),
         ex=STATE_TTL_SEC,
     )
 
@@ -132,6 +136,38 @@ async def consume_state(state: str) -> dict[str, Any]:
         raise Unauthorized("로그인 요청이 만료됐거나 올바르지 않습니다", code="oauth_state_invalid")
     await r.core().delete(key)
     return json.loads(raw)
+
+
+HANDOFF_TTL_SEC = 120
+
+
+async def create_handoff(user_id: str, challenge: str) -> str:
+    """설치형 앱에 넘길 한 번짜리 교환 코드. 세션이 아니다 — 검증값 없이는 아무것도 못 한다"""
+    code = secrets.token_urlsafe(32)
+    await r.core().set(
+        r.key("oauth", "handoff", code),
+        json.dumps({"user_id": user_id, "challenge": challenge}),
+        ex=HANDOFF_TTL_SEC,
+    )
+    return code
+
+
+async def consume_handoff(code: str, verifier: str) -> str:
+    """교환 코드 → 사용자 id. **맞든 틀리든 코드는 지운다** — 검증값을 여러 번 찍어 볼 수 없게"""
+    key = r.key("oauth", "handoff", code)
+    raw = await r.core().get(key)
+    if raw is None:
+        raise Unauthorized(
+            "로그인 요청이 만료됐거나 올바르지 않습니다", code="oauth_handoff_invalid"
+        )
+    await r.core().delete(key)
+    stored = json.loads(raw)
+    expected = _b64url(hashlib.sha256(verifier.encode()).digest())
+    if not secrets.compare_digest(expected, stored["challenge"]):
+        raise Unauthorized(
+            "로그인 요청이 만료됐거나 올바르지 않습니다", code="oauth_handoff_invalid"
+        )
+    return stored["user_id"]
 
 
 async def exchange(code: str, verifier: str) -> str:

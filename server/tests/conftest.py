@@ -48,6 +48,8 @@ if not any(host in _db_url for host in ("localhost", "127.0.0.1", "@postgres")):
         f"  DATABASE_URL={_db_url}"
     )
 os.environ.setdefault("JWT_SECRET", "test-secret")
+# 시험은 비밀번호 계정으로 사용자를 만든다 (구글 흐름은 test_google_oauth 가 따로 본다)
+os.environ.setdefault("PASSWORD_AUTH_ENABLED", "true")
 # 결제 — **테스트 키만 쓴다.** 운영 키(`live_`)를 넣으면 부팅이 막히도록
 # `Settings` 에 역방향 게이트가 있다 (`resona/config.py`)
 os.environ.setdefault("TOSS_CLIENT_KEY", "test_ck_forTests")

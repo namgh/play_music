@@ -74,6 +74,9 @@ class Settings(BaseSettings):
     app_base_url: str = "http://localhost:5173"
 
     # --- 구글 로그인 ---
+    # **로그인은 구글만 쓴다** (2026-11-24 결정). 이메일·비밀번호 가입과 로그인은 꺼 둔다 —
+    # 코드와 시험은 남기고, 다시 열 일이 생기면 이 값만 켠다
+    password_auth_enabled: bool = False
     google_client_id: str = ""
     google_client_secret: SecretStr = SecretStr("")
     google_redirect_uri: str = "http://localhost:8000/v1/auth/google/callback"

@@ -11,14 +11,12 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { ApiError } from '../../api/errors.ts';
 import {
   acceptInvite,
-  googleLoginUrl,
-  login,
-  requestPasswordReset,
+  loginWithGoogle,
   resetPassword,
-  signup,
   verifyEmail,
 } from '../../api/auth.ts';
 import { navigate, stripToken } from '../route.ts';
+import { platformInfo } from '../../platform/platform.ts';
 
 const field =
   'w-full rounded border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm ' +
@@ -61,105 +59,40 @@ function messageOf(e: unknown): string {
 // --- 로그인 · 가입 -----------------------------------------------------------
 
 export function AuthScreen() {
-  const [mode, setMode] = useState<'login' | 'signup'>('login');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [ok, setOk] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(() => (
+    new URLSearchParams(window.location.search).get('error') ? '로그인을 마치지 못했습니다. 다시 해 주세요' : null
+  ));
+  const desktop = platformInfo().kind === 'desktop';
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const start = async () => {
     setBusy(true);
     setError(null);
-    setOk(null);
     try {
-      if (mode === 'signup') {
-        await signup(email, password);
-        setOk('가입했습니다. 확인 메일을 보냈습니다');
-      } else {
-        await login(email, password);
-      }
-      navigate('/');
-    } catch (err) {
-      // **이미 있는 주소로 가입하면 서버가 토큰을 주지 않는다** (계정 탈취 방지).
-      // 그때는 로그인 쪽으로 안내하는 것이 맞다
-      if (err instanceof ApiError && err.code === 'email_taken') {
-        setMode('login');
-        setError('이미 가입된 주소입니다. 로그인해 주세요');
-      } else {
-        setError(messageOf(err));
-      }
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const forgot = async () => {
-    if (!email) {
-      setError('주소를 먼저 입력해 주세요');
-      return;
-    }
-    setError(null);
-    try {
-      await requestPasswordReset(email);
-      // **계정이 있든 없든 같은 문구다.** 다르게 말하면 가입 여부를 알려 주는 셈이다
-      setOk('재설정 메일을 보냈습니다. 받은 편지함을 확인해 주세요');
+      // 웹은 구글로 넘어가서 돌아오지 않는다. 설치형은 브라우저에서 마치면 여기로 돌아온다
+      const session = await loginWithGoogle();
+      if (session) navigate('/');
     } catch (err) {
       setError(messageOf(err));
+      setBusy(false);
     }
   };
 
   return (
     <Shell
-      title={mode === 'login' ? '로그인' : '가입'}
-      hint="계정 없이도 편집기는 그대로 씁니다. 로그인하면 클라우드에 저장됩니다."
+      title="로그인"
+      hint="계정 없이도 곡은 만들 수 있습니다. 로그인하면 클라우드에 저장됩니다."
     >
-      <form onSubmit={submit} className="space-y-3">
-        <input
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          placeholder="이메일"
-          autoComplete="email"
-          required
-          className={field}
-        />
-        <input
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          placeholder="비밀번호"
-          autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
-          // 서버가 10자 이상을 요구한다 — 여기서 막아 주면 왕복이 한 번 준다
-          minLength={mode === 'signup' ? 10 : undefined}
-          required
-          className={field}
-        />
-        <Message error={error} ok={ok} />
-        <button type="submit" disabled={busy} className={primary}>
-          {busy ? '보내는 중…' : mode === 'login' ? '로그인' : '가입'}
-        </button>
-      </form>
-
-      <a href={googleLoginUrl()} className="block w-full rounded border border-neutral-700 px-3 py-2 text-center text-sm">
-        구글로 계속하기
-      </a>
-
-      <div className="flex items-center justify-between">
-        <button
-          type="button"
-          className={ghost}
-          onClick={() => { setMode(mode === 'login' ? 'signup' : 'login'); setError(null); setOk(null); }}
-        >
-          {mode === 'login' ? '계정 만들기' : '로그인하기'}
-        </button>
-        {mode === 'login' && (
-          <button type="button" className={ghost} onClick={forgot}>
-            비밀번호를 잊었나요
-          </button>
-        )}
-      </div>
+      <Message error={error} />
+      <button type="button" disabled={busy} onClick={() => void start()} className={primary} data-google-login>
+        {busy ? (desktop ? '브라우저에서 로그인을 마쳐 주세요…' : '구글로 가는 중…') : '구글로 계속하기'}
+      </button>
+      {busy && desktop && (
+        <button type="button" className={ghost} onClick={() => setBusy(false)}>다시 시도</button>
+      )}
+      <p className="text-xs text-neutral-500">
+        처음이면 계정이 바로 만들어집니다. 비밀번호는 따로 만들지 않습니다.
+      </p>
     </Shell>
   );
 }
