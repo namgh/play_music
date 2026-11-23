@@ -72,6 +72,13 @@ function trackBody(track: Track, channel: number, extraHead: readonly number[]):
 
       const key = Math.max(0, Math.min(127, Math.round(note.pitch.midi)));
       const velocity = Math.max(1, Math.min(127, Math.round(note.velocity * 127)));
+      // 가사 (FF 05) — 그 음이 켜지기 바로 앞에. 노래방·악보 프로그램이 이 자리에서 읽는다
+      if (note.lyric) {
+        const text = [...new TextEncoder().encode(note.lyric)];
+        const meta = [0xff, 0x05];
+        writeVarInt(meta, text.length);
+        events.push({ tick: start, order: 0.5, bytes: [...meta, ...text] });
+      }
       events.push({ tick: start, order: 1, bytes: [0x90 | channel, key, velocity] });
       events.push({ tick: end, order: 0, bytes: [0x80 | channel, key, 0] });
     }
@@ -251,6 +258,8 @@ export function decodeMidi(bytes: Uint8Array, name = '가져온 곡'): Project {
     let tick = 0;
     let running = 0;
     let trackName = `트랙 ${index + 1}`;
+    /** 가사 (FF 05) — 그 틱에서 시작하는 음에 붙인다 */
+    const lyrics = new Map<number, string>();
 
     while (reader.position < end) {
       tick += reader.varInt() * scale;
@@ -277,6 +286,11 @@ export function decodeMidi(bytes: Uint8Array, name = '가져온 곡'): Project {
           for (let i = 0; i < len; i++) raw.push(reader.byte());
           const decoded = new TextDecoder().decode(Uint8Array.from(raw)).trim();
           if (decoded) trackName = decoded;
+        } else if (type === 0x05 && len > 0) {
+          const raw: number[] = [];
+          for (let i = 0; i < len; i++) raw.push(reader.byte());
+          const decoded = new TextDecoder().decode(Uint8Array.from(raw)).trim();
+          if (decoded) lyrics.set(Math.round(tick), decoded);
         }
         reader.seek(start + len);
         continue;
@@ -360,7 +374,10 @@ export function decodeMidi(bytes: Uint8Array, name = '가져온 곡'): Project {
           lengthTick: n.lengthTick,
           midi: n.midi,
         });
-        return { ...note, velocity: n.velocity };
+        // 가사는 그 틱의 음 하나에만 (화음이면 처음 것)
+        const lyric = lyrics.get(n.startTick);
+        if (lyric !== undefined) lyrics.delete(n.startTick);
+        return lyric !== undefined ? { ...note, velocity: n.velocity, lyric } : { ...note, velocity: n.velocity };
       });
       track.clips.push(clip);
       project.tracks.push(track);

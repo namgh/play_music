@@ -8,6 +8,7 @@ import { secondsToTicks, ticksToSeconds } from '../model/time.ts';
 import { importAudioBytes, placeAudio } from './audioUi.ts';
 import { DEFAULT_TIMECODE, fitTempoToHit, formatTimecode } from '../model/timecode.ts';
 import { exportVideoWithMix } from '../audio/videoExport.ts';
+import type { VideoContainer } from '../audio/videoExport.ts';
 
 /**
  * 영상 창 (Logic 무비 창, `LOGIC_PARITY.md` 1-15) — 재생 헤드를 따라 영상이 움직인다.
@@ -33,6 +34,7 @@ export function VideoPanel({ editor, songTick, playing, onNotice, renderMix, bus
   const ref = useRef<HTMLVideoElement | null>(null);
   const [url, setUrl] = useState<string | null>(null);
   const [small, setSmall] = useState(false);
+  const [container, setContainer] = useState<VideoContainer>('mp4');
 
   useEffect(() => {
     let made: string | null = null;
@@ -95,9 +97,14 @@ export function VideoPanel({ editor, songTick, playing, onNotice, renderMix, bus
               editor.commit({ ...project, tempo: { ...project.tempo, bpm: fit.bpm } });
               onNotice(`템포 ${project.tempo.bpm} → ${fit.bpm} — ${hitSec.toFixed(2)}초의 장면이 ${fit.beat + 1}번째 박에 떨어집니다 (박이 ${Math.abs(fit.wasOffSec * 1000).toFixed(0)}ms ${fit.wasOffSec < 0 ? '일렀습니다' : '늦었습니다'})`);
             }}>박에 맞추기</button>
+          <select aria-label="영상 파일 형식" value={container} onChange={(e) => setContainer(e.target.value as VideoContainer)} data-video-container
+            className="h-6 rounded border border-grid-2 bg-screen-2 px-1 text-sink" title="MP4 는 어디서나 열립니다. WebM 은 웹용">
+            <option value="mp4">MP4</option>
+            <option value="webm">WebM</option>
+          </select>
           <button type="button" disabled={busy || exporting !== null} data-video-export
             className="h-6 rounded border border-grid-2 bg-screen-2 px-1.5 text-sink disabled:opacity-40"
-            title="영상의 그림과 곡의 믹스를 한 파일(WebM)로 — 영상을 한 번 틀면서 녹화하므로 영상 길이만큼 걸립니다"
+            title="영상의 그림과 곡의 믹스를 한 파일로 — 그림은 그대로 옮기고 소리만 곡으로 바꿉니다"
             onClick={async () => {
               try {
                 setExporting(0);
@@ -106,18 +113,22 @@ export function VideoPanel({ editor, songTick, playing, onNotice, renderMix, bus
                 onNotice('곡을 그리는 중…');
                 const channels = await renderMix();
                 if (!channels) throw new Error('곡을 그리지 못했습니다');
-                onNotice(`영상과 함께 녹화하는 중 — ${video.durationSec.toFixed(0)}초쯤 걸립니다`);
-                const blob = await exportVideoWithMix({ videoBytes: bytes, channels, sampleRate: 48000, offsetSec: video.offsetSec, onProgress: setExporting });
+                onNotice('영상과 함께 싸는 중…');
+                const result = await exportVideoWithMix(
+                  { videoBytes: bytes, channels, sampleRate: 48000, offsetSec: video.offsetSec, onProgress: setExporting, container },
+                  (why) => onNotice(`영상을 바로 쌀 수 없어(${why}) 틀면서 녹화합니다 — ${video.durationSec.toFixed(0)}초쯤 걸립니다`),
+                );
                 const a = document.createElement('a');
-                a.href = URL.createObjectURL(blob);
-                a.download = `${project.name || '곡'} - 영상.${blob.type.includes('mp4') ? 'mp4' : 'webm'}`;
+                a.href = URL.createObjectURL(result.blob);
+                a.download = `${project.name || '곡'} - 영상.${result.ext}`;
                 a.click();
                 setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-                onNotice(`영상과 함께 내보냈습니다 (${(blob.size / 1024 / 1024).toFixed(1)}MB)`);
+                const how = result.how === 'copy' ? '그림은 그대로' : result.how === 'transcode' ? '그림을 다시 인코딩' : '실시간 녹화';
+                onNotice(`영상과 함께 내보냈습니다 — ${result.ext.toUpperCase()} ${(result.blob.size / 1024 / 1024).toFixed(1)}MB (${how})`);
               } catch (err) {
                 onNotice(`영상과 함께 내보내지 못했습니다: ${err instanceof Error ? err.message : String(err)}`);
               } finally { setExporting(null); }
-            }}>{exporting === null ? '영상과 내보내기' : `녹화 ${Math.round(exporting * 100)}%`}</button>
+            }}>{exporting === null ? '영상과 내보내기' : `${Math.round(exporting * 100)}%`}</button>
           <button type="button" className="h-6 rounded border border-grid-2 bg-screen-2 px-1.5 text-sink"
             onClick={async () => {
               try {

@@ -73,7 +73,7 @@ export function ProjectPanel({ project, onOpen, onClose }: ProjectPanelProps) {
                 data-demo-song={s.id}
                 onClick={() => {
                   putProject(browserKv, project, Date.now());
-                  onOpen(s.build(), `예제 곡 "${s.name}" 을 열었습니다 — 스페이스로 들어 보세요`);
+                  onOpen(s.build(), `예제 곡 "${s.name}" 곡을 열었습니다 — 스페이스로 들어 보세요`);
                 }}
                 className="flex flex-col gap-1 rounded-xl border border-rule bg-panel p-3 text-left hover:border-ink"
               >
@@ -98,7 +98,7 @@ export function ProjectPanel({ project, onOpen, onClose }: ProjectPanelProps) {
                     const p = getProject(browserKv, e.id);
                     if (!p) return;
                     putProject(browserKv, project, Date.now());
-                    onOpen(p, `"${p.name}" 을 열었습니다`);
+                    onOpen(p, `"${p.name}" 곡을 열었습니다`);
                   }}>열기</button>
                 <button type="button" aria-label={`${e.name} 보관함에서 지우기`} className="h-7 rounded-md border border-rule px-2 text-xs text-ink-3 hover:text-rec"
                   onClick={() => { removeProject(browserKv, e.id); setTick((x) => x + 1); }}>✕</button>

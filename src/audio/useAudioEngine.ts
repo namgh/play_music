@@ -3,6 +3,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { PlayOptions } from './renderer.ts';
 import { fadeOutTail, measureBounce, normalizePeak, safeFileName, sliceRange, tpdfDither } from './bounce.ts';
 import type { BounceReport } from './bounce.ts';
+import { encodeAudio, fitOptions, formatInfo, needsDither } from './encode.ts';
+import type { AudioFormat } from './encode.ts';
 import { makeZip } from './zip.ts';
 import { ticksToSeconds } from '../model/time.ts';
 import type { Project, TrackId } from '../model/project.ts';
@@ -51,7 +53,12 @@ export interface BounceOptions {
   /** 끝 뒤에 더 담을 꼬리(초) — 리버브·딜레이가 끝까지 울리게 */
   tailSec: number;
   sampleRate: 44100 | 48000;
-  bitDepth: 16 | 24;
+  /** 파일 형식 (`encode.ts`). 없으면 WAV */
+  format?: AudioFormat;
+  /** 무손실 형식의 비트 깊이. 32 는 WAV float */
+  bitDepth: 16 | 24 | 32;
+  /** 손실 형식(MP3·M4A·OGG)의 비트레이트. 없으면 256 */
+  kbps?: number;
   /** 피크 노멀라이즈 목표(dBFS). null 이면 안 한다 */
   normalizeDb: number | null;
   /** 트랙마다 따로 (ZIP 으로 묶는다) */
@@ -430,7 +437,9 @@ export function useAudioEngine(
       const renderer = await ensure();
       const project = projectRef.current;
       renderer.setProject(project);
-      const result = await renderer.exportAudio({ sampleRate: options.sampleRate, stems: options.stems });
+      const enc = fitOptions({ format: options.format ?? 'wav', sampleRate: options.sampleRate, bitDepth: options.bitDepth, kbps: options.kbps ?? 256 });
+      const info = formatInfo(enc.format);
+      const result = await renderer.exportAudio({ sampleRate: enc.sampleRate as 44100 | 48000, stems: options.stems });
       if (result.buffers.length === 0) throw new Error('내보낼 것이 없다');
 
       const sr = result.sampleRate;
@@ -439,7 +448,8 @@ export function useAudioEngine(
       const songEnd = options.endTick >= projectLengthTicks(project);
       let report: BounceReport | null = null;
 
-      const files = result.buffers.map((buffer, index) => {
+      const files: { name: string; data: Uint8Array }[] = [];
+      for (const [index, buffer] of result.buffers.entries()) {
         let channels = sliceRange(buffer.channels, sr, { startSec, endSec });
         // 곡 중간에서 끊었는데 꼬리도 안 붙였으면 끝에서 "딱" 한다 — 짧게 내린다
         if (!songEnd && options.tailSec === 0) channels = fadeOutTail(channels, sr);
@@ -449,15 +459,15 @@ export function useAudioEngine(
           setClip(reportClipping(peakAmplitude(channels), project.master.gain));
           report = measureBounce(channels, sr);
         }
-        if (options.bitDepth === 16) channels = tpdfDither(channels, 16);
+        if (needsDither(enc)) channels = tpdfDither(channels, 16);
         const trackName = buffer.trackId === null ? null : project.tracks.find((t) => t.id === buffer.trackId)?.name ?? `트랙 ${index + 1}`;
-        const name = `${safeFileName(project.name, 'project')}${trackName ? ` - ${safeFileName(trackName, `트랙 ${index + 1}`)}` : ''}.wav`;
-        return { name, data: encodeWav(channels, { sampleRate: sr, bitDepth: options.bitDepth }) };
-      });
+        const name = `${safeFileName(project.name, 'project')}${trackName ? ` - ${safeFileName(trackName, `트랙 ${index + 1}`)}` : ''}.${info.ext}`;
+        files.push({ name, data: await encodeAudio(channels, { ...enc, sampleRate: sr }) });
+      }
 
       const single = files.length === 1 ? files[0]! : null;
       const blob = single
-        ? new Blob([single.data as unknown as BlobPart], { type: 'audio/wav' })
+        ? new Blob([single.data as unknown as BlobPart], { type: info.mime })
         : new Blob([makeZip(files) as unknown as BlobPart], { type: 'application/zip' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');

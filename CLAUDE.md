@@ -137,6 +137,19 @@ Tier 0·1 편집 조작까지 커밋됨 (2026-08-09).
 
 - 화면 시안: `design/studio-app.figcraft` (영역마다 페이지) — `npm run design:capture` 로 앱에서 떠 온다 (`design/README.md`)
 - 점검: `npm run check:browser` 109항목 (개발 서버가 떠 있어야 한다). 사람이 귀로 듣는 판정은 여전히 남아 있다
+- 시나리오 점검: `npm run check:scenarios [--only=형식,영상…]` (`tools/scenario-check.mjs`, 개발 서버 필요, 20분쯤).
+  곡을 **코드로 만들어** 자동 저장 자리에 넣고 내보낸 파일을 다시 풀어 잰다 — 형식·스템·범위·가장자리·솔로뮤트·
+  되읽기(MIDI·곡 파일)·영상·템플릿·되풀이·템포박자·오디오트랙·긴곡·재생중·저장소. 새 내보내기 경로를 만들면 여기에 넣는다
+
+## 내보내기 형식 (2026-11-23)
+
+- 오디오: `src/audio/encode.ts` — WAV 는 우리 인코더, FLAC·MP3·M4A·OGG 는 mediabunny(+ `@mediabunny/{mp3,flac,aac}-encoder` WASM).
+  **인코더는 동적 import** 라 고를 때만 내려받는다. 렌더는 한 번이고 형식은 그 결과를 싸는 일이다 (`bounce.ts` 후처리 → `encodeAudio`).
+  Opus 는 48kHz 만. 디더는 16bit 정수로 줄일 때만(`needsDither`).
+- 영상: `src/audio/videoExport.ts` `muxVideoWithMix` — 틀지 않고 다시 싼다. MP4 에는 H.264/H.265 만 그대로 옮기고
+  나머지(VP8·VP9)는 H.264 로 다시 인코딩한다 (VP9-in-MP4 는 QuickTime 이 못 연다). 못 읽는 영상은 예전 실시간 녹화로 물러난다.
+- 라이선스: mediabunny MPL-2.0, LAME·FFmpeg(AAC) LGPL — 배포할 때 `node_modules/@mediabunny/*/licenses` 고지를 같이 실어야 한다.
+- 브라우저 저장소(5MB)가 차면 보관함의 오래된 곡을 내주고 지금 곡의 자동 저장을 지킨다 (`library.ts` `setWithRoom`).
 - 새 파일 지도: 편집 `src/editor/{arrangement,tracks,noteTools,automationEdits,mixer,steps,recording,liveLoops,library,sessionPlayers}.ts`,
   소리 `src/audio/{busGraph,midiEffects,audioRegions,assets,bounce,zip,mastering,midiInput}.ts`, 모델 `src/model/{meter,chords,notation,templates}.ts`
 

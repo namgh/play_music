@@ -9,6 +9,7 @@
  * "내 곡"이라고 여기는 것은 파일로 손에 쥘 수 있어야 한다.
  */
 
+import { browserKv, setWithRoom } from './library.ts';
 import type { Project } from '../model/project.ts';
 import { deserializeProject, ProjectLoadError, serializeProject } from '../model/persistence.ts';
 import { isZip, makeBundle, openBundle, projectAssetIds } from './bundle.ts';
@@ -29,7 +30,8 @@ export function projectFileName(project: Project): string {
  */
 export function saveAutosave(project: Project): boolean {
   try {
-    localStorage.setItem(AUTOSAVE_KEY, serializeProject(project));
+    // 저장소가 차 있으면 보관함의 오래된 곡을 내주고 지금 곡을 지킨다 (`library.ts`)
+    setWithRoom(browserKv, AUTOSAVE_KEY, serializeProject(project), project.id);
     return true;
   } catch {
     // 용량 초과, 저장소 차단(사생활 보호 창) 등

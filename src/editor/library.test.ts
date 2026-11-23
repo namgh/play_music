@@ -9,8 +9,10 @@ import { INSTRUMENT_CATALOG } from '../instruments/definitions.ts';
 import { TEMPLATES, projectFromTemplate } from '../model/templates.ts';
 import { createEmptyProject } from '../model/factory.ts';
 import { setTempo } from './edits.ts';
+import { serializeProject } from '../model/persistence.ts';
 import {
   deleteVersion, getProject, LIBRARY_LIMIT, listProjects, listVersions, loadVersion, memoryKv, putProject, removeProject, saveVersion,
+  makeRoom, setWithRoom,
 } from './library.ts';
 
 test('템플릿 — 악기는 전부 카탈로그에 있고 트랙마다 곡 길이 클립', () => {
@@ -62,4 +64,27 @@ test('버전 — 남기고, 같은 이름은 덮고, 되돌리고, 지운다', (
   deleteVersion(kv, p.id, before.id);
   assert.deepEqual(listVersions(kv, p.id).map((v) => v.name), ['빠르게']);
   assert.equal(saveVersion(kv, p, '  ', 4).name, '버전 2');
+});
+
+test('저장소가 차면 오래된 곡을 내주고 새 곡을 넣는다 — 지금 곡은 지킨다', () => {
+  const one = serializeProject(createEmptyProject('곡')).length;
+  // 곡 셋 남짓 들어갈 자리
+  const kv = memoryKv(one * 3 + 900);
+  const songs = Array.from({ length: 6 }, (_, i) => createEmptyProject(`곡 ${i + 1}`));
+  songs.forEach((p, i) => putProject(kv, p, 1000 + i));
+  const names = listProjects(kv).map((e) => e.name);
+  assert.equal(names[0], '곡 6');
+  assert.ok(names.length >= 2 && names.length < 6, `남은 곡 ${names.length}`);
+  assert.ok(!names.includes('곡 1'), '가장 오래된 곡부터 나간다');
+  // 남은 곡은 모두 열린다 (목록만 남고 내용이 없는 곡이 없다)
+  for (const e of listProjects(kv)) assert.ok(getProject(kv, e.id) !== null, e.name);
+});
+
+test('자리 만들기 — 지금 곡 하나만 남으면 더 내주지 않고 실패를 알린다', () => {
+  const p = createEmptyProject('혼자');
+  const kv = memoryKv(serializeProject(p).length + 400);
+  putProject(kv, p, 1);
+  assert.equal(makeRoom(kv, p.id), false);
+  assert.throws(() => setWithRoom(kv, 'big', 'x'.repeat(100000), p.id));
+  assert.ok(getProject(kv, p.id) !== null);
 });

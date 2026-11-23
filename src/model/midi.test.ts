@@ -266,3 +266,23 @@ test('GM 표의 악기가 전부 실재한다', () => {
   assert.deepEqual(missing, [], `없는 악기를 가리킨다: ${missing.join(', ')}`);
   assert.equal(GM_PROGRAM_INSTRUMENTS.length, 128, 'GM 프로그램은 128개다');
 });
+
+test('가사 — 음에 붙은 가사가 MIDI(FF 05)로 나갔다가 같은 음으로 돌아온다', () => {
+  const project = createEmptyProject('노래');
+  const track = createTrack({ name: '멜로디', instrumentId: 'acoustic-guitar' });
+  const clip = createClip({ startTick: PPQ * 4, lengthTick: PPQ * 8 });
+  const words = ['창', '밖', '에', null, 'snow ❄'];
+  clip.notes = words.map((w, i) => {
+    const note = createNote({ startTick: i * PPQ, lengthTick: PPQ, midi: 60 + i });
+    return w ? { ...note, lyric: w } : note;
+  });
+  track.clips.push(clip);
+  project.tracks.push(track);
+
+  const back = decodeMidi(encodeMidi(project).bytes);
+  const notes = back.tracks[0]!.clips[0]!.notes;
+  assert.deepEqual(notes.map((n) => n.lyric ?? null), words);
+  // 가사는 음의 자리·높이를 건드리지 않는다
+  assert.deepEqual(notes.map((n) => n.startTick), words.map((_, i) => PPQ * 4 + i * PPQ));
+  assert.deepEqual(notes.map((n) => n.pitch.midi), words.map((_, i) => 60 + i));
+});

@@ -5,9 +5,11 @@ import { projectLengthTicks } from '../model/factory.ts';
 import type { BounceReport } from '../audio/bounce.ts';
 import type { BounceOptions } from '../audio/useAudioEngine.ts';
 import { positionAt } from '../model/meter.ts';
+import { AUDIO_FORMATS, BITRATES, formatInfo } from '../audio/encode.ts';
+import type { AudioFormat } from '../audio/encode.ts';
 
 /**
- * 내보내기 창 — 범위 · 형식 · 노멀라이즈 · 스템 (Logic Bounce 창, `LOGIC_PARITY.md` 1-13).
+ * 내보내기 창 — 범위 · 형식(WAV·FLAC·MP3·M4A·OGG) · 노멀라이즈 · 스템 (Logic Bounce 창, `LOGIC_PARITY.md` 1-13).
  * 끝나면 그 파일을 잰 값(피크·트루피크·LUFS)을 바로 보여 준다 — 스트리밍에
  * 올리기 전에 라우드니스를 따로 재러 가지 않게.
  */
@@ -27,7 +29,9 @@ type RangeKey = 'song' | 'loop' | `sec:${string}`;
 
 export function ExportPanel({ project, exporting, onBounce, onClose }: ExportPanelProps) {
   const [range, setRange] = useState<RangeKey>('song');
-  const [bitDepth, setBitDepth] = useState<16 | 24>(24);
+  const [format, setFormat] = useState<AudioFormat>('wav');
+  const [bitDepth, setBitDepth] = useState<16 | 24 | 32>(24);
+  const [kbps, setKbps] = useState<number>(256);
   const [sampleRate, setSampleRate] = useState<44100 | 48000>(48000);
   const [normalize, setNormalize] = useState(false);
   const [stems, setStems] = useState(false);
@@ -49,10 +53,14 @@ export function ExportPanel({ project, exporting, onBounce, onClose }: ExportPan
   const run = async () => {
     setReport(null);
     const r = await onBounce({
-      startTick, endTick, tailSec: tail ? 2 : 0, sampleRate, bitDepth, normalizeDb: normalize ? -1 : null, stems,
+      startTick, endTick, tailSec: tail ? 2 : 0, sampleRate, format, bitDepth, kbps, normalizeDb: normalize ? -1 : null, stems,
     });
     setReport(r);
   };
+
+  const info = formatInfo(format);
+  /** Opus 는 48kHz 로만 담는다 */
+  const rate = format === 'ogg' ? 48000 : sampleRate;
 
   const toggle = (on: boolean) => (on ? 'border-ink bg-ink text-body' : 'border-rule bg-body text-ink-2 hover:border-ink-3');
 
@@ -76,14 +84,32 @@ export function ExportPanel({ project, exporting, onBounce, onClose }: ExportPan
         </label>
 
         <div className="space-y-1">
-          <span className={LABEL}>형식 — WAV</span>
-          <div className="flex gap-1.5" role="radiogroup" aria-label="비트 깊이">
-            <button type="button" role="radio" aria-checked={bitDepth === 24} onClick={() => setBitDepth(24)} className={`${CHOICE} ${toggle(bitDepth === 24)}`}>24bit</button>
-            <button type="button" role="radio" aria-checked={bitDepth === 16} onClick={() => setBitDepth(16)} className={`${CHOICE} ${toggle(bitDepth === 16)}`} title="CD 형식. 디더를 자동으로 겁니다">16bit + 디더</button>
+          <span className={LABEL}>형식 — {info.label} <span className="font-normal">· {info.hint}</span></span>
+          <div className="flex gap-1.5" role="radiogroup" aria-label="파일 형식">
+            {AUDIO_FORMATS.map((f) => (
+              <button key={f.id} type="button" role="radio" aria-checked={format === f.id} data-format={f.id} title={f.hint}
+                onClick={() => { setFormat(f.id); if (!f.lossy && !f.bitDepths.includes(bitDepth)) setBitDepth(f.bitDepths[0]!); }}
+                className={`${CHOICE} ${toggle(format === f.id)}`}>{f.label}</button>
+            ))}
           </div>
+          {info.lossy ? (
+            <div className="flex gap-1.5" role="radiogroup" aria-label="비트레이트">
+              {BITRATES.map((b) => (
+                <button key={b} type="button" role="radio" aria-checked={kbps === b} onClick={() => setKbps(b)} className={`${CHOICE} ${toggle(kbps === b)}`}>{b}k</button>
+              ))}
+            </div>
+          ) : (
+            <div className="flex gap-1.5" role="radiogroup" aria-label="비트 깊이">
+              {info.bitDepths.map((d) => (
+                <button key={d} type="button" role="radio" aria-checked={bitDepth === d} onClick={() => setBitDepth(d)} className={`${CHOICE} ${toggle(bitDepth === d)}`}
+                  title={d === 16 ? 'CD 형식. 디더를 자동으로 겁니다' : d === 32 ? '소수점 형식 — 1 을 넘는 소리도 잘리지 않습니다. 다른 DAW 로 넘겨 더 만질 때' : '기본'}>
+                  {d === 16 ? '16bit + 디더' : d === 32 ? '32bit float' : '24bit'}</button>
+              ))}
+            </div>
+          )}
           <div className="flex gap-1.5" role="radiogroup" aria-label="표본율">
-            <button type="button" role="radio" aria-checked={sampleRate === 48000} onClick={() => setSampleRate(48000)} className={`${CHOICE} ${toggle(sampleRate === 48000)}`}>48 kHz</button>
-            <button type="button" role="radio" aria-checked={sampleRate === 44100} onClick={() => setSampleRate(44100)} className={`${CHOICE} ${toggle(sampleRate === 44100)}`}>44.1 kHz</button>
+            <button type="button" role="radio" aria-checked={rate === 48000} onClick={() => setSampleRate(48000)} className={`${CHOICE} ${toggle(rate === 48000)}`}>48 kHz</button>
+            <button type="button" role="radio" aria-checked={rate === 44100} disabled={format === 'ogg'} onClick={() => setSampleRate(44100)} className={`${CHOICE} ${toggle(rate === 44100)} disabled:opacity-40`}>44.1 kHz</button>
           </div>
         </div>
 

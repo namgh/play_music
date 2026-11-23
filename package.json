@@ -24,6 +24,7 @@
     "lint:dsp": "$HOME/.cargo/bin/cargo fmt --manifest-path dsp/Cargo.toml --check && $HOME/.cargo/bin/cargo clippy --manifest-path dsp/Cargo.toml --all-targets -- -D warnings && $HOME/.cargo/bin/cargo fmt --manifest-path fx/Cargo.toml --check && $HOME/.cargo/bin/cargo clippy --manifest-path fx/Cargo.toml --all-targets -- -D warnings",
     "check": "npm run instruments:check && npm run lint:dsp && npm run test:dsp && npm run build:dsp && npm run build:fx && npm run typecheck && npm run test:model && npm run test:perf && npm run test:pitch && npm run quality:smoke && vite build && npm run check:server",
     "check:browser": "node tools/browser-check.mjs",
+    "check:scenarios": "node tools/scenario-check.mjs",
     "design:capture": "node --experimental-strip-types tools/capture-screens.mjs",
     "check:server": "cd server && .venv/bin/ruff check src tests && .venv/bin/python -m pytest -q --timeout=120",
     "quality": "node --experimental-strip-types tools/quality-report.mjs",
@@ -41,6 +42,10 @@
     "desktop:smoke": "RESONA_SMOKE=1 electron ."
   },
   "dependencies": {
+    "@mediabunny/aac-encoder": "^1.66.2",
+    "@mediabunny/flac-encoder": "^1.66.2",
+    "@mediabunny/mp3-encoder": "^1.66.2",
+    "mediabunny": "^1.66.2",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },

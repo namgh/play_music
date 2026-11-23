@@ -543,7 +543,7 @@ export function App() {
       setSelectedTrackId(loaded.tracks[0]?.id ?? null);
       setSelectedClipId(loaded.tracks[0]?.clips[0]?.id ?? null);
       editor.select([]);
-      setNotice(`"${loaded.name}" 을 열었습니다 (트랙 ${loaded.tracks.length}개)`);
+      setNotice(`"${loaded.name}" 곡을 열었습니다 (트랙 ${loaded.tracks.length}개)`);
     } catch (err) {
       setNotice(`열 수 없습니다: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -818,7 +818,7 @@ export function App() {
     { id: 'file.midiIn', label: 'MIDI 가져오기', run: () => midiInput.current?.click() },
     { id: 'file.audioIn', label: '오디오 가져오기', run: () => audioInput.current?.click() },
     { id: 'file.videoIn', label: '영상 가져오기', run: () => videoInput.current?.click() },
-    { id: 'file.export', label: '내보내기 (WAV · 스템)', run: () => setMenu('export') },
+    { id: 'file.export', label: '내보내기 (WAV · FLAC · MP3 · M4A · 스템)', run: () => setMenu('export') },
     { id: 'file.account', label: account.signedIn ? '계정 (비밀번호 · 로그아웃 · 사용량)' : '로그인 · 가입', run: () => setAccountOpen(true) },
   ];
   const clipActions: MenuAction[] = [

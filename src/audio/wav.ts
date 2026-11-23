@@ -1,13 +1,13 @@
 /**
  * WAV 인코딩 (`plan.md` 5-1 Phase 1 완료 조건 — "내보낼 수 있다").
  *
- * 24bit 정수 PCM 으로 쓴다 (`sound.md` 6-6: 출력 48kHz, 내보내기 24bit).
- * 32bit float 도 규격에는 있지만 받는 쪽 호환성이 떨어진다.
+ * 기본은 24bit 정수 PCM (`sound.md` 6-6: 출력 48kHz, 내보내기 24bit).
+ * 32 는 **32bit float** — 1 을 넘는 값도 자르지 않고 그대로 담는다 (다른 DAW 로 넘겨 더 만질 때).
  *
  * 순수 함수다 — 브라우저 API 없이 테스트된다. 다운로드는 호출자 몫.
  */
 
-export type BitDepth = 16 | 24;
+export type BitDepth = 16 | 24 | 32;
 
 export interface WavOptions {
   sampleRate: number;
@@ -64,7 +64,7 @@ export function encodeWav(channels: readonly Float32Array[], options: WavOptions
 
   ascii(12, 'fmt ');
   view.setUint32(16, 16, true);          // fmt 청크 크기
-  view.setUint16(20, 1, true);           // PCM
+  view.setUint16(20, bitDepth === 32 ? 3 : 1, true); // PCM, 32 는 IEEE float
   view.setUint16(22, numChannels, true);
   view.setUint32(24, options.sampleRate, true);
   view.setUint32(28, options.sampleRate * numChannels * bytesPerSample, true); // byte rate
@@ -79,7 +79,13 @@ export function encodeWav(channels: readonly Float32Array[], options: WavOptions
   for (let frame = 0; frame < frames; frame++) {
     for (let ch = 0; ch < numChannels; ch++) {
       const source = channels[ch]!;
-      const sample = quantizeSample(frame < source.length ? source[frame]! : 0, maxAmplitude);
+      const raw = frame < source.length ? source[frame]! : 0;
+      if (bitDepth === 32) {
+        view.setFloat32(offset, raw, true);
+        offset += 4;
+        continue;
+      }
+      const sample = quantizeSample(raw, maxAmplitude);
       if (bitDepth === 16) {
         view.setInt16(offset, sample, true);
         offset += 2;
@@ -102,6 +108,8 @@ export function readWavHeader(bytes: Uint8Array): {
   sampleRate: number;
   channels: number;
   bitDepth: number;
+  /** 형식 꼬리표 — 1 정수 PCM, 3 IEEE float */
+  format: number;
   frames: number;
   /** 데이터 청크가 시작하는 자리. **44 라고 가정하면 안 된다** (위 주석) */
   dataOffset: number;
@@ -142,6 +150,7 @@ export function readWavHeader(bytes: Uint8Array): {
     sampleRate: view.getUint32(fmtAt + 4, true),
     channels,
     bitDepth,
+    format: view.getUint16(fmtAt, true),
     frames: Math.floor(dataBytes / (channels * (bitDepth / 8))),
     dataOffset: dataAt,
   };
@@ -159,6 +168,11 @@ export function decodeWav(bytes: Uint8Array): { channels: Float32Array[]; sample
   for (let frame = 0; frame < header.frames; frame++) {
     for (let ch = 0; ch < header.channels; ch++) {
       let sample: number;
+      if (header.bitDepth === 32 && header.format === 3) {
+        channels[ch]![frame] = view.getFloat32(offset, true);
+        offset += bytesPerSample;
+        continue;
+      }
       if (header.bitDepth === 16) {
         sample = view.getInt16(offset, true);
       } else {

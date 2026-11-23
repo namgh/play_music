@@ -9,7 +9,7 @@ test('헤더가 규격대로 쓰인다', () => {
   const header = readWavHeader(bytes);
   // `dataOffset` 44 는 **우리가 쓸 때의** 표준 배치다. 읽을 때는 가정하지 않는다
   assert.deepEqual(header,
-    { sampleRate: 48000, channels: 1, bitDepth: 24, frames: 100, dataOffset: 44 });
+    { sampleRate: 48000, channels: 1, bitDepth: 24, format: 1, frames: 100, dataOffset: 44 });
   assert.equal(bytes.length, 44 + 100 * 3);
 });
 
