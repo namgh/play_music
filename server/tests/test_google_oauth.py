@@ -15,12 +15,13 @@ from __future__ import annotations
 
 import time
 import uuid
+from datetime import UTC, datetime
 from urllib.parse import parse_qs, urlparse
 
 import jwt
 import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from resona.domains.accounts import provider_google as google_oauth
 from resona.domains.accounts.models import AuthIdentity, User
@@ -243,6 +244,11 @@ async def test_links_to_existing_password_account(client, db, unique_email, fake
     """같은 주소로 이미 가입했으면 **계정을 하나로 합친다** —
     안 그러면 곡이 두 계정에 갈린다"""
     await signup(client, unique_email)
+    # 주소를 확인한 계정이다 — 확인 안 된 계정은 아래 다른 시험이 본다
+    await db.execute(
+        update(User).where(User.email == unique_email).values(email_verified_at=datetime.now(UTC))
+    )
+    await db.commit()
     project_owner_token = (
         await client.post(
             "/v1/auth/login", json={"email": unique_email, "password": PASSWORD}
@@ -352,3 +358,45 @@ async def test_start_is_rejected_when_not_configured(client, monkeypatch):
     res = await client.get("/v1/auth/google/start")
     assert res.status_code == 401
     assert res.json()["error"]["code"] == "google_not_configured"
+
+
+async def test_linking_an_unverified_account_drops_its_password_and_sessions(
+    client, db, unique_email, fake_exchange
+):
+    """**미리 만들어 둔 계정 탈취.** 공격자가 남의 주소로 먼저 가입해 두고 주인이 구글로
+    들어오기를 기다린다 — 합쳐진 뒤에 공격자의 비밀번호·세션이 살아 있으면 안 된다"""
+    await signup(client, unique_email)  # 공격자: 주소 확인은 못 한다
+    attacker = await client.post(
+        "/v1/auth/login", json={"email": unique_email, "password": PASSWORD}
+    )
+    assert attacker.status_code == 200
+    attacker_refresh = client.cookies.get("resona_refresh")
+    assert attacker_refresh, "공격자 세션 쿠키가 있어야 이 시험이 뜻이 있다"
+
+    state, nonce = await start_login(client)
+    fake_exchange["id_token"] = make_id_token(
+        nonce=nonce, email=unique_email, sub=f"sub-{uuid.uuid4().hex[:8]}"
+    )
+    res = await client.get(f"/v1/auth/google/callback?code=abc&state={state}")
+    assert res.status_code in (200, 303)
+
+    user = (await db.execute(select(User).where(User.email == unique_email))).scalar_one()
+    providers = sorted(
+        (
+            await db.execute(
+                select(AuthIdentity.provider).where(AuthIdentity.user_id == user.id)
+            )
+        ).scalars()
+    )
+    assert providers == ["google"]
+    assert user.email_verified_at is not None
+
+    # 공격자의 비밀번호는 더 통하지 않는다
+    again = await client.post(
+        "/v1/auth/login", json={"email": unique_email, "password": PASSWORD}
+    )
+    assert again.status_code == 401
+    # 공격자가 쥐고 있던 세션도 끊겼다
+    client.cookies.clear()
+    client.cookies.set("resona_refresh", attacker_refresh)
+    assert (await client.post("/v1/auth/refresh")).status_code == 401

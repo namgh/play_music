@@ -562,7 +562,31 @@ async def _link_or_create_google_user(
         )
         # 구글이 확인해 준 주소이므로 우리 확인도 끝난 것으로 본다
         if existing.email_verified_at is None:
-            existing.email_verified_at = datetime.now(UTC)
+            # **미리 만들어 둔 계정 탈취(pre-hijacking)를 막는다.**
+            # 주소를 확인한 적 없는 계정은 "그 주소의 주인이 만들었다" 는 증거가 없다 — 공격자가
+            # 남의 주소로 먼저 가입해 두고, 주인이 나중에 구글로 들어오기를 기다릴 수 있다.
+            # 그대로 합치면 공격자의 비밀번호와 세션이 살아남는다. 그래서 확인 안 된 계정에
+            # 붙을 때는 **기존 비밀번호와 세션을 전부 끊는다.** 진짜 주인이었다면 구글로 들어와
+            # 있고, 비밀번호가 필요하면 재설정 메일(그 주소로 간다)로 다시 건다.
+            now = datetime.now(UTC)
+            stale = (
+                await session.execute(
+                    select(AuthIdentity).where(
+                        AuthIdentity.user_id == existing.id, AuthIdentity.provider == "password"
+                    )
+                )
+            ).scalars()
+            for row in stale:
+                await session.delete(row)
+            await session.execute(
+                update(RefreshToken)
+                .where(RefreshToken.user_id == existing.id, RefreshToken.revoked_at.is_(None))
+                .values(revoked_at=now)
+            )
+            await audit.record(
+                session, action="user.password_dropped_on_link", actor_id=existing.id, ip=ip
+            )
+            existing.email_verified_at = now
         if existing.status == "pending_verification":
             existing.status = "active"
         await audit.record(
