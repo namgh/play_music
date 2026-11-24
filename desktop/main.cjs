@@ -149,7 +149,7 @@ async function smoke() {
       const devices = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'audiooutput').length;
       const out = {
         origin: location.origin, title: document.title,
-        platform: window.resona ?? null,
+        platform: window.resona ? { kind: window.resona.kind, os: window.resona.os, googleLogin: typeof window.resona.googleLogin } : null,
         app: !!document.querySelector('header'), text: document.body.innerText.slice(0, 60),
         maxChannels: max, openedChannels: opened, sampleRate: ctx.sampleRate, worklet, outputDevices: devices,
         setSinkId: typeof ctx.setSinkId === 'function',

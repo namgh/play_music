@@ -1,0 +1,83 @@
+# 설치 파일 — `v*` 태그를 밀면 맥·윈도우용을 만들어 GitHub 릴리스에 올린다.
+#
+#   git tag v0.1.0 && git push origin v0.1.0
+#
+# **서명하지 않는다** (Apple Developer·코드 서명 인증서 없이 간다). 맥은 애드혹 서명이라
+# 처음 열 때 "확인되지 않은 개발자" 경고가 뜬다 — 여는 법은 README 에 있다.
+
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            args: --mac dmg zip --arm64 --x64
+          - os: windows-latest
+            args: --win nsis --x64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Rust (wasm 타겟)
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update
+          rustup target add wasm32-unknown-unknown
+
+      - run: npm ci
+
+      # 소리 엔진(wasm)은 저장소에 없다 — 여기서 만든다
+      - name: 소리 엔진 빌드
+        run: |
+          mkdir -p src/generated
+          cargo build --release --manifest-path dsp/Cargo.toml --target wasm32-unknown-unknown
+          cargo build --release --manifest-path fx/Cargo.toml --target wasm32-unknown-unknown
+          cp dsp/target/wasm32-unknown-unknown/release/dsp.wasm src/generated/dsp.wasm
+          cp fx/target/wasm32-unknown-unknown/release/fx.wasm src/generated/fx.wasm
+
+      - name: 화면 빌드
+        run: npx tsc --noEmit && npx vite build
+
+      - name: 설치 파일
+        run: npx electron-builder ${{ matrix.args }} --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+      - name: 릴리스에 올리기
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release/*.dmg
+            release/*-mac.zip
+            release/*.exe
+          generate_release_notes: true
+
+      - name: 산출물 보관 (태그 없이 돌렸을 때)
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: resona-${{ matrix.os }}
+          path: |
+            release/*.dmg
+            release/*.exe

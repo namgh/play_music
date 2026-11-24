@@ -1,7 +1,7 @@
 {
   "name": "studio",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
   "type": "module",
   "engines": {
     "node": ">=20"
@@ -39,7 +39,9 @@
     "partials": "node --experimental-strip-types tools/partials.mjs",
     "desktop:dev": "RESONA_DEV_URL=http://127.0.0.1:5173 electron .",
     "desktop": "vite build && electron .",
-    "desktop:smoke": "RESONA_SMOKE=1 electron ."
+    "desktop:smoke": "RESONA_SMOKE=1 electron .",
+    "desktop:pack": "vite build && electron-builder --dir",
+    "desktop:dist": "vite build && electron-builder"
   },
   "dependencies": {
     "@mediabunny/aac-encoder": "^1.66.2",
@@ -56,9 +58,49 @@
     "@types/react-dom": "^19.2.4",
     "@vitejs/plugin-react": "^6.0.5",
     "electron": "^45.4.1",
+    "electron-builder": "^26.18.0",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
     "vite": "^8.2.0"
   },
-  "main": "desktop/main.cjs"
+  "main": "desktop/main.cjs",
+  "description": "RESONA — 작곡 프로그램",
+  "author": "RESONA",
+  "build": {
+    "appId": "app.resona.studio",
+    "productName": "RESONA",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "desktop/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "category": "public.app-category.music",
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "identity": "-",
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "마이크로 녹음할 때 씁니다."
+      }
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "AudioVideo"
+    },
+    "publish": null
+  }
 }

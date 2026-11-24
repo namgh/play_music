@@ -1,23 +1,29 @@
 # RESONA
 
-브라우저에서 도는 작곡 프로그램(DAW)입니다. 설치 없이 열어서 음을 찍고, 악기를 고르고, 믹스하고, 파일로 내보냅니다. 같은 화면을 데스크톱 앱(Electron)으로도 띄울 수 있습니다.
+작곡 프로그램(DAW)입니다. 음을 찍고, 악기를 고르고, 믹스하고, 파일로 내보냅니다. 맥·윈도우에 설치해 쓰고, 같은 화면이 브라우저에서도 돕니다.
 
 소리는 전부 내 컴퓨터에서 만들어집니다(Rust → WebAssembly). 서버는 로그인·저장·동기화만 맡고, 로그인하지 않아도 곡을 만들고 파일로 저장할 수 있습니다.
 
 ![편집기](docs/images/editor.png)
 
-## 바로 써 보기
+## 설치
 
-Node.js 20 이상이 필요합니다.
+[Releases](https://github.com/namgh/play_music/releases)에서 받습니다.
 
-```bash
-git clone git@github.com:namgh/play_music.git
-cd play_music
-npm install
-npm run dev
-```
+| | 파일 |
+|---|---|
+| 맥 (Apple Silicon) | `RESONA-x.y.z-arm64.dmg` |
+| 맥 (Intel) | `RESONA-x.y.z.dmg` |
+| 윈도우 | `RESONA Setup x.y.z.exe` |
 
-브라우저에서 `http://127.0.0.1:5173` 을 엽니다(Chrome 권장). 처음이라면:
+서명하지 않은 앱이라 처음 열 때 경고가 뜹니다. 한 번만 허용하면 됩니다.
+
+- **맥**: 앱을 응용 프로그램 폴더로 옮기고 한 번 엽니다. "열 수 없습니다"가 뜨면 **시스템 설정 → 개인정보 보호 및 보안**으로 가서 아래쪽의 **그래도 열기**를 누릅니다. 그래도 안 되면 터미널에서 `xattr -dr com.apple.quarantine /Applications/RESONA.app` 를 실행합니다.
+- **윈도우**: "Windows의 PC 보호" 창에서 **추가 정보 → 실행**을 누릅니다.
+
+자동 업데이트는 없습니다. 새 버전은 같은 곳에서 다시 받아 덮어씁니다.
+
+## 처음 열면
 
 1. 오른쪽 위 **폴더 단추 → 새 곡 · 최근 곡 · 버전 → 예제 곡**에서 "첫눈 오는 밤"을 엽니다.
 2. **스페이스**를 눌러 듣습니다.
@@ -50,15 +56,27 @@ npm run dev
 | [LOGIC_PARITY.md](LOGIC_PARITY.md) | Logic Pro 대비 기능 표 — 무엇이 되고 무엇이 아직인지 |
 | [CLAUDE.md](CLAUDE.md) | 개발 규칙과 작업 기록 |
 
-## 데스크톱 앱
+## 소스에서 실행
+
+Node.js 20 이상과 Rust(wasm32 타깃)가 필요합니다. 소리 엔진(wasm)은 저장소에 들어 있지 않아 한 번 빌드해야 합니다.
 
 ```bash
-npm run dev            # 한쪽 터미널
-npm run desktop:dev    # 다른 터미널 — 개발 서버를 데스크톱 창으로
-npm run desktop        # 빌드한 화면을 데스크톱 창으로
+git clone git@github.com:namgh/play_music.git
+cd play_music
+npm install
+rustup target add wasm32-unknown-unknown
+npm run build:dsp && npm run build:fx   # 소리 엔진 — 처음 한 번
+npm run dev                             # http://127.0.0.1:5173 (Chrome 권장)
 ```
 
-아직 설치 파일(dmg·exe)과 자동 업데이트는 없습니다. 소스에서 실행하는 단계입니다.
+데스크톱 창으로 띄우거나 설치 파일을 만들려면:
+
+```bash
+npm run desktop:dev    # 개발 서버(위)를 데스크톱 창으로
+npm run desktop:dist   # 설치 파일을 release/ 에 (지금 OS 용)
+```
+
+릴리스는 태그를 밀면 GitHub Actions가 맥·윈도우용을 만들어 올립니다: `git tag v0.1.0 && git push origin v0.1.0`
 
 ## 서버 (로그인·클라우드 저장을 쓸 때만)
 
@@ -85,8 +103,6 @@ npm run check:scenarios  # 곡을 만들어 넣고 내보낸 파일을 다시 �
 npm run build            # Rust(wasm) + 화면 빌드 — Rust 와 wasm32 타깃 필요
 ```
 
-DSP(`dsp/`, `fx/`)를 고치지 않는다면 Rust는 필요 없습니다. 빌드된 wasm이 `src/generated/` 에 들어 있습니다.
-
 ```
 src/model/      곡 데이터 (음·클립·트랙·템포), MIDI·악보 변환
 src/editor/     편집 동작 (되돌리기, 클립·트랙 조작, 저장)
@@ -101,7 +117,7 @@ tools/          점검 스크립트
 ## 아직 안 되는 것
 
 - 사람 목소리 합성 — 가사는 음에 붙는 글자이고, 보컬은 오디오 트랙에 직접 녹음합니다.
-- 5.1·Atmos 스피커 출력, 설치 파일·자동 업데이트.
+- 5.1·Atmos 스피커 출력, 자동 업데이트, 앱 서명(처음 열 때 경고가 뜹니다).
 - 오디오 늘이기(Flex Time/Pitch), 오케스트라 샘플 악기.
 - 구글 로그인은 서버 시험으로만 확인했고 실제 구글 계정으로는 아직 돌려 보지 않았습니다.
 
