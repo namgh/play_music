@@ -819,7 +819,7 @@ export function App() {
     { id: 'file.audioIn', label: '오디오 가져오기', run: () => audioInput.current?.click() },
     { id: 'file.videoIn', label: '영상 가져오기', run: () => videoInput.current?.click() },
     { id: 'file.export', label: '내보내기 (WAV · FLAC · MP3 · M4A · 스템)', run: () => setMenu('export') },
-    { id: 'file.account', label: account.signedIn ? '계정 (비밀번호 · 로그아웃 · 사용량)' : '로그인', run: () => setAccountOpen(true) },
+    { id: 'file.account', label: account.signedIn ? '계정 (로그아웃 · 사용량)' : '로그인', run: () => setAccountOpen(true) },
   ];
   const clipActions: MenuAction[] = [
     {

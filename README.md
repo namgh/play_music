@@ -30,7 +30,7 @@
 3. 아래 편집기에서 음을 눌러 옮기거나 지워 봅니다.
 4. 오른쪽 위 **내보내기**로 MP3나 WAV를 받습니다.
 
-자세한 사용법은 **[사용 가이드](docs/GUIDE.md)** 에 있습니다.
+자세한 사용법은 **[사용 가이드](docs/GUIDE.md)**, 모든 기능은 **[전체 기능 설명서](docs/MANUAL.md)** 에 있습니다.
 
 ## 할 수 있는 것
 
@@ -50,7 +50,8 @@
 
 | 문서 | 내용 |
 |---|---|
-| [docs/GUIDE.md](docs/GUIDE.md) | 사용 가이드 — 화면 구성, 곡 만드는 순서, 내보내기, 단축키 |
+| [docs/GUIDE.md](docs/GUIDE.md) | 사용 가이드 — 처음 쓰는 사람용. 화면 구성, 곡 만드는 순서, 내보내기 |
+| [docs/MANUAL.md](docs/MANUAL.md) | 전체 기능 설명서 — 모든 메뉴·단추·이펙트·악기·단축키 |
 | [docs/AUTH.md](docs/AUTH.md) | 로그인 설계 — 구글 로그인 하나, 설치형 앱의 로그인 경로 |
 | [server/README.md](server/README.md) | 서버(FastAPI) 실행과 구조 |
 | [LOGIC_PARITY.md](LOGIC_PARITY.md) | Logic Pro 대비 기능 표 — 무엇이 되고 무엇이 아직인지 |
