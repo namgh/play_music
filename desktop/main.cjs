@@ -68,7 +68,7 @@ function serveApp() {
 
 function createWindow() {
   win = new BrowserWindow({
-    width: 1440, height: 900, minWidth: 1100, minHeight: 700,
+    width: 1440, height: 900, minWidth: 1240, minHeight: 700,
     backgroundColor: '#ffffff',
     show: !SMOKE,
     title: 'RESONA',

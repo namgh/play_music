@@ -4,7 +4,7 @@
 
 소리는 전부 내 컴퓨터에서 만들어집니다(Rust → WebAssembly). 서버는 로그인·저장·동기화만 맡고, 로그인하지 않아도 곡을 만들고 파일로 저장할 수 있습니다.
 
-![편집기](docs/images/editor.png)
+![화면 한눈에](docs/guide/01-overview.png)
 
 ## 설치
 
@@ -44,13 +44,13 @@
 | **영상** | 영상을 불러와 장면에 음악 맞추기, 타임코드, 영상과 함께 내보내기 |
 | **내보내기** | WAV · FLAC · MP3 · M4A · OGG, 트랙별 스템, MIDI, MusicXML, MP4 · WebM |
 
-![내보내기](docs/images/export.png)
+![내보내기](docs/guide/19-export.png)
 
 ## 문서
 
 | 문서 | 내용 |
 |---|---|
-| [docs/GUIDE.md](docs/GUIDE.md) | 사용 가이드 — 처음 쓰는 사람용. 화면 구성, 곡 만드는 순서, 내보내기 |
+| [docs/GUIDE.md](docs/GUIDE.md) | 사용 가이드 — 번호를 붙인 실제 화면 22장으로 곡을 열고, 고치고, 내보내기까지 |
 | [docs/MANUAL.md](docs/MANUAL.md) | 전체 기능 설명서 — 모든 메뉴·단추·이펙트·악기·단축키 |
 | [docs/AUTH.md](docs/AUTH.md) | 로그인 설계 — 구글 로그인 하나, 설치형 앱의 로그인 경로 |
 | [server/README.md](server/README.md) | 서버(FastAPI) 실행과 구조 |

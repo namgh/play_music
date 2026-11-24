@@ -966,8 +966,9 @@ export function App() {
     // 몇 개든 항상 보여야 한다 — 문서처럼 아래로 쌓으면 16트랙에서 화면 밖으로 밀린다
     <div className="flex h-dvh flex-col overflow-hidden bg-body text-ink">
       {/* 상단 바 — 몸체. 가운데 LCD 만 작은 검은 화면이다 (시안 v4 ②) */}
-      <header className="relative flex h-16 shrink-0 items-center gap-3 border-b 2xl:gap-4 border-rule px-5">
-        <div className="min-w-0 w-48 shrink-0">
+      <header className="relative flex h-16 shrink-0 items-center gap-3 border-b min-[1800px]:gap-4 border-rule px-5">
+        {/* 창이 좁으면 이름 칸부터 줄어든다 — 머리 줄이 넘쳐 내보내기 단추가 잘리던 것 (1440px 에서 38px, 1280px 에서는 통째로) */}
+        <div className="w-48 min-w-[4.5rem] shrink">
           <div className="flex items-baseline gap-1.5">
             <span className="font-disp text-[15px] font-semibold tracking-wide">{BRAND.name}</span>
             {BRAND.isPlaceholder && <span className="text-[11px] text-ink-3">이름 임시</span>}
@@ -1004,7 +1005,7 @@ export function App() {
                 view === id ? 'border-ink bg-ink text-body' : 'border-rule bg-panel text-ink-2 hover:border-ink-3'
               }`}
             >
-              <Icon size={15} /><span className="hidden 2xl:inline">{label}</span>
+              <Icon size={15} /><span className="hidden min-[1800px]:inline">{label}</span>
             </button>
           ))}
         </nav>
@@ -1012,7 +1013,7 @@ export function App() {
         {/* 재생 — 튜닝 도구에서는 걷는다. 그 화면은 자체 엔진으로 소리를 내서 곡이
             겹쳐 나면 음색을 판정할 수 없다 */}
         {view !== 'tuning' && (
-          <div className="flex shrink-0 items-center gap-1 2xl:gap-1.5">
+          <div className="flex shrink-0 items-center gap-1 min-[1800px]:gap-1.5">
             <button type="button" title="맨 앞으로" onClick={() => { engine.stop(); setCursorTick(0); }} className={ROUND_BTN}>
               <IconRewind />
             </button>
@@ -1076,7 +1077,7 @@ export function App() {
         )}
 
         {/* LCD — 위치 · 템포 · 조성 · 박자. 여기서 바로 바꾼다 */}
-        <div className="flex h-11 shrink-0 items-center gap-3 rounded-[10px] bg-screen px-3 2xl:gap-4 2xl:px-3.5 text-sink">
+        <div className="flex h-11 shrink-0 items-center gap-3 rounded-[10px] bg-screen px-3 min-[1800px]:gap-4 min-[1800px]:px-3.5 text-sink">
           <button
             type="button"
             onClick={() => setLcdMode((m) => (m === 'bars' ? 'time' : m === 'time' ? 'tc' : 'bars'))}
@@ -1165,14 +1166,14 @@ export function App() {
 
         <span className="flex-1" />
         {engine.engineKind && (
-          <span className="hidden h-6 items-center gap-1.5 rounded-full border border-rule bg-panel px-2.5 text-[11px] text-ink-2 2xl:flex">
+          <span className="hidden h-6 items-center gap-1.5 rounded-full border border-rule bg-panel px-2.5 text-[11px] text-ink-2 min-[1800px]:flex">
             <i className="h-1.5 w-1.5 rounded-full bg-ok" />{ENGINE_LABELS[engine.engineKind]}
           </span>
         )}
 
-        <div className="flex shrink-0 items-center gap-1 2xl:gap-1.5">
-          <button type="button" title="되돌리기 (⌘Z)" disabled={!editor.canUndo} onClick={editor.undo} className={ROUND_BTN}><IconUndo /></button>
-          <button type="button" title="다시 실행 (⇧⌘Z)" disabled={!editor.canRedo} onClick={editor.redo} className={ROUND_BTN}><IconRedo /></button>
+        <div className="flex shrink-0 items-center gap-1 min-[1800px]:gap-1.5">
+          <button type="button" title="되돌리기 (⌘Z)" disabled={!editor.canUndo} onClick={editor.undo} className={`${ROUND_BTN} max-[1339px]:hidden`}><IconUndo /></button>
+          <button type="button" title="다시 실행 (⇧⌘Z)" disabled={!editor.canRedo} onClick={editor.redo} className={`${ROUND_BTN} max-[1339px]:hidden`}><IconRedo /></button>
           <button
             type="button"
             title="파일 — 저장·열기·MIDI·클라우드"
@@ -1200,9 +1201,10 @@ export function App() {
             disabled={engine.exporting}
             onClick={() => setMenu(menu === 'export' ? null : 'export')}
             aria-expanded={menu === 'export'}
-            className="ml-1 flex h-9 items-center gap-2 rounded-full bg-cta px-4 text-[13px] font-semibold text-cta-ink disabled:opacity-50"
+            title="내보내기 — WAV · FLAC · MP3 · M4A · 스템"
+            className="ml-1 flex h-9 items-center gap-2 rounded-full bg-cta px-4 text-[13px] font-semibold text-cta-ink disabled:opacity-50 max-[1399px]:px-2.5"
           >
-            <IconExport />{engine.exporting ? '내보내는 중…' : '내보내기'}
+            <IconExport /><span className="max-[1399px]:hidden">{engine.exporting ? '내보내는 중…' : '내보내기'}</span>
           </button>
         </div>
 
