@@ -1,0 +1,29 @@
+<!doctype html><meta charset="utf-8"><title>RESONA 계정</title><link rel="stylesheet" href="base.css">
+<style>
+.wrap { max-width:1080px; margin:0 auto; padding:36px 40px 60px; display:flex; flex-direction:column; gap:22px }
+.who { display:flex; align-items:center; gap:14px } .av { width:48px; height:48px; border-radius:24px; background:var(--ink); color:var(--body); display:grid; place-items:center; font-weight:600 }
+.grid { display:grid; grid-template-columns:1.2fr 1fr; gap:18px }
+.lcd { background:var(--screen); color:var(--sink); border-radius:16px; padding:22px; display:flex; flex-direction:column; gap:14px }
+.lcd .big { font-family:var(--num); font-size:64px; color:var(--acc); line-height:1 } .bar { height:8px; border-radius:4px; background:var(--screen-2); overflow:hidden } .bar i { display:block; height:100%; width:42%; background:var(--acc) }
+.lcd small { color:var(--sink-2) } table { width:100%; border-collapse:collapse; font-size:14px } td { padding:9px 0; border-bottom:1px solid var(--rule) } td:last-child { text-align:right; font-family:var(--num); font-size:17px } tr:last-child td { border-bottom:0 }
+.plans { display:grid; grid-template-columns:repeat(3,1fr); gap:14px } .plans .card b { font-family:var(--num); font-size:30px } .plans .on { border-color:var(--ink); box-shadow:0 0 0 1px var(--ink) }
+.row { display:flex; gap:10px; align-items:center } .sp { flex:1 }
+</style>
+<div class="top"><span class="logo">RESONA</span><nav><span>계정</span><span>내려받기</span><span>가이드</span></nav><span class="sp"></span><span class="btn">로그아웃</span></div>
+<div class="wrap">
+  <div class="who"><span class="av">H</span><div><h2 style="font-size:24px">계정</h2><span class="muted">구글 계정으로 로그인됨 · 2026년 11월 가입</span></div><span class="sp"></span><span class="btn go">↓ 앱 내려받기</span></div>
+  <div class="grid">
+    <div class="lcd"><small>이번 달 AI 크레딧</small><div class="row" style="align-items:baseline;gap:12px"><span class="big">42</span><span>/ 100 남음</span></div><div class="bar"><i></i></div><small>12월 1일에 다시 채워집니다 · 고치기 1회 = 1 크레딧 · 새로 지어 주기 1회 = 5 크레딧</small><div class="row"><span class="btn go">크레딧 충전</span><span class="btn" style="background:transparent;color:var(--sink);border-color:#303036">플랜 바꾸기</span></div></div>
+    <div class="card"><h3 style="font-size:17px;margin-bottom:8px">최근 사용</h3><table>
+      <tr><td>코러스 멜로디 2반음 올리기<br><span class="muted" style="font-size:12px">첫눈 오는 밤 · 오늘 21:04</span></td><td>−1</td></tr>
+      <tr><td>벌스 베이스 새로 짓기<br><span class="muted" style="font-size:12px">첫눈 오는 밤 · 오늘 20:51</span></td><td>−5</td></tr>
+      <tr><td>브리지 템포 124 → 132<br><span class="muted" style="font-size:12px">작은 종소리 · 어제</span></td><td>−1</td></tr>
+      <tr><td>월 크레딧 채움</td><td>+100</td></tr></table></div>
+  </div>
+  <div class="plans">
+    <div class="card on"><span class="muted">지금 플랜</span><h3 style="font-size:19px">무료</h3><b>₩0</b><p class="muted" style="margin:6px 0 0;font-size:13px">곡 만들기·내보내기 전부 · AI 크레딧 월 100</p></div>
+    <div class="card"><span class="muted">&nbsp;</span><h3 style="font-size:19px">크리에이터</h3><b>₩9,900</b><span class="muted"> /월</span><p class="muted" style="margin:6px 0 0;font-size:13px">AI 크레딧 월 2,000 · 클라우드 저장 20GB</p></div>
+    <div class="card"><span class="muted">&nbsp;</span><h3 style="font-size:19px">충전</h3><b>₩5,000</b><span class="muted"> /500 크레딧</span><p class="muted" style="margin:6px 0 0;font-size:13px">필요할 때만 · 기한 없음</p></div>
+  </div>
+  <div class="card row"><div><h3 style="font-size:17px">계정 지우기</h3><span class="muted" style="font-size:13px">30일 안에는 되돌릴 수 있습니다. 내 컴퓨터의 곡 파일은 그대로 남습니다.</span></div><span class="sp"></span><span class="btn">탈퇴</span></div>
+</div>

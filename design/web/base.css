@@ -1,0 +1,7 @@
+:root { --body:#FFFFFF; --panel:#F4F4F5; --rule:#E4E4E7; --ink:#0A0A0B; --ink-2:#3F3F46; --ink-3:#71717A; --screen:#111113; --screen-2:#19191C; --sink:#EEEEEA; --sink-2:#9B9B97; --acc:#FFD400; --acc-ink:#111111; --ok:#3DDC97;
+  --sans:"Avenir Next","Pretendard","Apple SD Gothic Neo","Noto Sans KR",system-ui,sans-serif; --disp:"Futura","Avenir Next","Apple SD Gothic Neo",sans-serif; --num:"DIN Condensed","Avenir Next Condensed","Arial Narrow",sans-serif; }
+* { box-sizing:border-box } body { margin:0; font-family:var(--sans); color:var(--ink); background:var(--body); font-size:15px; line-height:1.6 }
+.top { height:64px; display:flex; align-items:center; gap:28px; padding:0 40px; border-bottom:1px solid var(--rule) }
+.logo { font-family:var(--disp); font-weight:700; letter-spacing:.16em; font-size:17px } .top nav { display:flex; gap:22px; color:var(--ink-2); font-size:14px } .top .sp { flex:1 }
+.btn { height:40px; padding:0 18px; border-radius:20px; border:1px solid var(--rule); display:inline-flex; align-items:center; gap:8px; font-size:14px; background:var(--body) } .btn.go { background:var(--acc); color:var(--acc-ink); border-color:transparent; font-weight:600 } .btn.dark { background:var(--ink); color:var(--body); border-color:transparent }
+h1,h2,h3 { font-family:var(--disp); margin:0; line-height:1.15 } .num { font-family:var(--num) } .muted { color:var(--ink-3) } .card { border:1px solid var(--rule); border-radius:16px; padding:22px }

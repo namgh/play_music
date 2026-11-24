@@ -1,0 +1,26 @@
+<!doctype html><meta charset="utf-8"><title>RESONA</title><link rel="stylesheet" href="base.css">
+<style>
+.hero { display:grid; grid-template-columns: 1fr 1.25fr; gap:48px; align-items:center; padding:56px 40px 40px; max-width:1360px; margin:0 auto }
+.hero h1 { font-size:54px; letter-spacing:-.01em } .hero p { font-size:18px; color:var(--ink-2); max-width:30em; margin:18px 0 26px }
+.shot { border-radius:16px; overflow:hidden; box-shadow:0 30px 80px rgba(0,0,0,.22); border:1px solid var(--rule) } .shot img { display:block; width:100% }
+.dl { display:flex; gap:10px; flex-wrap:wrap; align-items:center } .note { font-size:13px; color:var(--ink-3); margin-top:12px }
+.three { display:grid; grid-template-columns:repeat(3,1fr); gap:18px; max-width:1360px; margin:0 auto; padding:24px 40px 40px }
+.three h3 { font-size:19px; margin-bottom:6px } .three p { margin:0; color:var(--ink-2); font-size:14px }
+.tag { display:inline-block; font-size:11px; letter-spacing:.08em; background:var(--screen); color:var(--acc); padding:3px 9px; border-radius:10px; margin-bottom:12px }
+.say { background:var(--screen); color:var(--sink); border-radius:12px; padding:12px 14px; font-size:13px; margin-top:14px } .say b { color:var(--acc); font-family:var(--num); font-size:17px; font-weight:400 }
+.foot { border-top:1px solid var(--rule); padding:22px 40px; display:flex; gap:24px; color:var(--ink-3); font-size:13px }
+</style>
+<div class="top"><span class="logo">RESONA</span><nav><span>기능</span><span>가이드</span><span>예제 곡 듣기</span></nav><span class="sp"></span><span class="btn">구글로 로그인</span><span class="btn go">↓ 내려받기</span></div>
+<section class="hero">
+  <div><h1>말로 고치는<br>작곡 프로그램</h1>
+    <p>음을 찍고, 악기를 고르고, 믹스해서 파일로. 막히면 고른 부분에 대고 말하세요 — “이 부분 조금만 높게”.</p>
+    <div class="dl"><span class="btn go"> 맥용 내려받기</span><span class="btn dark">⊞ 윈도우용</span><span class="btn">브라우저에서 써 보기</span></div>
+    <div class="note">v0.1 · 무료 · 로그인 없이 곡을 만들고 파일로 저장합니다</div></div>
+  <div class="shot"><img src="../../docs/guide/01-overview.png" alt=""></div>
+</section>
+<section class="three">
+  <div class="card"><span class="tag">AI</span><h3>고른 부분에 말하기</h3><p>바꾸기 전에 무엇을 할지 보여 주고, 들어 본 뒤 적용합니다. ⌘Z 한 번이면 되돌아갑니다.</p><div class="say">“여기는 좀 더 밝게” → <b>+2 반음</b> · 코러스 36음</div></div>
+  <div class="card"><span class="tag">작곡</span><h3>한 화면에서 끝까지</h3><p>피아노 롤·스텝·악보, 악기 55종, 이펙트 80여 종, 믹서와 오토메이션.</p><div class="say">구간 · 코드 · 템포 변화까지 <b>32마디</b>를 한눈에</div></div>
+  <div class="card"><span class="tag">내보내기</span><h3>어디로든</h3><p>WAV · FLAC · MP3 · M4A, 트랙별 스템, MIDI, 악보, 영상과 함께 MP4.</p><div class="say">내보내면 바로 <b>−14.0 LUFS</b> 를 잽니다</div></div>
+</section>
+<div class="foot"><span>© RESONA</span><span>GitHub</span><span>사용 가이드</span><span>개인정보</span></div>
