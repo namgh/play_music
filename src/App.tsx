@@ -18,6 +18,7 @@ import { PPQ, secondsToTicks, ticksPerBar, ticksPerBeat, ticksToSeconds } from '
 import { positionAt } from './model/meter.ts';
 import { adjacentMarkerTick, keyAt, tapTempo } from './editor/arrangement.ts';
 import { ExportPanel } from './ui/ExportPanel.tsx';
+import { AiPanel } from './ui/AiPanel.tsx';
 import { SoundBrowser } from './ui/SoundBrowser.tsx';
 import { PlaySurface } from './ui/PlaySurface.tsx';
 import { EventList } from './ui/EventList.tsx';
@@ -211,7 +212,7 @@ export function App() {
   /** 음 색 — 보기 설정 */
   const [noteColor, setNoteColor] = useState<NoteColorMode>('edit');
   /** 오른쪽 칸 탭 — 보기 설정 */
-  const [sideTab, setSideTab] = useState<'inspect' | 'controls' | 'browse'>('inspect');
+  const [sideTab, setSideTab] = useState<'inspect' | 'controls' | 'browse' | 'ai'>('inspect');
   /** 연주 칸(건반) — 보기 설정 */
   const [playOpen, setPlayOpen] = useState(false);
   /** 오른쪽 칸 — 접으면 편집기가 넓어진다 (Logic 의 I) */
@@ -1694,10 +1695,10 @@ export function App() {
           <aside data-side className={`scope-body min-h-0 min-w-0 flex-col gap-4 overflow-y-auto ${sideOpen ? 'flex' : 'hidden'}`}>
             {/* 오른쪽 칸 — 음 편집(인스펙터) 과 브라우저(소리 찾기) 를 탭으로 */}
             <div className="flex gap-1 rounded-lg bg-panel p-1" role="tablist" aria-label="오른쪽 칸">
-              {(['inspect', 'controls', 'browse'] as const).map((tab) => (
+              {(['inspect', 'controls', 'browse', 'ai'] as const).map((tab) => (
                 <button key={tab} type="button" role="tab" aria-selected={sideTab === tab} onClick={() => setSideTab(tab)}
                   className={`h-7 flex-1 rounded-md text-xs ${sideTab === tab ? 'bg-body font-semibold text-ink shadow-sm' : 'text-ink-3'}`}
-                >{tab === 'inspect' ? '음 편집' : tab === 'controls' ? '컨트롤' : '브라우저'}</button>
+                >{tab === 'inspect' ? '음 편집' : tab === 'controls' ? '컨트롤' : tab === 'browse' ? '브라우저' : '✦ AI'}</button>
               ))}
             </div>
             {sideTab === 'controls' && track && (
@@ -1731,6 +1732,16 @@ export function App() {
               />
             )}
             {sideTab === 'inspect' && <NoteInspector editor={editor} onAudition={audition} />}
+            {sideTab === 'ai' && (
+              <AiPanel
+                project={project}
+                editor={editor}
+                clipId={clip?.id ?? null}
+                playing={engine.state === 'playing'}
+                onPlayFrom={(tick) => void engine.play(tick)}
+                onStop={engine.stop}
+              />
+            )}
           </aside>
         </div>
       )}

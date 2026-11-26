@@ -41,7 +41,7 @@ export function saveAutosave(project: Project): boolean {
 
 export function loadAutosave(): Project | null {
   try {
-    const text = localStorage.getItem(AUTOSAVE_KEY);
+    const text = browserKv.get(AUTOSAVE_KEY);
     if (!text) return null;
     return deserializeProject(text);
   } catch (err) {
@@ -53,7 +53,7 @@ export function loadAutosave(): Project | null {
 
 export function clearAutosave(): void {
   try {
-    localStorage.removeItem(AUTOSAVE_KEY);
+    browserKv.remove(AUTOSAVE_KEY);
   } catch {
     /* 무시 */
   }

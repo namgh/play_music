@@ -19,11 +19,49 @@ export interface Kv {
   remove(key: string): void;
 }
 
-export const browserKv: Kv = {
+const localKv: Kv = {
   get: (k) => { try { return localStorage.getItem(k); } catch { return null; } },
   set: (k, v) => { localStorage.setItem(k, v); },
   remove: (k) => { try { localStorage.removeItem(k); } catch { /* 무시 */ } },
 };
+
+interface DiskStore { get(key: string): string | null; set(key: string, value: string): void; remove(key: string): void; keys(): string[] }
+
+/**
+ * 설치형이면 디스크, 아니면 브라우저 저장소. 설치형으로 처음 옮겨 올 때 브라우저 저장소에 있던 곡을 한 번 옮긴다
+ * (지우지는 않는다 — 옮기다 실패해도 원본이 남는다).
+ */
+function pickKv(): Kv {
+  const disk = (globalThis as { resona?: { store?: DiskStore } }).resona?.store;
+  if (!disk) return localKv;
+  try {
+    if (disk.get('migrated-from-browser-v1') === null) {
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (!key || !(key === 'project-autosave-v1' || key.startsWith('library-'))) continue;
+        const value = localStorage.getItem(key);
+        if (value !== null && disk.get(key) === null) disk.set(key, value);
+      }
+      disk.set('migrated-from-browser-v1', '1');
+    }
+  } catch { /* 옮기지 못해도 앱은 뜬다 */ }
+  return { get: (k) => disk.get(k), set: (k, v) => disk.set(k, v), remove: (k) => disk.remove(k) };
+}
+
+let chosen: Kv | null = null;
+const kv = (): Kv => (chosen ??= pickKv());
+
+/** 곡을 두는 곳 — 이름은 예전 그대로지만 설치형에서는 디스크다 */
+export const browserKv: Kv = {
+  get: (k) => kv().get(k),
+  set: (k, v) => kv().set(k, v),
+  remove: (k) => kv().remove(k),
+};
+
+/** 곡이 디스크에 저장되는가 (설치형) */
+export function storesOnDisk(): boolean {
+  return !!(globalThis as { resona?: { store?: unknown } }).resona?.store;
+}
 
 export interface LibraryEntry {
   id: ProjectId;

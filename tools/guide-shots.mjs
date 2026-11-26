@@ -72,6 +72,9 @@ const selectClip = async (b, track = MEL, name = '코러스') => { await b.click
 const editorView = async (b, name) => { await b.clickEl(btn(name)); await sleep(400); };
 const fileMenu = async (b, item) => { await b.clickEl(title('파일 — 저장')); await sleep(200); await b.clickEl(btnHas(item)); await sleep(500); };
 
+// 번호 없는 깨끗한 화면 — 소개 페이지용
+step('00-clean', async (b) => { await openSong(b, 'first-snow-night', { globals: false }); await selectClip(b); await editorView(b, '피아노 롤'); }, []);
+
 step('01-overview', async (b) => { await openSong(b); await selectClip(b); await editorView(b, '피아노 롤'); }, [
   { sel: q('nav[aria-label="화면"]') },
   { sel: span(title('맨 앞으로'), title('반복 구간')) },
@@ -217,6 +220,26 @@ step('22-settings', async (b) => { await openSong(b, 'first-snow-night', { globa
   { sel: `document.querySelector('[role=tab]').parentElement` },
   { sel: `[...document.querySelectorAll('button')].find((x) => x.textContent.trim() === '바꾸기')` },
   { sel: btn('전부 기본값') },
+]);
+
+step('23-ai', async (b) => {
+  await openSong(b, 'first-snow-night', { globals: false }); await selectClip(b); await editorView(b, '피아노 롤');
+  // 모델 대신 정해 둔 답 — 그림이 매번 같게
+  await b.ev(`window.__resonaAiMock = (req) => (req.messages[req.messages.length - 1].content.includes('빠르게')
+    ? { reply: '', options: ['템포를 124 → 132 로', '음을 더 잘게 쪼개기'], commands: [] }
+    : { reply: '2반음 올리면 후렴이 더 밝게 들립니다. 먼저 들어 보세요.', options: [], commands: [{ type: 'transpose', semitones: 2, snapToKey: true }] })`);
+  await b.clickEl(`[...document.querySelectorAll('[role=tab]')].find((t) => t.textContent.includes('AI'))`); await sleep(400);
+  for (const text of ['이 부분 조금만 높게 해 줄래?', '여기는 좀 더 빠르게']) {
+    await b.type(q('#ai-ask'), text);
+    await b.clickEl(aria('보내기')); await sleep(600);
+  }
+}, [
+  { sel: `[...document.querySelectorAll('[role=tab]')].find((t) => t.textContent.includes('AI'))` },
+  { sel: q('[data-ai-target]') },
+  { sel: q('[data-ai-plan]') },
+  { sel: span(q('[data-ai-preview]'), q('[data-ai-cancel]')) },
+  { sel: span(q('[data-ai-option]'), `[...document.querySelectorAll('[data-ai-option]')].pop()`) },
+  { sel: `document.querySelector('#ai-ask').closest('form')` },
 ]);
 
 if (import.meta.url === `file://${process.argv[1]}`) {

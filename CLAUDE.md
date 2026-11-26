@@ -217,3 +217,14 @@ Logic 구조 참고와 시안 3종은 시안 23·24 페이지.
   설계 메모는 `AI_GENERATION.md` (RAG 기반 소재 보존, v1 자체 라이브러리 / v2
   오디오 업로드 분리). **착수 조건(해당 문서 4절) 전까지는 설계만**
 - 오디오 도메인 음정 편집 (Phase 4)
+
+## v0.1 — 설치형이 제품, AI 탭 (2026-11-25)
+
+- **방향**: 설치한 앱이 제품이다. 웹은 소개·내려받기(`site/`, GitHub Pages)와 나중의 계정 페이지뿐. 로그인은 구글만. 배포는 GitHub Releases, 서명 없음.
+- **곡 저장**: 설치형은 디스크(`userData/store/`, `desktop/store.cjs` — 동기 IPC). 화면은 `library.ts` 의 `browserKv` 하나만 본다 (이름은 예전 그대로, 설치형에서는 디스크). 브라우저 저장소에 있던 곡은 처음 한 번 옮긴다.
+- **AI 탭** (`src/ui/AiPanel.tsx`, 시안 `design/screens/a25-ai-a-tab`): 고른 클립·음에 대고 말한다.
+  - 모델은 음을 쓰지 않고 **편집 명령**을 고른다 — `src/ai/edits.ts` (명령 목록·검사 `parseAiReply`·적용 `applyAiCommands`, 순수 함수).
+    새 명령을 넣으면 세 곳을 같이 고친다: `AiCommand`+`parseCommand`+`applyAiCommands`, 시스템 프롬프트(`AI_SYSTEM`), `desktop/ai.cjs` 의 답 모양(zod).
+  - 모델 호출은 `desktop/ai.cjs` (메인 프로세스, `@anthropic-ai/sdk`, `claude-opus-5-5`, 구조화 출력, effort low). 키는 사용자가 넣고 safeStorage 로 잠가 둔다.
+    **배포판에 우리 키를 넣지 않는다** — 여러 사람에게 줄 때는 이 자리를 서버 호출로 바꾼다 (`src/ai/transport.ts` 가 그 이음매).
+  - 시험: `globalThis.__resonaAiMock` (개발 빌드에서만 본다) 으로 모델 답을 대신한다 — `npm run check:scenarios -- --only=AI`.

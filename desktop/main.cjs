@@ -11,6 +11,8 @@ const fs = require('node:fs');
 const { pathToFileURL } = require('node:url');
 const http = require('node:http');
 const crypto = require('node:crypto');
+const store = require('./store.cjs');
+const ai = require('./ai.cjs');
 
 const DEV_URL = process.env.RESONA_DEV_URL || '';
 const API = (process.env.RESONA_API || 'http://localhost:8000').replace(/\/$/, '');
@@ -150,6 +152,10 @@ async function smoke() {
       const out = {
         origin: location.origin, title: document.title,
         platform: window.resona ? { kind: window.resona.kind, os: window.resona.os, googleLogin: typeof window.resona.googleLogin } : null,
+        store: (() => { try { window.resona.store.set('smoke-k', 'v'); const v = window.resona.store.get('smoke-k'); window.resona.store.remove('smoke-k'); return v === 'v' && window.resona.store.get('smoke-k') === null; } catch (e) { return String(e); } })(),
+        storeKeys: window.resona.store.keys().filter((k) => !k.startsWith('library-project')).slice(0, 6),
+        ai: await window.resona.ai.status(),
+        aiNoKey: (await window.resona.ai.ask({ system: 'x', messages: [{ role: 'user', content: 'x' }] })).code,
         app: !!document.querySelector('header'), text: document.body.innerText.slice(0, 60),
         maxChannels: max, openedChannels: opened, sampleRate: ctx.sampleRate, worklet, outputDevices: devices,
         setSinkId: typeof ctx.setSinkId === 'function',
@@ -219,6 +225,9 @@ ipcMain.handle('resona:google-login', async () => {
     if (loginServer === server) loginServer = null;
   }
 });
+
+store.register();
+ai.register();
 
 app.whenReady().then(() => {
   if (!DEV_URL) serveApp();

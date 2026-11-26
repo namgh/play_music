@@ -45,12 +45,14 @@
     "desktop:dist": "vite build && electron-builder"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.13.0",
     "@mediabunny/aac-encoder": "^1.66.2",
     "@mediabunny/flac-encoder": "^1.66.2",
     "@mediabunny/mp3-encoder": "^1.66.2",
     "mediabunny": "^1.66.2",
     "react": "^19.2.8",
-    "react-dom": "^19.2.8"
+    "react-dom": "^19.2.8",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",

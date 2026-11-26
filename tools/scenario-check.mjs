@@ -747,6 +747,87 @@ scenario('저장소', async () => {
     `${saved}/${N} · 저장소 ${(used / 1024 / 1024).toFixed(2)}M자 사용 · 보관함에 ${kept}곡 남음 · ${note.slice(0, 50)}`);
 });
 
+
+// ───────── 15. AI 도우미 — 고른 부분에 말해서 고치기 (모델은 가짜 답으로 대신한다) ─────────
+scenario('AI', async () => {
+  const project = song('first-snow-night');
+  await loadProject(project);
+  const before = problems.length;
+  const chorusNotes = () => ev(`(() => { const p = JSON.parse(localStorage.getItem('project-autosave-v1')); const d = p.project ?? p; return d.tracks[0].clips.find((c) => c.label === '코러스').notes.map((n) => n.pitch.midi); })()`);
+  const tempo = () => ev(`(() => { const p = JSON.parse(localStorage.getItem('project-autosave-v1')); const d = p.project ?? p; return JSON.stringify({ bpm: d.tempo.bpm, changes: (d.tempo.changes ?? []).map((c) => c.bpm) }); })()`);
+  const say = async (text) => {
+    await ev(`(() => { const e = document.querySelector('#ai-ask'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(e, ${JSON.stringify(text)}); e.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+    await clickEl(`document.querySelector('button[aria-label="보내기"]')`);
+    for (let i = 0; i < 40 && await ev(`!!document.querySelector('[data-ai-busy]')`); i++) await sleep(100);
+    await sleep(250);
+  };
+  const lastReply = () => ev(`[...document.querySelectorAll('[data-ai-reply]')].pop()?.innerText ?? ''`);
+  // 모델 대신 답하는 것 — 요청 글에 따라 다른 답. 받은 요청도 적어 둔다 (무엇을 보냈는지 본다)
+  await ev(`(() => { window.__sent = []; window.__resonaAiMock = (req) => { window.__sent.push(req); const ask = req.messages[req.messages.length - 1].content.split('요청: ').pop();
+    if (ask.includes('오류')) throw new Error('인터넷에 연결되지 않았습니다');
+    if (ask.includes('빠르게')) return { reply: '', options: ['템포를 124 → 132 로', '음을 더 잘게 쪼개기'], commands: [] };
+    if (ask.includes('템포를')) return { reply: '이 구간만 조금 빠르게 합니다.', options: [], commands: [{ type: 'tempo', bpm: 132, scope: 'range', semitones: null }] };
+    if (ask.includes('이상한')) return { reply: '해 봅니다', options: [], commands: [{ type: 'delete_everything' }, { type: 'transpose', semitones: 9999, snapToKey: false }] };
+    return { reply: '2반음 올리면 후렴이 더 밝게 들립니다.', options: [], commands: [{ type: 'transpose', semitones: 2, snapToKey: false, bpm: null }] }; }; })()`);
+
+  await clickEl(`[...document.querySelectorAll('[role=tab]')].find((t) => t.textContent.includes('AI'))`);
+  await sleep(400);
+  record('AI · 오른쪽 칸의 넷째 탭', await ev(`!!document.querySelector('[data-ai-panel]')`), (await ev(`document.querySelector('[data-ai-target]')?.innerText ?? ''`)).slice(0, 60));
+
+  // 클립을 고르고 말한다
+  await clickEl(`(() => { const row = document.querySelector('[aria-label="멜로디 (가사) 악기"]'); const y = row.getBoundingClientRect().top; return [...document.querySelectorAll('button')].find((b) => b.title === '끌어서 옮깁니다' && b.textContent.startsWith('코러스') && Math.abs(b.getBoundingClientRect().top - y) < 30); })()`);
+  await sleep(300);
+  const tgt = await ev(`document.querySelector('[data-ai-target]')?.innerText ?? ''`);
+  record('AI · 고른 것이 위에 보인다', /코러스.*36음.*17–24마디/.test(tgt), tgt);
+
+  const n0 = await chorusNotes();
+  await say('이 부분 조금만 높게 해 줄래?');
+  const plan1 = await ev(`document.querySelector('[data-ai-plan]')?.innerText ?? ''`);
+  const stillSame = JSON.stringify(await chorusNotes()) === JSON.stringify(n0);
+  record('AI · 바꾸기 전에 무엇이 바뀌는지 보여 준다 (곡은 아직 그대로)', /\+2 반음/.test(plan1) && stillSame, plan1.replace(/\n/g, ' ').slice(0, 80));
+  const sent = await ev(`(() => { const r = window.__sent[0]; const c = r.messages[r.messages.length - 1].content; return { system: r.system.length, notes: (c.match(/"midi"/g) || []).length, hasIds: /not_|clp_|trk_|prj_/.test(c) }; })()`);
+  record('AI · 보낸 것 — 고른 36음과 맥락만, 내부 id 는 없다', sent.notes === 36 && !sent.hasIds && sent.system > 500, JSON.stringify(sent));
+
+  await clickEl(`document.querySelector('[data-ai-apply]')`);
+  await sleep(700);
+  const n1 = await chorusNotes();
+  record('AI · 적용 — 36음이 2반음 올랐다', n1.length === 36 && n1.every((m, i) => m === n0[i] + 2), `${n0.slice(0, 4)} → ${n1.slice(0, 4)}`);
+  await clickEl(byTitle('되돌리기'));
+  await sleep(700);
+  record('AI · 되돌리기 한 번으로 원래대로', JSON.stringify(await chorusNotes()) === JSON.stringify(n0), '');
+
+  // 뜻이 둘이면 되묻는다 → 고르면 그 뜻으로
+  await say('여기는 좀 더 빠르게');
+  const opts = await ev(`[...document.querySelectorAll('[data-ai-option]')].map((b) => b.textContent)`);
+  record('AI · 뜻이 둘이면 되묻는다', opts.length === 2 && !(await ev(`[...document.querySelectorAll('[data-ai-reply]')].pop().querySelector('[data-ai-plan]') !== null`)), opts.join(' / '));
+  await clickEl(`document.querySelector('[data-ai-option]')`);
+  for (let i = 0; i < 40 && await ev(`!!document.querySelector('[data-ai-busy]')`); i++) await sleep(100);
+  await sleep(300);
+  // 미리 듣기 → 곡에 들어가고 재생된다 → 취소하면 돌아온다
+  const t0 = await tempo();
+  await clickEl(`[...document.querySelectorAll('[data-ai-preview]')].pop()`);
+  await sleep(1200);
+  const tPrev = await tempo(); const playing = await ev(`!!${byTitle('정지')}`);
+  await clickEl(`[...document.querySelectorAll('[data-ai-cancel]')].pop()`);
+  await sleep(800);
+  const tBack = await tempo();
+  record('AI · 미리 듣기는 재생하고, 취소하면 곡이 돌아온다', tPrev.includes('132') && playing && tBack === t0, `${t0} → ${tPrev} → ${tBack}`);
+
+  // 이상한 답은 걸러진다
+  await say('이상한 것 해 줘');
+  const odd = await ev(`[...document.querySelectorAll('[data-ai-plan]')].pop()?.innerText ?? ''`);
+  record('AI · 모르는 명령은 버리고 값은 범위 안으로', /\+36 반음/.test(odd) && !/delete/.test(odd), odd.replace(/\n/g, ' ').slice(0, 60));
+  await clickEl(`[...document.querySelectorAll('[data-ai-cancel]')].pop()`);
+
+  // 실패는 말풍선으로 알리고 다음 요청을 막지 않는다
+  await say('오류를 내 줘');
+  const err = await lastReply();
+  await say('다시 높게');
+  record('AI · 실패를 알리고, 그 뒤에도 쓸 수 있다', /인터넷/.test(err) && /\+2 반음/.test(await lastReply()), err.slice(0, 40));
+  record('AI · 콘솔 오류 없음', problems.length === before, problems.slice(before).join(' | ').slice(0, 120));
+  await shot('s15-ai');
+});
+
 let failed = false;
 try {
   await connect();

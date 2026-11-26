@@ -8,14 +8,14 @@ export type ScreenView = 'editor' | 'mixer' | 'live' | 'assistant' | 'tuning';
 export interface Screenset {
   view: ScreenView;
   editorView: 'roll' | 'steps' | 'list' | 'score';
-  sideTab: 'inspect' | 'controls' | 'browse';
+  sideTab: 'inspect' | 'controls' | 'browse' | 'ai';
   playOpen: boolean;
 }
 
 const KEY = 'screensets-v1';
 const VIEWS: ScreenView[] = ['editor', 'mixer', 'live', 'assistant', 'tuning'];
 const EDITOR_VIEWS = ['roll', 'steps', 'list', 'score'] as const;
-const SIDE_TABS = ['inspect', 'controls', 'browse'] as const;
+const SIDE_TABS = ['inspect', 'controls', 'browse', 'ai'] as const;
 
 export function parseScreensets(raw: unknown): Record<number, Screenset> {
   const out: Record<number, Screenset> = {};
